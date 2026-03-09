@@ -4,7 +4,6 @@ import {
   useTerminalStore,
   type LayoutNode,
   type TerminalGroup,
-  type SplitDirection,
 } from "../../stores/terminal"
 import { TerminalView } from "./TerminalView"
 import {
@@ -18,8 +17,6 @@ import {
 } from "lucide-react"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
 
-// ─── Props ────────────────────────────────────────────────────
-
 interface Props {
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
@@ -30,15 +27,11 @@ interface Props {
 
 export function TerminalArea({ send, subscribe, connected }: Props) {
   const container = useContainerStore((s) => s.getActiveContainer())
-  const {
-    terminals,
-    groups,
-    layout,
-    focusedGroupId,
-    addTerminal,
-    removeTerminal,
-    unsplitAll,
-  } = useTerminalStore()
+  const terminals = useTerminalStore((s) => s.terminals)
+  const groups = useTerminalStore((s) => s.groups)
+  const layout = useTerminalStore((s) => s.layout)
+  const addTerminal = useTerminalStore((s) => s.addTerminal)
+  const unsplitAll = useTerminalStore((s) => s.unsplitAll)
 
   const terminalCountRef = useRef(0)
 
@@ -76,27 +69,33 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
     })
   }, [container, connected, send])
 
-  // Empty state
+  const isSingleGroup = groups.length <= 1
+
+  // ── Empty state ──
   if (terminals.length === 0) {
     return (
       <div className="h-full flex flex-col bg-surface-0">
-        {/* Minimal toolbar */}
-        <div className="flex items-center px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
           <button
             onClick={handleAddTerminal}
             disabled={!container || !connected}
-            className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-weak hover:text-text-base rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-text-weak hover:text-text-base rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="font-sans">New terminal</span>
           </button>
         </div>
-        <div className="flex-1 flex items-center justify-center" style={{ backgroundColor: "#101010" }}>
+        <div
+          className="flex-1 flex items-center justify-center"
+          style={{ backgroundColor: "#101010" }}
+        >
           <div className="text-center">
             <Terminal className="w-10 h-10 text-text-weaker mx-auto mb-3" />
             <p className="text-sm text-text-weak mb-1">Terminal</p>
             <p className="text-xs text-text-weaker">
-              {container ? 'Click "+" to open a terminal' : "No container selected"}
+              {container
+                ? 'Click "+" to open a terminal'
+                : "No container selected"}
             </p>
           </div>
         </div>
@@ -104,10 +103,49 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
     )
   }
 
+  // ── Single group: original nice tab bar at top ──
+  if (isSingleGroup) {
+    const group = groups[0]
+    if (!group) return null
+    return (
+      <div className="h-full flex flex-col bg-surface-0">
+        <SingleGroupTabBar
+          group={group}
+          send={send}
+          handleAddTerminal={handleAddTerminal}
+          container={container}
+          connected={connected}
+        />
+        <div
+          className="flex-1 overflow-hidden relative"
+          style={{ backgroundColor: "#101010" }}
+        >
+          {group.terminalIds.map((tid) => (
+            <div
+              key={tid}
+              className="absolute inset-0"
+              style={{
+                visibility:
+                  tid === group.activeTerminalId ? "visible" : "hidden",
+              }}
+            >
+              <TerminalView
+                serverId={tid}
+                send={send}
+                subscribe={subscribe}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Multiple groups: global bar + recursive layout ──
   return (
     <div className="h-full flex flex-col bg-surface-0">
-      {/* Global toolbar */}
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-border-weak bg-surface-1 shrink-0">
+      {/* Global toolbar — merge button */}
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
         <button
           onClick={handleAddTerminal}
           disabled={!container || !connected}
@@ -117,30 +155,172 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
           <Plus className="w-3.5 h-3.5 text-text-weaker" />
         </button>
 
-        {groups.length > 1 && (
-          <button
-            onClick={unsplitAll}
-            className="p-1 rounded hover:bg-surface-2 transition-colors ml-auto"
-            title="Merge all groups"
-          >
-            <Merge className="w-3.5 h-3.5 text-text-weaker" />
-          </button>
-        )}
+        <span className="text-[10px] text-text-weaker font-sans ml-1">
+          {groups.length} groups
+        </span>
+
+        <button
+          onClick={unsplitAll}
+          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-text-weak hover:text-text-base hover:bg-surface-2 transition-colors ml-auto font-sans"
+          title="Merge all groups into one"
+        >
+          <Merge className="w-3.5 h-3.5" />
+          Unsplit
+        </button>
       </div>
 
-      {/* Layout area */}
-      <div className="flex-1 overflow-hidden" style={{ backgroundColor: "#101010" }}>
+      {/* Split layout */}
+      <div
+        className="flex-1 overflow-hidden"
+        style={{ backgroundColor: "#101010" }}
+      >
         {layout && (
           <LayoutRenderer
             node={layout}
             path={[]}
             send={send}
             subscribe={subscribe}
-            connected={connected}
             handleAddTerminal={handleAddTerminal}
           />
         )}
       </div>
+    </div>
+  )
+}
+
+// ─── Single-group tab bar (the nice original one) ────────────
+
+function SingleGroupTabBar({
+  group,
+  send,
+  handleAddTerminal,
+  container,
+  connected,
+}: {
+  group: TerminalGroup
+  send: (msg: WSMessage) => void
+  handleAddTerminal: () => void
+  container: { name: string } | undefined
+  connected: boolean
+}) {
+  const terminals = useTerminalStore((s) => s.terminals)
+  const setActiveInGroup = useTerminalStore((s) => s.setActiveInGroup)
+  const removeTerminal = useTerminalStore((s) => s.removeTerminal)
+  const renameTerminal = useTerminalStore((s) => s.renameTerminal)
+  const setNotification = useTerminalStore((s) => s.setNotification)
+  const splitTerminal = useTerminalStore((s) => s.splitTerminal)
+
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState("")
+  const editInputRef = useRef<HTMLInputElement>(null)
+
+  const groupTerminals = group.terminalIds
+    .map((id) => terminals.find((t) => t.id === id))
+    .filter(Boolean) as typeof terminals
+
+  const handleTabClick = (terminalId: string) => {
+    setActiveInGroup(group.id, terminalId)
+    setNotification(terminalId, false)
+  }
+
+  const handleCloseTab = (e: React.MouseEvent, terminalId: string) => {
+    e.stopPropagation()
+    send({ type: "terminal:close", data: { terminalId } })
+    removeTerminal(terminalId)
+  }
+
+  const handleDoubleClick = (id: string, currentName: string) => {
+    setEditingTabId(id)
+    setEditingName(currentName)
+    setTimeout(() => editInputRef.current?.select(), 0)
+  }
+
+  const commitRename = () => {
+    if (editingTabId && editingName.trim()) {
+      renameTerminal(editingTabId, editingName.trim())
+    }
+    setEditingTabId(null)
+  }
+
+  return (
+    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
+      {groupTerminals.map((t) => (
+        <div
+          key={t.id}
+          onClick={() => handleTabClick(t.id)}
+          onDoubleClick={() => handleDoubleClick(t.id, t.name)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group ${
+            t.id === group.activeTerminalId
+              ? "bg-surface-2 text-text-strong"
+              : "text-text-weak hover:bg-surface-2/50"
+          }`}
+        >
+          <Terminal className="w-3 h-3 shrink-0" />
+
+          {t.hasNotification && t.id !== group.activeTerminalId && (
+            <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+          )}
+
+          {editingTabId === t.id ? (
+            <input
+              ref={editInputRef}
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename()
+                if (e.key === "Escape") setEditingTabId(null)
+              }}
+              className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
+              autoFocus
+            />
+          ) : (
+            <span className="truncate max-w-[100px]">{t.name}</span>
+          )}
+
+          <button
+            onClick={(e) => handleCloseTab(e, t.id)}
+            className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      ))}
+
+      <button
+        onClick={handleAddTerminal}
+        disabled={!container || !connected}
+        className="p-1 rounded hover:bg-surface-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        title="New terminal"
+      >
+        <Plus className="w-3.5 h-3.5 text-text-weaker" />
+      </button>
+
+      {/* Split actions — only when 2+ terminals */}
+      {groupTerminals.length >= 2 && (
+        <div className="ml-auto flex items-center gap-0.5 border-l border-border-weak pl-2">
+          <button
+            onClick={() =>
+              group.activeTerminalId &&
+              splitTerminal(group.activeTerminalId, "horizontal")
+            }
+            className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+            title="Split right"
+          >
+            <SplitSquareHorizontal className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() =>
+              group.activeTerminalId &&
+              splitTerminal(group.activeTerminalId, "vertical")
+            }
+            className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+            title="Split down"
+          >
+            <SplitSquareVertical className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -152,23 +332,20 @@ function LayoutRenderer({
   path,
   send,
   subscribe,
-  connected,
   handleAddTerminal,
 }: {
   node: LayoutNode
   path: number[]
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
-  connected: boolean
   handleAddTerminal: () => void
 }) {
   if (node.type === "leaf") {
     return (
-      <GroupPane
+      <SplitGroupPane
         groupId={node.groupId}
         send={send}
         subscribe={subscribe}
-        connected={connected}
         handleAddTerminal={handleAddTerminal}
       />
     )
@@ -180,7 +357,6 @@ function LayoutRenderer({
       path={path}
       send={send}
       subscribe={subscribe}
-      connected={connected}
       handleAddTerminal={handleAddTerminal}
     />
   )
@@ -193,25 +369,21 @@ function SplitContainer({
   path,
   send,
   subscribe,
-  connected,
   handleAddTerminal,
 }: {
   node: Extract<LayoutNode, { type: "split" }>
   path: number[]
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
-  connected: boolean
   handleAddTerminal: () => void
 }) {
   const setGroupSizes = useTerminalStore((s) => s.setGroupSizes)
   const isHorizontal = node.direction === "horizontal"
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Local sizes state for smooth dragging
   const [localSizes, setLocalSizes] = useState(node.sizes)
   useEffect(() => setLocalSizes(node.sizes), [node.sizes])
 
-  // Use ref to read latest sizes in onUp without stale closure
   const latestSizesRef = useRef(localSizes)
   useEffect(() => {
     latestSizesRef.current = localSizes
@@ -220,24 +392,21 @@ function SplitContainer({
   const handleDragStart = useCallback(
     (index: number, e: React.MouseEvent) => {
       e.preventDefault()
-      const container = containerRef.current
-      if (!container) return
+      const el = containerRef.current
+      if (!el) return
 
-      const rect = container.getBoundingClientRect()
+      const rect = el.getBoundingClientRect()
       const totalSize = isHorizontal ? rect.width : rect.height
       const startPos = isHorizontal ? e.clientX : e.clientY
-
       const startSizes = [...latestSizesRef.current]
 
       function onMove(ev: MouseEvent) {
         const currentPos = isHorizontal ? ev.clientX : ev.clientY
         const delta = ((currentPos - startPos) / totalSize) * 100
-
-        const minSize = 10
         const newLeft = startSizes[index] + delta
         const newRight = startSizes[index + 1] - delta
 
-        if (newLeft >= minSize && newRight >= minSize) {
+        if (newLeft >= 10 && newRight >= 10) {
           const newSizes = [...startSizes]
           newSizes[index] = newLeft
           newSizes[index + 1] = newRight
@@ -282,11 +451,9 @@ function SplitContainer({
               path={[...path, i]}
               send={send}
               subscribe={subscribe}
-              connected={connected}
               handleAddTerminal={handleAddTerminal}
             />
           </div>
-          {/* Resize handle between children */}
           {i < node.children.length - 1 && (
             <div
               className={`shrink-0 bg-border-weak hover:bg-accent/40 transition-colors ${
@@ -303,19 +470,17 @@ function SplitContainer({
   )
 }
 
-// ─── Group pane (tab bar + terminal content) ─────────────────
+// ─── Group pane inside a split (compact but clean tab bar) ───
 
-function GroupPane({
+function SplitGroupPane({
   groupId,
   send,
   subscribe,
-  connected,
   handleAddTerminal,
 }: {
   groupId: string
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
-  connected: boolean
   handleAddTerminal: () => void
 }) {
   const group = useTerminalStore((s) => s.groups.find((g) => g.id === groupId))
@@ -334,12 +499,18 @@ function GroupPane({
   const [editingName, setEditingName] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
 
-  // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
     terminalId: string
   } | null>(null)
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    window.addEventListener("click", close)
+    return () => window.removeEventListener("click", close)
+  }, [contextMenu])
 
   if (!group) return null
 
@@ -347,6 +518,7 @@ function GroupPane({
   const groupTerminals = group.terminalIds
     .map((id) => terminals.find((t) => t.id === id))
     .filter(Boolean) as typeof terminals
+  const otherGroups = groups.filter((g) => g.id !== groupId)
 
   const handleTabClick = (terminalId: string) => {
     setActiveInGroup(groupId, terminalId)
@@ -377,17 +549,6 @@ function GroupPane({
     setContextMenu({ x: e.clientX, y: e.clientY, terminalId })
   }
 
-  // Close context menu on click outside
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    window.addEventListener("click", close)
-    return () => window.removeEventListener("click", close)
-  }, [contextMenu])
-
-  // Other groups for "Move to group" submenu
-  const otherGroups = groups.filter((g) => g.id !== groupId)
-
   return (
     <div
       className={`h-full flex flex-col ${
@@ -395,21 +556,21 @@ function GroupPane({
       }`}
       onClick={() => focusGroup(groupId)}
     >
-      {/* Group tab bar */}
-      <div className="flex items-center gap-0.5 px-1 py-0.5 bg-surface-1/80 shrink-0 overflow-x-auto border-b border-border-weak/50">
+      {/* Tab bar — same style as the single-group one */}
+      <div className="flex items-center gap-1 px-2 py-1.5 bg-surface-1 shrink-0 overflow-x-auto border-b border-border-weak">
         {groupTerminals.map((t) => (
           <div
             key={t.id}
             onClick={() => handleTabClick(t.id)}
             onDoubleClick={() => handleDoubleClick(t.id, t.name)}
             onContextMenu={(e) => handleContextMenu(e, t.id)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors group ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group ${
               t.id === group.activeTerminalId
                 ? "bg-surface-2 text-text-strong"
                 : "text-text-weak hover:bg-surface-2/50"
             }`}
           >
-            <Terminal className="w-2.5 h-2.5 shrink-0" />
+            <Terminal className="w-3 h-3 shrink-0" />
 
             {t.hasNotification && t.id !== group.activeTerminalId && (
               <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
@@ -425,18 +586,18 @@ function GroupPane({
                   if (e.key === "Enter") commitRename()
                   if (e.key === "Escape") setEditingTabId(null)
                 }}
-                className="bg-transparent border-b border-accent text-[11px] text-text-strong outline-none w-16"
+                className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
                 autoFocus
               />
             ) : (
-              <span className="truncate max-w-[80px]">{t.name}</span>
+              <span className="truncate max-w-[100px]">{t.name}</span>
             )}
 
             <button
               onClick={(e) => handleCloseTab(e, t.id)}
               className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
             >
-              <X className="w-2.5 h-2.5" />
+              <X className="w-3 h-3" />
             </button>
           </div>
         ))}
@@ -445,48 +606,47 @@ function GroupPane({
         <div className="ml-auto flex items-center gap-0.5 shrink-0">
           <button
             onClick={handleAddTerminal}
-            className="p-0.5 rounded hover:bg-surface-2 transition-colors"
+            className="p-1 rounded hover:bg-surface-2 transition-colors"
             title="New terminal in this group"
           >
-            <Plus className="w-3 h-3 text-text-weaker" />
+            <Plus className="w-3.5 h-3.5 text-text-weaker" />
           </button>
-          {group.activeTerminalId && groupTerminals.length > 0 && (
+          {group.activeTerminalId && groupTerminals.length >= 2 && (
             <>
               <button
                 onClick={() =>
                   group.activeTerminalId &&
                   splitTerminal(group.activeTerminalId, "horizontal")
                 }
-                className="p-0.5 rounded hover:bg-surface-2 transition-colors"
+                className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
                 title="Split right"
-                disabled={groupTerminals.length < 2}
               >
-                <SplitSquareHorizontal className="w-3 h-3 text-text-weaker" />
+                <SplitSquareHorizontal className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() =>
                   group.activeTerminalId &&
                   splitTerminal(group.activeTerminalId, "vertical")
                 }
-                className="p-0.5 rounded hover:bg-surface-2 transition-colors"
+                className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
                 title="Split down"
-                disabled={groupTerminals.length < 2}
               >
-                <SplitSquareVertical className="w-3 h-3 text-text-weaker" />
+                <SplitSquareVertical className="w-3.5 h-3.5" />
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* Terminal content — all terminals mounted but only active visible */}
+      {/* Terminal content */}
       <div className="flex-1 overflow-hidden relative">
         {groupTerminals.map((t) => (
           <div
             key={t.id}
             className="absolute inset-0"
             style={{
-              visibility: t.id === group.activeTerminalId ? "visible" : "hidden",
+              visibility:
+                t.id === group.activeTerminalId ? "visible" : "hidden",
             }}
           >
             <TerminalView serverId={t.id} send={send} subscribe={subscribe} />
@@ -497,10 +657,9 @@ function GroupPane({
       {/* Context menu */}
       {contextMenu && (
         <ContextMenu
+          terminalId={contextMenu.terminalId}
           x={contextMenu.x}
           y={contextMenu.y}
-          terminalId={contextMenu.terminalId}
-          currentGroupId={groupId}
           otherGroups={otherGroups}
           groupTerminalCount={groupTerminals.length}
           onSplitRight={() => {
@@ -516,7 +675,10 @@ function GroupPane({
             setContextMenu(null)
           }}
           onClose={() => {
-            send({ type: "terminal:close", data: { terminalId: contextMenu.terminalId } })
+            send({
+              type: "terminal:close",
+              data: { terminalId: contextMenu.terminalId },
+            })
             removeTerminal(contextMenu.terminalId)
             setContextMenu(null)
           }}
@@ -537,7 +699,6 @@ function ContextMenu({
   x,
   y,
   terminalId,
-  currentGroupId,
   otherGroups,
   groupTerminalCount,
   onSplitRight,
@@ -549,7 +710,6 @@ function ContextMenu({
   x: number
   y: number
   terminalId: string
-  currentGroupId: string
   otherGroups: TerminalGroup[]
   groupTerminalCount: number
   onSplitRight: () => void
@@ -587,15 +747,15 @@ function ContextMenu({
             Move to group
           </div>
           {otherGroups.map((g) => {
-            const terminals = useTerminalStore.getState().terminals
-            const groupTerminals = g.terminalIds
-              .map((id) => terminals.find((t) => t.id === id))
+            const allTerminals = useTerminalStore.getState().terminals
+            const names = g.terminalIds
+              .map((id) => allTerminals.find((t) => t.id === id)?.name)
               .filter(Boolean)
-            const label = groupTerminals.map((t) => t!.name).join(", ") || "Empty"
+              .join(", ")
             return (
               <MenuItem
                 key={g.id}
-                label={label}
+                label={names || "Empty"}
                 onClick={() => onMoveToGroup(g.id)}
                 icon={<GripVertical className="w-3.5 h-3.5" />}
               />
