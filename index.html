@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UltiIHE - Interactive Hacking Environment</title>
+    <style>
+      :root {
+        /* Neutral gray palette inspired by OpenCode / VS Code Dark+ */
+        --surface-0: #101010;
+        --surface-1: #161616;
+        --surface-2: #1c1c1c;
+        --surface-3: #232323;
+        --border-base: rgba(255, 255, 255, 0.12);
+        --border-weak: rgba(255, 255, 255, 0.07);
+        --text-strong: rgba(255, 255, 255, 0.93);
+        --text-base: rgba(255, 255, 255, 0.62);
+        --text-weak: rgba(255, 255, 255, 0.42);
+        --text-weaker: rgba(255, 255, 255, 0.28);
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+        --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-mono: "JetBrains Mono", "IBM Plex Mono", "Fira Code", ui-monospace, monospace;
+      }
+      body {
+        margin: 0;
+        background: var(--surface-0);
+        color: var(--text-base);
+        font-family: var(--font-sans);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
