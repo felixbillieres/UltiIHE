@@ -1,21 +1,9 @@
 import { useState, useRef, useEffect } from "react"
-import { useSessionStore, type Message, type Session } from "../../stores/session"
+import { useSessionStore, type Message } from "../../stores/session"
 import { useSettingsStore } from "../../stores/settings"
 import { useContainerStore } from "../../stores/container"
 import { useTerminalStore } from "../../stores/terminal"
-import {
-  Send,
-  Bot,
-  User,
-  Sparkles,
-  Loader2,
-  Square,
-  Plus,
-  History,
-  X,
-  Trash2,
-  MessageSquare,
-} from "lucide-react"
+import { Send, Bot, User, Loader2, Square } from "lucide-react"
 
 interface Props {
   projectId: string
@@ -25,14 +13,10 @@ export function ChatPanel({ projectId }: Props) {
   const {
     activeSessionId,
     createSession,
-    setActiveSession,
     addMessage,
     updateMessageContent,
     getActiveMessages,
     getActiveSession,
-    getProjectSessions,
-    deleteSession,
-    startNewChat,
   } = useSessionStore()
 
   const { activeModel, activeProvider, activeMode, getActiveProvider } =
@@ -42,7 +26,6 @@ export function ChatPanel({ projectId }: Props) {
 
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -50,9 +33,8 @@ export function ChatPanel({ projectId }: Props) {
 
   const messages = getActiveMessages()
   const activeSession = getActiveSession()
-  const sessions = getProjectSessions(projectId)
 
-  // Auto-scroll on new messages
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages.length, messages[messages.length - 1]?.content])
@@ -71,7 +53,6 @@ export function ChatPanel({ projectId }: Props) {
 
     const provider = getActiveProvider()
     if (!provider?.apiKey) {
-      // Create session if needed, then add error message
       let sid = activeSessionId
       if (!sid) {
         const s = createSession(projectId)
@@ -87,14 +68,12 @@ export function ChatPanel({ projectId }: Props) {
       return
     }
 
-    // Create session on first message if none active
     let sid = activeSessionId
     if (!sid) {
       const s = createSession(projectId)
       sid = s.id
     }
 
-    // Add user message
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -104,7 +83,6 @@ export function ChatPanel({ projectId }: Props) {
     addMessage(sid, userMessage)
     setInput("")
 
-    // Get updated messages for API call
     const currentSession = useSessionStore
       .getState()
       .sessions.find((s) => s.id === sid)
@@ -113,7 +91,6 @@ export function ChatPanel({ projectId }: Props) {
       content: m.content,
     }))
 
-    // Add placeholder assistant message
     const assistantId = crypto.randomUUID()
     addMessage(sid, {
       id: assistantId,
@@ -157,7 +134,6 @@ export function ChatPanel({ projectId }: Props) {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         const chunk = decoder.decode(value, { stream: true })
         fullContent += chunk
         updateMessageContent(sid!, assistantId, fullContent)
@@ -193,73 +169,44 @@ export function ChatPanel({ projectId }: Props) {
     }
   }
 
-  return (
-    <div className="h-full flex flex-col bg-surface-0">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-weak shrink-0">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-accent" />
-          <span className="text-xs text-text-strong font-sans font-medium">
-            AI Assistant
-          </span>
-          {streaming && (
-            <Loader2 className="w-3 h-3 text-accent animate-spin" />
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => startNewChat(projectId)}
-            className="p-1 rounded hover:bg-surface-2 transition-colors"
-            title="New chat"
-          >
-            <Plus className="w-3.5 h-3.5 text-text-weaker" />
-          </button>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className={`p-1 rounded transition-colors ${
-              showHistory
-                ? "bg-surface-2 text-text-strong"
-                : "hover:bg-surface-2 text-text-weaker"
-            }`}
-            title="Chat history"
-          >
-            <History className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-[10px] text-text-weaker truncate max-w-[100px] font-mono ml-1">
-            {activeModel}
-          </span>
-        </div>
+  // No active session — empty state
+  if (!activeSession) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-6">
+        <Bot className="w-8 h-8 text-text-weaker mb-3" />
+        <p className="text-sm text-text-weak mb-1 font-sans">
+          No session selected
+        </p>
+        <p className="text-xs text-text-weaker max-w-[200px] font-sans">
+          Select a session from the left panel or create a new one
+        </p>
       </div>
+    )
+  }
 
-      {/* History drawer */}
-      {showHistory && (
-        <SessionHistory
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={(id) => {
-            setActiveSession(id)
-            setShowHistory(false)
-          }}
-          onDelete={deleteSession}
-          onNewChat={() => {
-            startNewChat(projectId)
-            setShowHistory(false)
-          }}
-          onClose={() => setShowHistory(false)}
-        />
-      )}
-
+  return (
+    <div className="h-full flex flex-col">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
-          <EmptyState />
+          <div className="h-full flex flex-col items-center justify-center text-center">
+            <Bot className="w-8 h-8 text-text-weaker mb-3" />
+            <p className="text-sm text-text-weak mb-1 font-sans">
+              Ready to assist
+            </p>
+            <p className="text-xs text-text-weaker max-w-[200px] font-sans">
+              Ask me to run commands, scan targets, or analyze results
+            </p>
+          </div>
         ) : (
           messages.map((msg) => (
             <MessageBubble
               key={msg.id}
               message={msg}
               isStreaming={
-                streaming && msg.id === streamingMsgIdRef.current && msg.content === ""
+                streaming &&
+                msg.id === streamingMsgIdRef.current &&
+                msg.content === ""
               }
             />
           ))
@@ -269,14 +216,6 @@ export function ChatPanel({ projectId }: Props) {
 
       {/* Input */}
       <div className="p-3 border-t border-border-weak shrink-0">
-        {activeSession && (
-          <div className="flex items-center gap-1.5 mb-2 px-1">
-            <MessageSquare className="w-3 h-3 text-text-weaker shrink-0" />
-            <span className="text-[10px] text-text-weaker truncate font-sans">
-              {activeSession.title}
-            </span>
-          </div>
-        )}
         <div className="flex items-end gap-2 bg-surface-1 border border-border-base rounded-lg p-2 focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20 transition-colors">
           <textarea
             ref={textareaRef}
@@ -315,107 +254,6 @@ export function ChatPanel({ projectId }: Props) {
       </div>
     </div>
   )
-}
-
-// ─── Session history drawer ──────────────────────────────────
-
-function SessionHistory({
-  sessions,
-  activeSessionId,
-  onSelect,
-  onDelete,
-  onNewChat,
-  onClose,
-}: {
-  sessions: Session[]
-  activeSessionId: string | null
-  onSelect: (id: string) => void
-  onDelete: (id: string) => void
-  onNewChat: () => void
-  onClose: () => void
-}) {
-  return (
-    <div className="border-b border-border-weak bg-surface-1/50 shrink-0 max-h-[50%] overflow-y-auto">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-weak/50">
-        <span className="text-[10px] text-text-weaker uppercase tracking-wider font-sans">
-          Chat History
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={onNewChat}
-            className="flex items-center gap-1 px-2 py-0.5 text-[10px] text-accent hover:bg-accent/10 rounded transition-colors font-sans"
-          >
-            <Plus className="w-3 h-3" />
-            New
-          </button>
-          <button
-            onClick={onClose}
-            className="p-0.5 rounded hover:bg-surface-2 transition-colors"
-          >
-            <X className="w-3 h-3 text-text-weaker" />
-          </button>
-        </div>
-      </div>
-
-      {sessions.length === 0 ? (
-        <div className="p-4 text-center text-xs text-text-weaker font-sans">
-          No conversations yet
-        </div>
-      ) : (
-        <div className="py-1">
-          {sessions.map((session) => {
-            const isActive = session.id === activeSessionId
-            const msgCount = session.messages.length
-            const timeAgo = formatTimeAgo(session.updatedAt)
-
-            return (
-              <div
-                key={session.id}
-                onClick={() => onSelect(session.id)}
-                className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${
-                  isActive
-                    ? "bg-accent/10 text-accent"
-                    : "text-text-weak hover:bg-surface-2 hover:text-text-base"
-                }`}
-              >
-                <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs truncate font-sans">
-                    {session.title}
-                  </div>
-                  <div className="text-[10px] text-text-weaker font-sans">
-                    {msgCount} msg{msgCount !== 1 ? "s" : ""} · {timeAgo}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete(session.id)
-                  }}
-                  className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-3 transition-all shrink-0"
-                >
-                  <Trash2 className="w-3 h-3 text-text-weaker hover:text-status-error" />
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Utilities ───────────────────────────────────────────────
-
-function formatTimeAgo(timestamp: number): string {
-  const diff = Date.now() - timestamp
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return "now"
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
 }
 
 // ─── Message bubble ──────────────────────────────────────────
@@ -497,18 +335,5 @@ function MarkdownContent({ content }: { content: string }) {
         return <span key={i}>{part}</span>
       })}
     </>
-  )
-}
-
-function EmptyState() {
-  return (
-    <div className="h-full flex flex-col items-center justify-center text-center">
-      <Bot className="w-8 h-8 text-text-weaker mb-3" />
-      <p className="text-sm text-text-weak mb-1 font-sans">Ready to assist</p>
-      <p className="text-xs text-text-weaker max-w-[200px] font-sans">
-        Ask me to run commands, scan targets, or analyze results in your Exegol
-        container
-      </p>
-    </div>
   )
 }
