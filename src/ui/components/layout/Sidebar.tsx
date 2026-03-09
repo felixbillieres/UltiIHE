@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import { useContainerStore } from "../../stores/container"
 import { useSessionStore, type Session } from "../../stores/session"
+import { useFileStore } from "../../stores/files"
 import {
   FolderTree,
   MessageSquare,
@@ -205,6 +206,7 @@ function FileTree() {
           toggleDir={toggleDir}
           loadDir={loadDir}
           depth={0}
+          containerName={container.name}
         />
       ))}
     </div>
@@ -220,6 +222,7 @@ function DirNode({
   toggleDir,
   loadDir,
   depth,
+  containerName,
 }: {
   path: string
   name: string
@@ -229,10 +232,12 @@ function DirNode({
   toggleDir: (path: string) => void
   loadDir: (path: string) => void
   depth: number
+  containerName: string
 }) {
   const isExpanded = expanded.has(path)
   const isLoading = loading.has(path)
   const children = entries[path] || []
+  const openFile = useFileStore((s) => s.openFile)
 
   return (
     <div>
@@ -265,10 +270,12 @@ function DirNode({
                 toggleDir={toggleDir}
                 loadDir={loadDir}
                 depth={depth + 1}
+                containerName={containerName}
               />
             ) : (
               <div
                 key={entry.path}
+                onClick={() => openFile(containerName, entry.path)}
                 className="flex items-center gap-1 px-2 py-1 rounded hover:bg-surface-2 cursor-pointer text-text-weak hover:text-text-base transition-colors"
                 style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}
               >

@@ -18,7 +18,7 @@ interface Props {
 export function ChatPanel({ projectId }: Props) {
   const { activeSessionId, createSession, setActiveSession, updateSession } =
     useSessionStore()
-  const { activeModel, activeProvider, getActiveProvider } = useSettingsStore()
+  const { activeModel, activeProvider, activeMode, getActiveProvider } = useSettingsStore()
   const container = useContainerStore((s) => s.getActiveContainer())
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId)
 
@@ -101,6 +101,7 @@ export function ChatPanel({ projectId }: Props) {
           apiKey: provider.apiKey,
           containerName: container?.name,
           activeTerminalId,
+          mode: activeMode,
         }),
       })
 

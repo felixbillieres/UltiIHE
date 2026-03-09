@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom"
 import { type Project } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
 import { useSettingsStore } from "../../stores/settings"
+import { useFileStore } from "../../stores/files"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { Sidebar } from "../layout/Sidebar"
 import { ChatPanel } from "../chat/ChatPanel"
 import { TerminalArea } from "../terminal/TerminalArea"
+import { FileEditor } from "../files/FileEditor"
 import { SettingsDialog } from "../settings/SettingsDialog"
 import {
   Shield,
@@ -87,10 +89,8 @@ export function WorkspaceLayout({ project }: Props) {
           <Sidebar projectId={project.id} />
         </div>
 
-        {/* Terminal area (center) */}
-        <div className="flex-1 min-w-0">
-          <TerminalArea send={send} subscribe={subscribe} connected={connected} />
-        </div>
+        {/* Terminal + Editor area (center) */}
+        <CenterArea send={send} subscribe={subscribe} connected={connected} />
 
         {/* Chat panel */}
         <div
@@ -105,6 +105,66 @@ export function WorkspaceLayout({ project }: Props) {
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
       )}
+    </div>
+  )
+}
+
+function CenterArea({
+  send,
+  subscribe,
+  connected,
+}: {
+  send: (data: any) => void
+  subscribe: (handler: (data: any) => void) => () => void
+  connected: boolean
+}) {
+  const hasOpenFiles = useFileStore((s) => s.openFiles.length > 0)
+  const [editorHeight, setEditorHeight] = useState(300)
+  const [dragging, setDragging] = useState(false)
+
+  if (!hasOpenFiles) {
+    return (
+      <div className="flex-1 min-w-0">
+        <TerminalArea send={send} subscribe={subscribe} connected={connected} />
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 min-w-0 flex flex-col">
+      {/* File editor */}
+      <div className="shrink-0" style={{ height: editorHeight }}>
+        <FileEditor />
+      </div>
+
+      {/* Resize handle */}
+      <div
+        className={`h-1 cursor-row-resize shrink-0 transition-colors ${
+          dragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
+        }`}
+        onMouseDown={(e) => {
+          e.preventDefault()
+          setDragging(true)
+          const startY = e.clientY
+          const startH = editorHeight
+          function onMove(ev: MouseEvent) {
+            const delta = ev.clientY - startY
+            setEditorHeight(Math.max(120, Math.min(startH + delta, 600)))
+          }
+          function onUp() {
+            setDragging(false)
+            document.removeEventListener("mousemove", onMove)
+            document.removeEventListener("mouseup", onUp)
+          }
+          document.addEventListener("mousemove", onMove)
+          document.addEventListener("mouseup", onUp)
+        }}
+      />
+
+      {/* Terminal area */}
+      <div className="flex-1 min-h-0">
+        <TerminalArea send={send} subscribe={subscribe} connected={connected} />
+      </div>
     </div>
   )
 }

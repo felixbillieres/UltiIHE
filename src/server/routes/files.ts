@@ -49,6 +49,36 @@ filesRoutes.get("/files/:container/list", async (c) => {
   }
 })
 
+filesRoutes.post("/files/:container/write", async (c) => {
+  const container = c.req.param("container")
+  const body = await c.req.json()
+  const { path, content } = body as { path: string; content: string }
+
+  if (!container || !path) return c.json({ error: "Missing params" }, 400)
+  if (!validateContainerName(container)) return c.json({ error: "Invalid container" }, 400)
+  if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
+  if (typeof content !== "string") return c.json({ error: "Content must be a string" }, 400)
+
+  try {
+    const proc = Bun.spawn(
+      ["docker", "exec", "-i", container, "tee", path],
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+    )
+    proc.stdin.write(content)
+    proc.stdin.end()
+    await proc.exited
+
+    if (proc.exitCode !== 0) {
+      const stderr = await new Response(proc.stderr).text()
+      throw new Error(stderr || `Exit code ${proc.exitCode}`)
+    }
+
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
 filesRoutes.get("/files/:container/read", async (c) => {
   const container = c.req.param("container")
   const path = c.req.query("path")
