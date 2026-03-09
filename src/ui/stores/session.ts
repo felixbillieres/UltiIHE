@@ -1,25 +1,44 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
+// ─── Types ────────────────────────────────────────────────────
+
+export interface Message {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  createdAt: number
+}
+
 export interface Session {
   id: string
   projectId: string
   title: string
-  agentId: string
   createdAt: number
   updatedAt: number
-  messageCount: number
+  messages: Message[]
 }
+
+// ─── Store ────────────────────────────────────────────────────
 
 interface SessionStore {
   sessions: Session[]
   activeSessionId: string | null
 
+  // Session CRUD
   createSession: (projectId: string, title?: string) => Session
   deleteSession: (id: string) => void
   setActiveSession: (id: string | null) => void
   getProjectSessions: (projectId: string) => Session[]
-  updateSession: (id: string, updates: Partial<Session>) => void
+
+  // Message management
+  addMessage: (sessionId: string, message: Message) => void
+  updateMessageContent: (sessionId: string, messageId: string, content: string) => void
+  getActiveMessages: () => Message[]
+
+  // Convenience
+  getActiveSession: () => Session | undefined
+  startNewChat: (projectId: string) => void
 }
 
 export const useSessionStore = create<SessionStore>()(
@@ -32,20 +51,23 @@ export const useSessionStore = create<SessionStore>()(
         const session: Session = {
           id: crypto.randomUUID(),
           projectId,
-          title: title || `Session - ${new Date().toLocaleString()}`,
-          agentId: "build",
+          title: title || `New chat`,
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          messageCount: 0,
+          messages: [],
         }
-        set((s) => ({ sessions: [...s.sessions, session] }))
+        set((s) => ({
+          sessions: [session, ...s.sessions],
+          activeSessionId: session.id,
+        }))
         return session
       },
 
       deleteSession: (id) => {
         set((s) => ({
-          sessions: s.sessions.filter((s) => s.id !== id),
-          activeSessionId: s.activeSessionId === id ? null : s.activeSessionId,
+          sessions: s.sessions.filter((sess) => sess.id !== id),
+          activeSessionId:
+            s.activeSessionId === id ? null : s.activeSessionId,
         }))
       },
 
@@ -56,16 +78,69 @@ export const useSessionStore = create<SessionStore>()(
           .sessions.filter((s) => s.projectId === projectId)
           .sort((a, b) => b.updatedAt - a.updatedAt),
 
-      updateSession: (id, updates) => {
+      addMessage: (sessionId, message) => {
         set((s) => ({
-          sessions: s.sessions.map((session) =>
-            session.id === id
-              ? { ...session, ...updates, updatedAt: Date.now() }
-              : session,
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? {
+                  ...sess,
+                  messages: [...sess.messages, message],
+                  updatedAt: Date.now(),
+                  // Auto-title from first user message
+                  title:
+                    sess.messages.length === 0 && message.role === "user"
+                      ? message.content.slice(0, 50) +
+                        (message.content.length > 50 ? "..." : "")
+                      : sess.title,
+                }
+              : sess,
           ),
         }))
       },
+
+      updateMessageContent: (sessionId, messageId, content) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? {
+                  ...sess,
+                  messages: sess.messages.map((m) =>
+                    m.id === messageId ? { ...m, content } : m,
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : sess,
+          ),
+        }))
+      },
+
+      getActiveMessages: () => {
+        const state = get()
+        if (!state.activeSessionId) return []
+        const session = state.sessions.find(
+          (s) => s.id === state.activeSessionId,
+        )
+        return session?.messages || []
+      },
+
+      getActiveSession: () => {
+        const state = get()
+        if (!state.activeSessionId) return undefined
+        return state.sessions.find((s) => s.id === state.activeSessionId)
+      },
+
+      startNewChat: (projectId) => {
+        const session = get().createSession(projectId)
+        set({ activeSessionId: session.id })
+      },
     }),
-    { name: "ultiIHE-sessions" },
+    {
+      name: "ultiIHE-sessions",
+      // Don't persist too many sessions — keep last 50
+      partialize: (state) => ({
+        sessions: state.sessions.slice(0, 50),
+        activeSessionId: state.activeSessionId,
+      }),
+    },
   ),
 )
