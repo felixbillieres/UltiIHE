@@ -304,6 +304,7 @@ const broadcastToClients = (message: object) => {
 commandQueue.setBroadcast(broadcastToClients)
 questionQueue.setBroadcast(broadcastToClients)
 toolApprovalQueue.setBroadcast(broadcastToClients)
+terminalManager.setBroadcast((_terminalId, message) => broadcastToClients(message))
 
 export const websocketHandlers = {
   open(ws: ServerWebSocket<unknown>) {

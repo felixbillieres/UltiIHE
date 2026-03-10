@@ -31,8 +31,10 @@ const port = 3001
 
 const server = Bun.serve({
   port,
+  idleTimeout: 255, // max idle timeout (seconds) — prevents timeout on long AI streams
   fetch(req, server) {
-    const url = new URL(req.url)
+    // Bun can pass relative paths — need a base URL to parse
+    const url = new URL(req.url, `http://localhost:${port}`)
 
     // Handle WebSocket upgrade at /ws
     if (url.pathname === "/ws") {

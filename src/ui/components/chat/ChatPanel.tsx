@@ -549,53 +549,56 @@ export function ChatPanel({ projectId }: Props) {
       </div>
 
       {/* Permission banners — command + tool approval */}
-      {pendingCommands.length > 0 && (
+      {/* Approval banners — show both queues, commands first then tools */}
+      {pendingCommands.map((cmd) => (
         <PermissionBanner
-          command={pendingCommands[0]}
+          key={`cmd-${cmd.id}`}
+          command={cmd}
           queueSize={pendingCommands.length}
           onAllowOnce={() => {
             wsSend({
               type: "command:approve",
-              data: { commandId: pendingCommands[0].id },
+              data: { commandId: cmd.id },
             })
-            removePendingCommand(pendingCommands[0].id)
+            removePendingCommand(cmd.id)
           }}
           onAllowAlways={() => {
             wsSend({
               type: "command:approve",
-              data: { commandId: pendingCommands[0].id, allowAll: true },
+              data: { commandId: cmd.id, allowAll: true },
             })
-            removePendingCommand(pendingCommands[0].id)
+            removePendingCommand(cmd.id)
             setApprovalMode("allow-all-session")
             wsSend({ type: "command:set-mode", data: { mode: "allow-all-session" } })
           }}
           onDeny={() => {
             wsSend({
               type: "command:reject",
-              data: { commandId: pendingCommands[0].id },
+              data: { commandId: cmd.id },
             })
-            removePendingCommand(pendingCommands[0].id)
+            removePendingCommand(cmd.id)
           }}
         />
-      )}
-      {pendingTools.length > 0 && pendingCommands.length === 0 && (
+      ))}
+      {pendingTools.map((tool) => (
         <ToolPermissionBanner
-          tool={pendingTools[0]}
+          key={`tool-${tool.id}`}
+          tool={tool}
           queueSize={pendingTools.length}
           onAllowOnce={() => {
-            wsSend({ type: "tool:approve", data: { id: pendingTools[0].id } })
-            removePendingTool(pendingTools[0].id)
+            wsSend({ type: "tool:approve", data: { id: tool.id } })
+            removePendingTool(tool.id)
           }}
           onAllowAlways={() => {
-            wsSend({ type: "tool:approve", data: { id: pendingTools[0].id, allowAlways: true } })
-            removePendingTool(pendingTools[0].id)
+            wsSend({ type: "tool:approve", data: { id: tool.id, allowAlways: true } })
+            removePendingTool(tool.id)
           }}
           onDeny={() => {
-            wsSend({ type: "tool:reject", data: { id: pendingTools[0].id } })
-            removePendingTool(pendingTools[0].id)
+            wsSend({ type: "tool:reject", data: { id: tool.id } })
+            removePendingTool(tool.id)
           }}
         />
-      )}
+      ))}
 
       {/* Input area */}
       <div className="shrink-0 border-t border-border-weak">
@@ -1279,6 +1282,8 @@ function toolSummary(name: string, args: Record<string, unknown>): string {
       return `file_edit(${args.container}:${args.filePath})`
     case "todo_write":
       return `todo_write(${Array.isArray(args.todos) ? args.todos.length : 0} items)`
+    case "terminal_create":
+      return `terminal_create("${args.name || "unnamed"}", container: ${args.container || "?"})`
     default:
       return `${name}()`
   }

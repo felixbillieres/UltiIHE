@@ -54,6 +54,9 @@ const passthrough = {
 // ── Tools that need approval ────────────────────────────────────
 // terminal_write already has its own command queue approval — don't double-wrap
 const approved = {
+  terminal_create: withApproval("terminal_create", terminalTools.terminal_create,
+    (a) => `Create terminal "${a.name || "unnamed"}" on ${a.container}`,
+  ),
   terminal_write: terminalTools.terminal_write,
 
   file_write: withApproval("file_write", fileTools.file_write,

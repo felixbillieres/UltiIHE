@@ -8,6 +8,32 @@ import type { Tool } from "ai"
  * These let the AI read output from any terminal, list terminals, and write commands.
  */
 
+export const terminalCreateTool: Tool<
+  { container: string; name?: string },
+  { terminalId: string; name: string; container: string } | { error: string }
+> = {
+  description:
+    "Create a new terminal connected to a specific container. Use this when you need " +
+    "additional terminals for parallel command execution (e.g. running nmap in one terminal " +
+    "and gobuster in another). Each terminal is an independent shell session inside the container.",
+  inputSchema: z.object({
+    container: z.string().describe("The Docker container name to connect to (e.g. 'exegol-bugbounty')"),
+    name: z.string().optional().describe("A descriptive name for the terminal (e.g. 'nmap-scan', 'gobuster-web')"),
+  }),
+  execute: async ({ container, name }) => {
+    try {
+      const terminal = await terminalManager.createFromTool(container, name)
+      return {
+        terminalId: terminal.id,
+        name: terminal.name,
+        container: terminal.container,
+      }
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
+  },
+}
+
 export const terminalReadTool: Tool<
   { terminalId: string; lines: number },
   { terminalId: string; name: string; container: string; alive: boolean; lineCount: number; output: string } | { error: string }
@@ -113,6 +139,7 @@ export const terminalWriteTool: Tool<
 
 /** All terminal tools bundled for use in streamText() */
 export const terminalTools = {
+  terminal_create: terminalCreateTool,
   terminal_read: terminalReadTool,
   terminal_list: terminalListTool,
   terminal_write: terminalWriteTool,

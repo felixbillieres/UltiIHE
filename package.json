@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bunx --bun vite",
-    "dev:server": "bun run src/server/index.ts",
+    "dev:server": "bun --watch run src/server/index.ts",
     "dev:all": "concurrently \"bun run dev:server\" \"bun run dev\"",
     "build": "vite build",
     "preview": "vite preview",

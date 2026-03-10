@@ -28,6 +28,26 @@ async function getPtySpawn() {
 
 class TerminalManager {
   private terminals = new Map<string, Terminal>()
+  private _broadcast: WsBroadcast | null = null
+
+  /** Store a broadcast function so tools can create terminals without a WS ref */
+  setBroadcast(fn: WsBroadcast): void {
+    this._broadcast = fn
+  }
+
+  /** Create a terminal using the stored broadcast (for AI tool calls) */
+  async createFromTool(container: string, name?: string): Promise<Terminal> {
+    if (!this._broadcast) throw new Error("No broadcast function set — server not ready")
+    const terminal = await this.create(container, name, this._broadcast)
+    console.log(`[Terminal] AI-created: ${terminal.name} (${terminal.id}) on ${container}, broadcasting terminal:created`)
+    // Notify frontend so it adds the tab — ws.ts handleTerminalCreate does this
+    // for user-created terminals, but AI-created ones bypass that handler.
+    this._broadcast(terminal.id, {
+      type: "terminal:created",
+      data: { terminalId: terminal.id, name: terminal.name, container },
+    })
+    return terminal
+  }
 
   getTerminal(id: string): Terminal | undefined {
     return this.terminals.get(id)
