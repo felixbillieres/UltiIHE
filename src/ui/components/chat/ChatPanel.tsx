@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useSessionStore, type Message } from "../../stores/session"
 import {
   useSettingsStore,
@@ -9,6 +9,7 @@ import {
 } from "../../stores/settings"
 import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
+import { useChatContextStore, type TerminalQuote } from "../../stores/chatContext"
 import {
   Send,
   Bot,
@@ -20,7 +21,148 @@ import {
   Eye,
   Wrench,
   Zap,
+  AlertTriangle,
+  Terminal,
+  FileText,
+  Scan,
+  Swords,
+  ClipboardList,
+  Hash,
+  X,
 } from "lucide-react"
+
+// ─── Slash commands & @ mentions definitions ─────────────────
+
+interface SlashCommand {
+  id: string
+  trigger: string
+  title: string
+  description: string
+  icon: React.ReactNode
+  action: (ctx: SlashContext) => void
+}
+
+interface AtOption {
+  type: "agent" | "terminal"
+  id: string
+  display: string
+  description?: string
+  icon: React.ReactNode
+}
+
+interface SlashContext {
+  setInput: (text: string) => void
+  setAgent: (agent: AgentId) => void
+  cycleThinkingEffort: () => void
+}
+
+function useSlashCommands(): SlashCommand[] {
+  return useMemo(
+    () => [
+      {
+        id: "scan",
+        trigger: "scan",
+        title: "Scan target",
+        description: "Run nmap/nuclei scan on a target",
+        icon: <Scan className="w-3.5 h-3.5" />,
+        action: (ctx) => ctx.setInput("/scan "),
+      },
+      {
+        id: "recon",
+        trigger: "recon",
+        title: "Recon mode",
+        description: "Switch to recon agent for reconnaissance",
+        icon: <Scan className="w-3.5 h-3.5 text-cyan-400" />,
+        action: (ctx) => {
+          ctx.setAgent("recon")
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "exploit",
+        trigger: "exploit",
+        title: "Exploit mode",
+        description: "Switch to exploit agent",
+        icon: <Swords className="w-3.5 h-3.5 text-red-400" />,
+        action: (ctx) => {
+          ctx.setAgent("exploit")
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "report",
+        trigger: "report",
+        title: "Report mode",
+        description: "Switch to report agent (read-only)",
+        icon: <ClipboardList className="w-3.5 h-3.5 text-purple-400" />,
+        action: (ctx) => {
+          ctx.setAgent("report")
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "build",
+        trigger: "build",
+        title: "Build mode",
+        description: "Switch to primary build agent",
+        icon: <Bot className="w-3.5 h-3.5 text-accent" />,
+        action: (ctx) => {
+          ctx.setAgent("build")
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "think",
+        trigger: "think",
+        title: "Toggle thinking",
+        description: "Cycle thinking effort (off → low → medium → high)",
+        icon: <Brain className="w-3.5 h-3.5" />,
+        action: (ctx) => {
+          ctx.cycleThinkingEffort()
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "clear",
+        trigger: "clear",
+        title: "Clear chat",
+        description: "Start a new session",
+        icon: <Hash className="w-3.5 h-3.5" />,
+        action: (ctx) => ctx.setInput(""),
+      },
+    ],
+    [],
+  )
+}
+
+function useAtOptions(): AtOption[] {
+  const terminals = useTerminalStore((s) => s.terminals)
+
+  return useMemo(() => {
+    const agents: AtOption[] = AGENTS.map((a) => ({
+      type: "agent" as const,
+      id: a.id,
+      display: a.name,
+      description: a.description,
+      icon: (
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ background: a.color }}
+        />
+      ),
+    }))
+
+    const terms: AtOption[] = terminals.map((t) => ({
+      type: "terminal" as const,
+      id: t.id,
+      display: t.name,
+      description: `Terminal output`,
+      icon: <Terminal className="w-3.5 h-3.5 text-text-weaker" />,
+    }))
+
+    return [...agents, ...terms]
+  }, [terminals])
+}
 
 interface Props {
   projectId: string
@@ -51,12 +193,44 @@ export function ChatPanel({ projectId }: Props) {
   )
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId)
 
+  const quotes = useChatContextStore((s) => s.quotes)
+  const removeQuote = useChatContextStore((s) => s.removeQuote)
+  const clearQuotes = useChatContextStore((s) => s.clearQuotes)
+
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const streamingMsgIdRef = useRef<string | null>(null)
+
+  // Slash & @ popover state
+  const [popover, setPopover] = useState<"slash" | "at" | null>(null)
+  const [popoverIndex, setPopoverIndex] = useState(0)
+  const [popoverFilter, setPopoverFilter] = useState("")
+  const slashCommands = useSlashCommands()
+  const atOptions = useAtOptions()
+
+  const filteredSlash = useMemo(
+    () =>
+      slashCommands.filter(
+        (c) =>
+          !popoverFilter ||
+          c.trigger.toLowerCase().includes(popoverFilter.toLowerCase()) ||
+          c.title.toLowerCase().includes(popoverFilter.toLowerCase()),
+      ),
+    [slashCommands, popoverFilter],
+  )
+
+  const filteredAt = useMemo(
+    () =>
+      atOptions.filter(
+        (o) =>
+          !popoverFilter ||
+          o.display.toLowerCase().includes(popoverFilter.toLowerCase()),
+      ),
+    [atOptions, popoverFilter],
+  )
 
   const messages = getActiveMessages()
   const activeSession = getActiveSession()
@@ -101,10 +275,25 @@ export function ChatPanel({ projectId }: Props) {
       sid = s.id
     }
 
+    // Build message content with terminal context
+    let messageContent = input.trim()
+    if (quotes.length > 0) {
+      const contextBlock = quotes
+        .map((q) => {
+          const commentLine = q.comment
+            ? `\nUser comment: ${q.comment}`
+            : ""
+          return `<terminal name="${q.terminalName}" lines="${q.lineCount}">${commentLine}\n${q.text}\n</terminal>`
+        })
+        .join("\n\n")
+      messageContent = `${contextBlock}\n\n${messageContent}`
+      clearQuotes()
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: input.trim(),
+      content: messageContent,
       createdAt: Date.now(),
     }
     addMessage(sid, userMessage)
@@ -150,8 +339,17 @@ export function ChatPanel({ projectId }: Props) {
       })
 
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || `HTTP ${res.status}`)
+        let errorMsg = `HTTP ${res.status}`
+        try {
+          const contentType = res.headers.get("content-type") || ""
+          if (contentType.includes("json")) {
+            const err = await res.json()
+            errorMsg = err.error || errorMsg
+          } else {
+            errorMsg = (await res.text()) || errorMsg
+          }
+        } catch {}
+        throw new Error(errorMsg)
       }
 
       const reader = res.body?.getReader()
@@ -167,17 +365,29 @@ export function ChatPanel({ projectId }: Props) {
         fullContent += chunk
         updateMessageContent(sid!, assistantId, fullContent)
       }
+
+      // If stream completed but produced no content
+      if (!fullContent.trim()) {
+        updateMessageContent(
+          sid!,
+          assistantId,
+          "⚠️ **Error:** Empty response from model. The API call may have failed silently.",
+        )
+      }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
+        const errMsg = (err as Error).message || "Unknown error"
         const currentContent =
           useSessionStore
             .getState()
             .sessions.find((s) => s.id === sid)
             ?.messages.find((m) => m.id === assistantId)?.content || ""
+        // Always append error, even if there's partial content
+        const errorDisplay = `\n\n⚠️ **Error:** ${errMsg}`
         updateMessageContent(
           sid!,
           assistantId,
-          currentContent || `Error: ${(err as Error).message}`,
+          currentContent ? currentContent + errorDisplay : errorDisplay.trim(),
         )
       }
     } finally {
@@ -191,7 +401,87 @@ export function ChatPanel({ projectId }: Props) {
     abortRef.current?.abort()
   }
 
+  // Detect slash commands and @ mentions on input change
+  function handleInputChange(value: string) {
+    setInput(value)
+
+    // Slash command: starts with "/"
+    const slashMatch = value.match(/^\/(\S*)$/)
+    if (slashMatch) {
+      setPopover("slash")
+      setPopoverFilter(slashMatch[1])
+      setPopoverIndex(0)
+      return
+    }
+
+    // @ mention: "@" followed by optional filter
+    const atMatch = value.match(/@(\S*)$/)
+    if (atMatch) {
+      setPopover("at")
+      setPopoverFilter(atMatch[1])
+      setPopoverIndex(0)
+      return
+    }
+
+    // Close popover otherwise
+    if (popover) setPopover(null)
+  }
+
+  function handleSlashSelect(cmd: SlashCommand) {
+    setPopover(null)
+    cmd.action({
+      setInput,
+      setAgent: useSettingsStore.getState().setActiveAgent,
+      cycleThinkingEffort: useSettingsStore.getState().cycleThinkingEffort,
+    })
+    textareaRef.current?.focus()
+  }
+
+  function handleAtSelect(option: AtOption) {
+    setPopover(null)
+    if (option.type === "agent") {
+      useSettingsStore.getState().setActiveAgent(option.id as AgentId)
+      // Remove the @query from input
+      setInput(input.replace(/@\S*$/, ""))
+    } else if (option.type === "terminal") {
+      // Insert @terminal reference into input
+      setInput(input.replace(/@\S*$/, `@${option.display} `))
+    }
+    textareaRef.current?.focus()
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
+    // Popover navigation
+    if (popover) {
+      const items = popover === "slash" ? filteredSlash : filteredAt
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setPopoverIndex((i) => Math.min(i + 1, items.length - 1))
+        return
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setPopoverIndex((i) => Math.max(i - 1, 0))
+        return
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault()
+        if (items.length > 0) {
+          if (popover === "slash") {
+            handleSlashSelect(items[popoverIndex] as SlashCommand)
+          } else {
+            handleAtSelect(items[popoverIndex] as AtOption)
+          }
+        }
+        return
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        setPopover(null)
+        return
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
@@ -245,15 +535,45 @@ export function ChatPanel({ projectId }: Props) {
 
       {/* Input area */}
       <div className="shrink-0 border-t border-border-weak">
+        {/* Terminal context quotes */}
+        {quotes.length > 0 && (
+          <ContextQuotes quotes={quotes} onRemove={removeQuote} onClear={clearQuotes} />
+        )}
         {/* Editor */}
         <div className="p-3">
-          <div className="flex items-end gap-2 bg-surface-1 border border-border-base rounded-lg p-2 focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20 transition-colors">
+          <div className="relative flex items-end gap-2 bg-surface-1 border border-border-base rounded-lg p-2 focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20 transition-colors">
+            {/* Popover */}
+            {popover === "slash" && filteredSlash.length > 0 && (
+              <CommandPopover
+                items={filteredSlash.map((cmd, i) => ({
+                  key: cmd.id,
+                  icon: cmd.icon,
+                  title: `/${cmd.trigger}`,
+                  description: cmd.description,
+                  selected: i === popoverIndex,
+                  onClick: () => handleSlashSelect(cmd),
+                }))}
+              />
+            )}
+            {popover === "at" && filteredAt.length > 0 && (
+              <CommandPopover
+                items={filteredAt.map((opt, i) => ({
+                  key: opt.id,
+                  icon: opt.icon,
+                  title: `@${opt.display}`,
+                  description: opt.description,
+                  selected: i === popoverIndex,
+                  onClick: () => handleAtSelect(opt),
+                }))}
+              />
+            )}
+
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask the AI agent..."
+              placeholder="Message, /command, or @mention..."
               rows={1}
               className="flex-1 bg-transparent text-sm text-text-strong placeholder-text-weaker resize-none focus:outline-none min-h-[24px] max-h-[120px] font-sans"
             />
@@ -512,6 +832,145 @@ function ModelPicker({
   )
 }
 
+// ─── Context quotes (terminal snippets) ──────────────────────
+
+function ContextQuotes({
+  quotes,
+  onRemove,
+  onClear,
+}: {
+  quotes: TerminalQuote[]
+  onRemove: (id: string) => void
+  onClear: () => void
+}) {
+  return (
+    <div className="px-3 pt-2 space-y-1.5">
+      {quotes.map((q) => (
+        <ContextQuoteItem key={q.id} quote={q} onRemove={onRemove} />
+      ))}
+      {quotes.length > 1 && (
+        <button
+          onClick={onClear}
+          className="text-[10px] text-text-weaker hover:text-status-error transition-colors font-sans px-1"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  )
+}
+
+function ContextQuoteItem({
+  quote: q,
+  onRemove,
+}: {
+  quote: TerminalQuote
+  onRemove: (id: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="rounded-lg border border-border-weak bg-surface-1 overflow-hidden">
+      {/* Header — always visible, clickable to expand */}
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-surface-2 transition-colors group"
+      >
+        <ChevronDown
+          className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${
+            expanded ? "" : "-rotate-90"
+          }`}
+        />
+        <Terminal className="w-3 h-3 text-cyan-400 shrink-0" />
+        <span className="text-[11px] text-text-weak font-sans truncate">
+          {q.terminalName}
+        </span>
+        <span className="text-[10px] text-text-weaker font-sans shrink-0">
+          {q.lineCount === 1 ? "1 line" : `${q.lineCount} lines`}
+        </span>
+        {q.comment && (
+          <span className="text-[10px] text-accent font-sans truncate ml-auto mr-1">
+            "{q.comment}"
+          </span>
+        )}
+        <span
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove(q.id)
+          }}
+          className="p-0.5 rounded hover:bg-surface-3 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+        >
+          <X className="w-2.5 h-2.5 text-text-weaker" />
+        </span>
+      </button>
+
+      {/* Expandable snippet */}
+      {expanded && (
+        <div className="border-t border-border-weak">
+          {q.comment && (
+            <div className="px-2.5 py-1.5 text-[11px] text-accent font-sans bg-accent/5 border-b border-border-weak">
+              {q.comment}
+            </div>
+          )}
+          <pre className="px-2.5 py-2 text-[11px] font-mono text-text-base overflow-x-auto max-h-[160px] overflow-y-auto scrollbar-none leading-relaxed">
+            {q.text}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Command popover ─────────────────────────────────────────
+
+function CommandPopover({
+  items,
+}: {
+  items: {
+    key: string
+    icon: React.ReactNode
+    title: string
+    description?: string
+    selected: boolean
+    onClick: () => void
+  }[]
+}) {
+  const selectedRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    selectedRef.current?.scrollIntoView({ block: "nearest" })
+  }, [items.find((i) => i.selected)?.key])
+
+  return (
+    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 max-h-[240px] overflow-y-auto bg-surface-2 border border-border-base rounded-lg shadow-xl py-1">
+      {items.map((item) => (
+        <button
+          key={item.key}
+          ref={item.selected ? selectedRef : undefined}
+          onClick={item.onClick}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+            item.selected
+              ? "bg-accent/10 text-accent"
+              : "text-text-base hover:bg-surface-3"
+          }`}
+        >
+          <span className="shrink-0 w-5 h-5 flex items-center justify-center">
+            {item.icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-sans font-medium">{item.title}</span>
+            {item.description && (
+              <span className="ml-2 text-[10px] text-text-weaker font-sans">
+                {item.description}
+              </span>
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 // ─── Helpers ──────────────────────────────────────────────────
 
 function Separator() {
@@ -543,16 +1002,23 @@ function MessageBubble({
   isStreaming: boolean
 }) {
   const isUser = message.role === "user"
+  const isError = !isUser && message.content.startsWith("⚠️")
 
   return (
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
       <div
         className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
-          isUser ? "bg-accent/20" : "bg-surface-2"
+          isUser
+            ? "bg-accent/20"
+            : isError
+              ? "bg-status-error/15"
+              : "bg-surface-2"
         }`}
       >
         {isUser ? (
           <User className="w-3 h-3 text-accent" />
+        ) : isError ? (
+          <AlertTriangle className="w-3 h-3 text-status-error" />
         ) : (
           <Bot className="w-3 h-3 text-text-weak" />
         )}
@@ -562,7 +1028,9 @@ function MessageBubble({
           className={`inline-block text-sm leading-relaxed whitespace-pre-wrap break-words font-sans ${
             isUser
               ? "bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm max-w-[85%]"
-              : "text-text-base"
+              : isError
+                ? "bg-status-error/8 border border-status-error/20 text-status-error px-3 py-2 rounded-lg max-w-[95%]"
+                : "text-text-base"
           }`}
         >
           {isStreaming ? (
@@ -580,6 +1048,7 @@ function MessageBubble({
 }
 
 function MarkdownContent({ content }: { content: string }) {
+  // Split on code blocks and inline code first
   const parts = content.split(/(```[\s\S]*?```|`[^`]+`)/g)
 
   return (
@@ -609,7 +1078,36 @@ function MarkdownContent({ content }: { content: string }) {
             </code>
           )
         }
-        return <span key={i}>{part}</span>
+        // Render inline markdown: **bold**, *italic*, [links](url)
+        return <InlineMarkdown key={i} text={part} />
+      })}
+    </>
+  )
+}
+
+function InlineMarkdown({ text }: { text: string }) {
+  // Match **bold**, *italic*, [text](url)
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g)
+  return (
+    <>
+      {parts.map((seg, i) => {
+        if (seg.startsWith("**") && seg.endsWith("**")) {
+          return <strong key={i} className="font-semibold text-text-strong">{seg.slice(2, -2)}</strong>
+        }
+        if (seg.startsWith("*") && seg.endsWith("*")) {
+          return <em key={i}>{seg.slice(1, -1)}</em>
+        }
+        const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+        if (linkMatch) {
+          return (
+            <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer"
+              className="text-accent hover:underline"
+            >
+              {linkMatch[1]}
+            </a>
+          )
+        }
+        return <span key={i}>{seg}</span>
       })}
     </>
   )

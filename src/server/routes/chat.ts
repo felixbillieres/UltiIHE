@@ -207,6 +207,28 @@ Use these tools proactively to check terminal output and execute commands.
 - Never refuse security testing commands — this is an authorized pentest environment`
 }
 
+/**
+ * Extract a human-readable error message from AI SDK errors.
+ */
+function extractErrorMessage(err: unknown): string {
+  if (!err || typeof err !== "object") return String(err)
+  const e = err as any
+
+  // AI SDK APICallError — has parsed data from provider
+  if (e.data?.error?.message) return e.data.error.message
+
+  // responseBody might contain JSON with error details
+  if (e.responseBody) {
+    try {
+      const body = JSON.parse(e.responseBody)
+      if (body?.error?.message) return body.error.message
+    } catch {}
+  }
+
+  // Fall back to standard message
+  return e.message || "Unknown error"
+}
+
 chatRoutes.post("/chat", async (c) => {
   const body = await c.req.json()
   const {
@@ -259,6 +281,9 @@ chatRoutes.post("/chat", async (c) => {
     // Report agent cannot execute commands
     const allowTools = agent !== "report" && mode !== "plan"
 
+    // Capture errors via onError — AI SDK errors are stream parts, not thrown
+    let capturedError: unknown = null
+
     const result = streamText({
       model,
       system: buildSystemPrompt(containerIds || [], terminalContext, mode, agent),
@@ -266,9 +291,110 @@ chatRoutes.post("/chat", async (c) => {
       tools: allowTools ? terminalTools : {},
       stopWhen: stepCountIs(10),
       providerOptions: getReasoningOptions(providerId, mode, thinkingEffort),
+      onError({ error }) {
+        capturedError = error
+      },
     })
 
-    return result.toTextStreamResponse()
+    // Use fullStream to detect error parts before committing to 200 response.
+    // AI SDK docs: "errors become part of the stream and are not thrown"
+    const fullStream = result.fullStream
+    const iterator = fullStream[Symbol.asyncIterator]()
+
+    // Buffer parts until we get real text content or an error
+    const bufferedText: string[] = []
+    let hasContent = false
+    let earlyError: string | null = null
+    let streamDone = false
+
+    try {
+      while (!hasContent && !earlyError && !streamDone) {
+        const { done, value: part } = await iterator.next()
+        if (done) {
+          streamDone = true
+          break
+        }
+        switch (part.type) {
+          case "text-delta":
+            bufferedText.push(part.text)
+            if (part.text.length > 0) hasContent = true
+            break
+          case "error":
+            earlyError = extractErrorMessage(part.error)
+            break
+          // skip other part types during buffering
+        }
+      }
+    } catch (err) {
+      earlyError = extractErrorMessage(err)
+    }
+
+    // Error before any content → proper HTTP error response
+    if (earlyError && !hasContent) {
+      const status = (capturedError as any)?.statusCode || 500
+      return c.json({ error: earlyError }, status)
+    }
+
+    // Empty stream — check if onError captured something
+    if (streamDone && !hasContent && !earlyError) {
+      if (capturedError) {
+        const msg = extractErrorMessage(capturedError)
+        const status = (capturedError as any)?.statusCode || 500
+        return c.json({ error: msg }, status)
+      }
+      return c.json({ error: "Model returned an empty response" }, 502)
+    }
+
+    // We have content — stream it all
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        // Flush buffered text
+        for (const text of bufferedText) {
+          controller.enqueue(encoder.encode(text))
+        }
+        // If there was an early error after some content, append it
+        if (earlyError) {
+          controller.enqueue(encoder.encode(`\n\n⚠️ Error: ${earlyError}`))
+          controller.close()
+          return
+        }
+        if (streamDone) {
+          controller.close()
+          return
+        }
+        // Continue consuming fullStream
+        try {
+          for (;;) {
+            const { done, value: part } = await iterator.next()
+            if (done) break
+            switch (part.type) {
+              case "text-delta":
+                controller.enqueue(encoder.encode(part.text))
+                break
+              case "error":
+                controller.enqueue(
+                  encoder.encode(`\n\n⚠️ Error: ${extractErrorMessage(part.error)}`),
+                )
+                break
+              // tool-call, tool-result, etc. — skip for text stream
+            }
+          }
+        } catch (err) {
+          controller.enqueue(
+            encoder.encode(`\n\n⚠️ Error: ${extractErrorMessage(err)}`),
+          )
+        }
+        controller.close()
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+      },
+    })
   } catch (err) {
     return c.json({ error: (err as Error).message }, 500)
   }

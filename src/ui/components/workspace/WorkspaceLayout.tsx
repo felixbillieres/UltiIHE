@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { type Project, useProjectStore } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
@@ -20,7 +20,46 @@ import {
   Sparkles,
   Box,
   X,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  ArrowLeftRight,
 } from "lucide-react"
+
+// ─── Layout persistence ───────────────────────────────────────
+
+const LAYOUT_KEY = "ultiIHE-layout"
+
+interface LayoutState {
+  sessionPanelOpen: boolean
+  chatPanelOpen: boolean
+  swapped: boolean // false = session left + chat right, true = chat left + session right
+  sessionPanelWidth: number
+  chatPanelWidth: number
+}
+
+const DEFAULT_LAYOUT: LayoutState = {
+  sessionPanelOpen: true,
+  chatPanelOpen: true,
+  swapped: false,
+  sessionPanelWidth: 224,
+  chatPanelWidth: 400,
+}
+
+function loadLayout(): LayoutState {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (raw) return { ...DEFAULT_LAYOUT, ...JSON.parse(raw) }
+  } catch {}
+  return DEFAULT_LAYOUT
+}
+
+function saveLayout(state: LayoutState) {
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify(state))
+}
+
+// ─── Main component ──────────────────────────────────────────
 
 interface Props {
   project: Project
@@ -35,18 +74,35 @@ export function WorkspaceLayout({ project }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const [showContainerManager, setShowContainerManager] = useState(false)
   const [rightTab, setRightTab] = useState<"chat" | "files">("chat")
-  const [rightPanelWidth] = useState(400)
 
-  // Fetch containers on mount
+  // Layout state
+  const [layout, setLayoutRaw] = useState<LayoutState>(loadLayout)
+  const setLayout = useCallback((updater: (prev: LayoutState) => LayoutState) => {
+    setLayoutRaw((prev) => {
+      const next = updater(prev)
+      saveLayout(next)
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     fetchContainers()
   }, [fetchContainers])
 
-  // WebSocket is always connected (terminals can be from any container)
   const { send, connected, subscribe } = useWebSocket({ enabled: true })
-
-  // Show container manager if project has no containers
   const hasContainers = project.containerIds.length > 0
+
+  // Panel toggle handlers
+  const toggleSessionPanel = () =>
+    setLayout((l) => ({ ...l, sessionPanelOpen: !l.sessionPanelOpen }))
+  const toggleChatPanel = () =>
+    setLayout((l) => ({ ...l, chatPanelOpen: !l.chatPanelOpen }))
+  const swapPanels = () =>
+    setLayout((l) => ({ ...l, swapped: !l.swapped }))
+
+  // Determine which panel is on which side based on swap state
+  const sessionOnLeft = !layout.swapped
+  const chatOnLeft = layout.swapped
 
   return (
     <div className="h-full flex flex-col">
@@ -63,10 +119,34 @@ export function WorkspaceLayout({ project }: Props) {
           onOpenSettings={() => setShowSettings(true)}
           onOpenContainers={() => setShowContainerManager(true)}
           containerCount={project.containerIds.length}
+          sessionPanelOpen={layout.sessionPanelOpen}
+          chatPanelOpen={layout.chatPanelOpen}
+          swapped={layout.swapped}
+          onToggleSessionPanel={toggleSessionPanel}
+          onToggleChatPanel={toggleChatPanel}
+          onSwapPanels={swapPanels}
         />
 
-        {/* Session panel */}
-        <SessionPanel projectId={project.id} />
+        {/* Left side panel */}
+        {sessionOnLeft && layout.sessionPanelOpen && (
+          <SessionPanel
+            projectId={project.id}
+            side="left"
+            onClose={toggleSessionPanel}
+          />
+        )}
+        {chatOnLeft && layout.chatPanelOpen && (
+          <ChatSidePanel
+            rightTab={rightTab}
+            setRightTab={setRightTab}
+            projectId={project.id}
+            project={project}
+            width={layout.chatPanelWidth}
+            side="left"
+            onClose={toggleChatPanel}
+            onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
+          />
+        )}
 
         {/* Center: terminals + file editor */}
         <CenterArea
@@ -78,37 +158,145 @@ export function WorkspaceLayout({ project }: Props) {
           onCloseContainerManager={() => setShowContainerManager(false)}
         />
 
-        {/* Right panel: Chat / Files tabs */}
-        <div
-          className="shrink-0 border-l border-border-weak flex flex-col"
-          style={{ width: rightPanelWidth }}
-        >
-          <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0">
-            <RightPanelTab
-              active={rightTab === "chat"}
-              onClick={() => setRightTab("chat")}
-              icon={<Sparkles className="w-3.5 h-3.5" />}
-              label="Chat"
-            />
-            <RightPanelTab
-              active={rightTab === "files"}
-              onClick={() => setRightTab("files")}
-              icon={<FolderTree className="w-3.5 h-3.5" />}
-              label="Files"
-            />
-          </div>
-          <div className="flex-1 overflow-hidden">
-            {rightTab === "chat" ? (
-              <ChatPanel projectId={project.id} />
-            ) : (
-              <FileTreeWithSelector project={project} />
-            )}
-          </div>
-        </div>
+        {/* Right side panel */}
+        {!sessionOnLeft && layout.sessionPanelOpen && (
+          <SessionPanel
+            projectId={project.id}
+            side="right"
+            onClose={toggleSessionPanel}
+          />
+        )}
+        {!chatOnLeft && layout.chatPanelOpen && (
+          <ChatSidePanel
+            rightTab={rightTab}
+            setRightTab={setRightTab}
+            projectId={project.id}
+            project={project}
+            width={layout.chatPanelWidth}
+            side="right"
+            onClose={toggleChatPanel}
+            onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
+          />
+        )}
       </div>
 
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
+      )}
+    </div>
+  )
+}
+
+// ─── Chat side panel (chat/files) with resize handle ─────────
+
+function ChatSidePanel({
+  rightTab,
+  setRightTab,
+  projectId,
+  project,
+  width,
+  side,
+  onClose,
+  onResize,
+}: {
+  rightTab: "chat" | "files"
+  setRightTab: (tab: "chat" | "files") => void
+  projectId: string
+  project: Project
+  width: number
+  side: "left" | "right"
+  onClose: () => void
+  onResize: (width: number) => void
+}) {
+  const [dragging, setDragging] = useState(false)
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      setDragging(true)
+      const startX = e.clientX
+      const startW = width
+      const factor = side === "right" ? -1 : 1
+
+      function onMove(ev: MouseEvent) {
+        const delta = (ev.clientX - startX) * factor
+        onResize(Math.max(280, Math.min(startW + delta, 700)))
+      }
+      function onUp() {
+        setDragging(false)
+        document.removeEventListener("mousemove", onMove)
+        document.removeEventListener("mouseup", onUp)
+        document.body.style.cursor = ""
+        document.body.style.userSelect = ""
+      }
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+      document.addEventListener("mousemove", onMove)
+      document.addEventListener("mouseup", onUp)
+    },
+    [width, side, onResize],
+  )
+
+  const borderClass = side === "right" ? "border-l" : "border-r"
+
+  return (
+    <div className="flex shrink-0" style={{ width }}>
+      {/* Resize handle on center-facing edge */}
+      {side === "right" && (
+        <div
+          className={`w-[3px] shrink-0 cursor-col-resize transition-colors ${
+            dragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
+          }`}
+          onMouseDown={handleResizeStart}
+        />
+      )}
+
+      <div
+        className={`flex-1 min-w-0 ${borderClass} border-border-weak flex flex-col`}
+      >
+        {/* Tab bar */}
+        <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0">
+          <PanelTab
+            active={rightTab === "chat"}
+            onClick={() => setRightTab("chat")}
+            icon={<Sparkles className="w-3.5 h-3.5" />}
+            label="Chat"
+          />
+          <PanelTab
+            active={rightTab === "files"}
+            onClick={() => setRightTab("files")}
+            icon={<FolderTree className="w-3.5 h-3.5" />}
+            label="Files"
+          />
+          <div className="ml-auto pr-1.5">
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-surface-2 transition-colors"
+              title="Close panel"
+            >
+              <X className="w-3 h-3 text-text-weaker" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-hidden">
+          {rightTab === "chat" ? (
+            <ChatPanel projectId={projectId} />
+          ) : (
+            <FileTreeWithSelector project={project} />
+          )}
+        </div>
+      </div>
+
+      {/* Resize handle for left side */}
+      {side === "left" && (
+        <div
+          className={`w-[3px] shrink-0 cursor-col-resize transition-colors ${
+            dragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
+          }`}
+          onMouseDown={handleResizeStart}
+        />
       )}
     </div>
   )
@@ -123,7 +311,6 @@ function FileTreeWithSelector({ project }: { project: Project }) {
   const setActiveContainer = useContainerStore((s) => s.setActiveContainer)
   const containers = useContainerStore((s) => s.containers)
 
-  // Keep selectedContainer in sync
   useEffect(() => {
     if (selectedContainer) {
       const c = containers.find((c) => c.name === selectedContainer)
@@ -146,7 +333,6 @@ function FileTreeWithSelector({ project }: { project: Project }) {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Container selector */}
       {project.containerIds.length > 1 && (
         <div className="px-2 py-1.5 border-b border-border-weak shrink-0">
           <select
@@ -179,6 +365,12 @@ function IconRail({
   onOpenSettings,
   onOpenContainers,
   containerCount,
+  sessionPanelOpen,
+  chatPanelOpen,
+  swapped,
+  onToggleSessionPanel,
+  onToggleChatPanel,
+  onSwapPanels,
 }: {
   project: Project
   projects: Project[]
@@ -187,9 +379,16 @@ function IconRail({
   onOpenSettings: () => void
   onOpenContainers: () => void
   containerCount: number
+  sessionPanelOpen: boolean
+  chatPanelOpen: boolean
+  swapped: boolean
+  onToggleSessionPanel: () => void
+  onToggleChatPanel: () => void
+  onSwapPanels: () => void
 }) {
   return (
     <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center gap-2">
+      {/* Project buttons — scrollable */}
       <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto scrollbar-none w-full px-1.5 pt-3">
         {projects.map((p) => {
           const isActive = p.id === project.id
@@ -219,7 +418,56 @@ function IconRail({
         </button>
       </div>
 
-      <div className="shrink-0 flex flex-col items-center gap-2 py-3 border-t border-border-weak/50 w-full px-1.5">
+      {/* Bottom actions */}
+      <div className="shrink-0 flex flex-col items-center gap-1.5 py-3 border-t border-border-weak/50 w-full px-1.5">
+        {/* Panel toggles: session | swap | chat */}
+        <button
+          onClick={onToggleSessionPanel}
+          className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${
+            sessionPanelOpen
+              ? "text-accent bg-accent/10 hover:bg-accent/15"
+              : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
+          }`}
+          title={sessionPanelOpen ? "Hide sessions" : "Show sessions"}
+        >
+          {sessionPanelOpen ? (
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          ) : (
+            <PanelLeftOpen className="w-3.5 h-3.5" />
+          )}
+        </button>
+
+        <button
+          onClick={onSwapPanels}
+          className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${
+            swapped
+              ? "text-accent bg-accent/10 hover:bg-accent/15"
+              : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
+          }`}
+          title="Swap panels"
+        >
+          <ArrowLeftRight className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          onClick={onToggleChatPanel}
+          className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${
+            chatPanelOpen
+              ? "text-accent bg-accent/10 hover:bg-accent/15"
+              : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
+          }`}
+          title={chatPanelOpen ? "Hide chat" : "Show chat"}
+        >
+          {chatPanelOpen ? (
+            <PanelRightClose className="w-3.5 h-3.5" />
+          ) : (
+            <PanelRightOpen className="w-3.5 h-3.5" />
+          )}
+        </button>
+
+        <div className="w-6 h-px bg-border-weak/50 my-0.5" />
+
+        {/* Container + settings */}
         <button
           onClick={onOpenContainers}
           className="relative w-9 h-9 rounded-lg flex items-center justify-center text-text-weaker hover:bg-surface-2 hover:text-text-weak transition-colors shrink-0"
@@ -246,7 +494,15 @@ function IconRail({
 
 // ─── Session panel ───────────────────────────────────────────
 
-function SessionPanel({ projectId }: { projectId: string }) {
+function SessionPanel({
+  projectId,
+  side,
+  onClose,
+}: {
+  projectId: string
+  side: "left" | "right"
+  onClose: () => void
+}) {
   const {
     getProjectSessions,
     activeSessionId,
@@ -257,19 +513,30 @@ function SessionPanel({ projectId }: { projectId: string }) {
 
   const sessions = getProjectSessions(projectId)
 
+  const borderClass = side === "left" ? "border-r" : "border-l"
+
   return (
-    <div className="w-56 shrink-0 border-r border-border-weak bg-surface-0 flex flex-col">
+    <div className={`w-56 shrink-0 ${borderClass} border-border-weak bg-surface-0 flex flex-col`}>
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-weak shrink-0">
         <span className="text-xs text-text-strong font-sans font-medium">
           Sessions
         </span>
-        <button
-          onClick={() => startNewChat(projectId)}
-          className="p-1 rounded hover:bg-surface-2 transition-colors"
-          title="New chat"
-        >
-          <Plus className="w-3.5 h-3.5 text-text-weaker" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => startNewChat(projectId)}
+            className="p-1 rounded hover:bg-surface-2 transition-colors"
+            title="New chat"
+          >
+            <Plus className="w-3.5 h-3.5 text-text-weaker" />
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-surface-2 transition-colors"
+            title="Close sessions"
+          >
+            <X className="w-3 h-3 text-text-weaker" />
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto py-1">
         {sessions.length === 0 ? (
@@ -394,9 +661,9 @@ function SessionRow({
   )
 }
 
-// ─── Right panel tab ─────────────────────────────────────────
+// ─── Panel tab ──────────────────────────────────────────────
 
-function RightPanelTab({
+function PanelTab({
   active,
   onClick,
   icon,
@@ -443,7 +710,6 @@ function CenterArea({
   const [editorHeight, setEditorHeight] = useState(300)
   const [dragging, setDragging] = useState(false)
 
-  // If no containers, show exegol manager
   if (showContainerManager && project.containerIds.length === 0) {
     return (
       <div className="flex-1 min-w-0 flex items-center justify-center bg-surface-0">
@@ -458,7 +724,6 @@ function CenterArea({
 
   return (
     <div className="flex-1 min-w-0 flex flex-col relative">
-      {/* Exegol manager overlay */}
       {showContainerManager && (
         <div className="absolute inset-0 z-20 bg-black/70 backdrop-blur-sm flex items-center justify-center">
           <ExegolManager
@@ -516,8 +781,6 @@ function CenterArea({
     </div>
   )
 }
-
-// ─── Container manager ───────────────────────────────────────
 
 // ─── Helpers ─────────────────────────────────────────────────
 

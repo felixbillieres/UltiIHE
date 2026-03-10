@@ -21,11 +21,6 @@ interface Props {
   onClose: () => void
 }
 
-function useT(key: TranslationKey, params?: Record<string, string | number>) {
-  const lang = useSettingsStore((s) => s.language)
-  return t(lang, key, params)
-}
-
 export function SettingsDialog({ onClose }: Props) {
   const [tab, setTab] = useState<Tab>("general")
   const lang = useSettingsStore((s) => s.language)
@@ -86,14 +81,14 @@ const MONO_FONTS = [
 
 function GeneralSettings() {
   const {
-    activeTheme, colorScheme, fontSize, fontFamily, language,
+    activeTheme, colorScheme, fontSize, fontFamily, language: lang,
     setTheme, setColorScheme, setFontSize, setFontFamily, setLanguage,
   } = useSettingsStore()
 
   return (
     <div className="space-y-6">
       {/* Theme */}
-      <Section title={useT("settings.general.theme")}>
+      <Section title={t(lang, "settings.general.theme")}>
         <div className="grid grid-cols-3 gap-2">
           {THEMES.map((theme) => (
             <button
@@ -117,7 +112,7 @@ function GeneralSettings() {
       </Section>
 
       {/* Color scheme */}
-      <Section title={useT("settings.general.colorScheme")}>
+      <Section title={t(lang, "settings.general.colorScheme")}>
         <div className="flex gap-2">
           {(["dark", "light", "system"] as const).map((scheme) => {
             const Icon = scheme === "dark" ? Moon : scheme === "light" ? Sun : Monitor
@@ -132,7 +127,7 @@ function GeneralSettings() {
                 }`}
               >
                 <Icon className="w-3 h-3" />
-                {useT(`theme.scheme.${scheme}` as TranslationKey)}
+                {t(lang, `theme.scheme.${scheme}` as TranslationKey)}
               </button>
             )
           })}
@@ -140,7 +135,7 @@ function GeneralSettings() {
       </Section>
 
       {/* Font & size */}
-      <Section title={useT("settings.general.fontFamily")}>
+      <Section title={t(lang, "settings.general.fontFamily")}>
         <div className="flex gap-3">
           <select
             value={fontFamily}
@@ -150,7 +145,7 @@ function GeneralSettings() {
             {MONO_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-weak font-sans">{useT("settings.general.fontSize")}</span>
+            <span className="text-xs text-text-weak font-sans">{t(lang, "settings.general.fontSize")}</span>
             <input
               type="number"
               min={10}
@@ -164,14 +159,14 @@ function GeneralSettings() {
       </Section>
 
       {/* Language */}
-      <Section title={useT("settings.general.language")}>
+      <Section title={t(lang, "settings.general.language")}>
         <div className="flex gap-2 flex-wrap">
           {(Object.entries(LANGUAGE_LABELS) as [Language, string][]).map(([code, label]) => (
             <button
               key={code}
               onClick={() => setLanguage(code)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-sans transition-colors ${
-                language === code
+                lang === code
                   ? "bg-accent/8 text-accent border border-accent/30"
                   : "bg-surface-0 text-text-weak border border-border-weak hover:border-border-base"
               }`}
@@ -191,7 +186,7 @@ function GeneralSettings() {
 // ---------------------------------------------------------------------------
 
 function ProviderSettings() {
-  const { providers, addProvider, updateProvider } = useSettingsStore()
+  const { providers, addProvider, updateProvider, language: lang } = useSettingsStore()
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [keyInput, setKeyInput] = useState("")
 
@@ -221,7 +216,7 @@ function ProviderSettings() {
   return (
     <div className="space-y-6">
       {connected.length > 0 && (
-        <Section title={useT("settings.providers.connected")}>
+        <Section title={t(lang, "settings.providers.connected")}>
           <div className="space-y-1.5">
             {connected.map((provider) => (
               <div key={provider.id} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-surface-0 border border-border-weak">
@@ -229,14 +224,14 @@ function ProviderSettings() {
                   <Check className="w-3.5 h-3.5 text-status-success" />
                   <span className="text-xs text-text-strong font-sans font-medium">{provider.name}</span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-text-weaker font-sans">
-                    {useT("settings.providers.apiKey")}
+                    {t(lang, "settings.providers.apiKey")}
                   </span>
                 </div>
                 <button
                   onClick={() => updateProvider(provider.id, { enabled: false })}
                   className="text-[10px] text-text-weaker hover:text-status-error transition-colors font-sans"
                 >
-                  {useT("settings.providers.disconnect")}
+                  {t(lang, "settings.providers.disconnect")}
                 </button>
               </div>
             ))}
@@ -244,7 +239,7 @@ function ProviderSettings() {
         </Section>
       )}
 
-      <Section title={useT("settings.providers.available")}>
+      <Section title={t(lang, "settings.providers.available")}>
         <div className="space-y-1.5">
           {available.map((cat) => (
             <div key={cat.id}>
@@ -253,11 +248,11 @@ function ProviderSettings() {
                   <Bot className="w-3.5 h-3.5 text-text-weaker" />
                   <span className="text-xs text-text-base font-sans font-medium">{cat.name}</span>
                   <span className="text-[10px] text-text-weaker font-sans">
-                    {t(useSettingsStore.getState().language, "settings.providers.models", { count: cat.models.length })}
+                    {t(lang, "settings.providers.models", { count: cat.models.length })}
                   </span>
                   {cat.freeTier && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-status-success/10 text-status-success font-sans font-medium">
-                      {useT("settings.providers.freeTier")}
+                      {t(lang, "settings.providers.freeTier")}
                     </span>
                   )}
                 </div>
@@ -265,7 +260,7 @@ function ProviderSettings() {
                   onClick={() => { setEditingKey(cat.id); setKeyInput("") }}
                   className="text-xs text-accent hover:text-accent-hover transition-colors font-sans"
                 >
-                  {useT("settings.providers.connect")}
+                  {t(lang, "settings.providers.connect")}
                 </button>
               </div>
               {editingKey === cat.id && (
@@ -274,7 +269,7 @@ function ProviderSettings() {
                     type="password"
                     value={keyInput}
                     onChange={(e) => setKeyInput(e.target.value)}
-                    placeholder={useT("settings.providers.apiKeyPlaceholder")}
+                    placeholder={t(lang, "settings.providers.apiKeyPlaceholder")}
                     className="flex-1 text-xs bg-surface-0 border border-border-base rounded px-2 py-1.5 text-text-base focus:outline-none focus:border-accent/50 font-sans"
                     autoFocus
                     onKeyDown={(e) => {
@@ -287,7 +282,7 @@ function ProviderSettings() {
                     disabled={!keyInput.trim()}
                     className="px-3 py-1.5 text-xs bg-accent text-white rounded disabled:opacity-40 hover:bg-accent-hover transition-colors font-sans font-medium"
                   >
-                    {useT("settings.providers.save")}
+                    {t(lang, "settings.providers.save")}
                   </button>
                 </div>
               )}
@@ -311,7 +306,7 @@ const MODE_COLORS: Record<ReasoningMode, string> = {
 
 function ModelSettings() {
   const {
-    activeProvider, activeModel, activeMode,
+    activeProvider, activeModel, activeMode, language: lang,
     setActiveProvider, setActiveModel, setActiveMode, providers,
   } = useSettingsStore()
   const [search, setSearch] = useState("")
@@ -342,10 +337,10 @@ function ModelSettings() {
             >
               <Brain className={`w-4 h-4 ${MODE_COLORS[mode]}`} />
               <span className={`font-medium ${activeMode === mode ? MODE_COLORS[mode] : "text-text-base"}`}>
-                {useT(`mode.${mode}` as TranslationKey)}
+                {t(lang, `mode.${mode}` as TranslationKey)}
               </span>
               <span className="text-[10px] text-text-weaker">
-                {useT(`mode.${mode}.desc` as TranslationKey)}
+                {t(lang, `mode.${mode}.desc` as TranslationKey)}
               </span>
             </button>
           ))}
@@ -358,7 +353,7 @@ function ModelSettings() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={useT("settings.models.search")}
+          placeholder={t(lang, "settings.models.search")}
           className="w-full text-xs bg-surface-0 border border-border-base rounded-lg pl-8 pr-3 py-2 text-text-base focus:outline-none focus:border-accent/50 font-sans"
         />
       </div>
@@ -399,13 +394,13 @@ function ModelSettings() {
                 {model.reasoning && (
                   <span className="flex items-center gap-0.5 text-[10px] text-status-warning font-sans">
                     <Brain className="w-2.5 h-2.5" />
-                    {useT("settings.models.reasoning")}
+                    {t(lang, "settings.models.reasoning")}
                   </span>
                 )}
                 {model.vision && (
                   <span className="flex items-center gap-0.5 text-[10px] text-accent font-sans">
                     <Eye className="w-2.5 h-2.5" />
-                    {useT("settings.models.vision")}
+                    {t(lang, "settings.models.vision")}
                   </span>
                 )}
                 {model.toolCalling && (
@@ -435,7 +430,7 @@ function ModelSettings() {
 // ---------------------------------------------------------------------------
 
 function KeybindSettings() {
-  const { customKeybinds, getKeybind, setKeybind, resetKeybind, resetAllKeybinds } = useSettingsStore()
+  const { customKeybinds, getKeybind, setKeybind, resetKeybind, resetAllKeybinds, language: lang } = useSettingsStore()
   const [recording, setRecording] = useState<string | null>(null)
 
   const groups = [...new Set(DEFAULT_KEYBINDS.map((k) => k.group))]
@@ -463,14 +458,14 @@ function KeybindSettings() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs text-text-strong font-medium font-sans">{useT("settings.keybinds.title")}</h3>
+        <h3 className="text-xs text-text-strong font-medium font-sans">{t(lang, "settings.keybinds.title")}</h3>
         {Object.keys(customKeybinds).length > 0 && (
           <button
             onClick={resetAllKeybinds}
             className="flex items-center gap-1 text-[10px] text-text-weaker hover:text-status-error transition-colors font-sans"
           >
             <RotateCcw className="w-3 h-3" />
-            {useT("settings.keybinds.resetAll")}
+            {t(lang, "settings.keybinds.resetAll")}
           </button>
         )}
       </div>
@@ -491,7 +486,7 @@ function KeybindSettings() {
                       <button
                         onClick={() => resetKeybind(action.id)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity"
-                        title={useT("settings.keybinds.reset")}
+                        title={t(lang, "settings.keybinds.reset")}
                       >
                         <RotateCcw className="w-3 h-3 text-text-weaker hover:text-text-weak" />
                       </button>
@@ -506,7 +501,7 @@ function KeybindSettings() {
                             : "bg-surface-0 border border-border-base text-text-weaker"
                       }`}
                     >
-                      {isRecording ? useT("settings.keybinds.recording") : current}
+                      {isRecording ? t(lang, "settings.keybinds.recording") : current}
                     </button>
                   </div>
                 </div>
