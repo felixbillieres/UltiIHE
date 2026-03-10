@@ -27,17 +27,21 @@ export interface CreateContainerRequest {
   name: string
   image: string
   workspace_path?: string
-  network?: string
+  cwd_mount?: boolean
+  update_fs?: boolean
+  network?: string // host | docker | nat | disabled
   ports?: string[]
   vpn_path?: string
   vpn_auth_path?: string
   volumes?: string[]
   desktop?: boolean
+  desktop_config?: string
   enable_logging?: boolean
-  log_method?: string
+  log_method?: string // asciinema | script
+  log_compress?: boolean
   env_vars?: string[]
   hostname?: string
-  shell?: string
+  shell?: string // zsh | bash | tmux
   privileged?: boolean
   capabilities?: string[]
   devices?: string[]
@@ -73,7 +77,10 @@ interface ExegolStore {
   stopContainer: (name: string) => Promise<boolean>
   restartContainer: (name: string) => Promise<boolean>
   removeContainer: (name: string, force?: boolean) => Promise<boolean>
+  upgradeContainer: (name: string, imageTag?: string, force?: boolean) => Promise<boolean>
   createContainer: (req: CreateContainerRequest) => Promise<boolean>
+  installImage: (name: string) => Promise<boolean>
+  updateImage: (name: string) => Promise<boolean>
   uninstallImage: (name: string, force?: boolean) => Promise<boolean>
 }
 
@@ -206,6 +213,62 @@ export const useExegolStore = create<ExegolStore>()((set, get) => ({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req),
+      })
+      const data = await res.json()
+      if (!data.ok) set({ error: data.error })
+      await get().fetchInfo()
+      return data.ok
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
+    } finally {
+      set({ actionLoading: null })
+    }
+  },
+
+  upgradeContainer: async (name, imageTag, force = false) => {
+    set({ actionLoading: `${name}-upgrade` })
+    try {
+      const res = await fetch(`/api/exegol/containers/${enc(name)}/upgrade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageTag, force }),
+      })
+      const data = await res.json()
+      if (!data.ok) set({ error: data.error })
+      await get().fetchInfo()
+      return data.ok
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
+    } finally {
+      set({ actionLoading: null })
+    }
+  },
+
+  installImage: async (name) => {
+    set({ actionLoading: `${name}-install` })
+    try {
+      const res = await fetch(`/api/exegol/images/${enc(name)}/install`, {
+        method: "POST",
+      })
+      const data = await res.json()
+      if (!data.ok) set({ error: data.error })
+      await get().fetchInfo()
+      return data.ok
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
+    } finally {
+      set({ actionLoading: null })
+    }
+  },
+
+  updateImage: async (name) => {
+    set({ actionLoading: `${name}-update` })
+    try {
+      const res = await fetch(`/api/exegol/images/${enc(name)}/update`, {
+        method: "POST",
       })
       const data = await res.json()
       if (!data.ok) set({ error: data.error })

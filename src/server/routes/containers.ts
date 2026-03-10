@@ -62,10 +62,31 @@ containerRoutes.post("/exegol/containers/:name/remove", async (c) => {
 
 // ── Image lifecycle ──────────────────────────────────────────
 
+containerRoutes.post("/exegol/images/:name/install", async (c) => {
+  const name = c.req.param("name")
+  const result = await exegol.installImage(name)
+  return c.json(result, result.ok ? 200 : 500)
+})
+
+containerRoutes.post("/exegol/images/:name/update", async (c) => {
+  const name = c.req.param("name")
+  const result = await exegol.updateImage(name)
+  return c.json(result, result.ok ? 200 : 500)
+})
+
 containerRoutes.post("/exegol/images/:name/uninstall", async (c) => {
   const name = c.req.param("name")
   const body = await c.req.json().catch(() => ({}))
   const result = await exegol.uninstallImage(name, body.force ?? false)
+  return c.json(result, result.ok ? 200 : 500)
+})
+
+// ── Container upgrade ───────────────────────────────────────
+
+containerRoutes.post("/exegol/containers/:name/upgrade", async (c) => {
+  const name = c.req.param("name")
+  const body = await c.req.json().catch(() => ({}))
+  const result = await exegol.upgradeContainer(name, body.imageTag, body.force ?? false)
   return c.json(result, result.ok ? 200 : 500)
 })
 

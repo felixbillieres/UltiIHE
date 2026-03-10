@@ -38,20 +38,24 @@ export interface CreateContainerRequest {
   name: string
   image: string
   workspace_path?: string
-  network?: string // host | bridge | nat | disabled
-  ports?: string[]
-  vpn_path?: string
-  vpn_auth_path?: string
-  volumes?: string[]
+  cwd_mount?: boolean // -cwd: mount current working dir as /workspace
+  update_fs?: boolean // -fs: fix permissions for host user access
+  network?: string // host | docker | nat | disabled
+  ports?: string[] // format: [host_ip:]host_port[-end]:container_port[-end][:proto]
+  vpn_path?: string // .ovpn or .conf file path
+  vpn_auth_path?: string // credentials file (user\npass)
+  volumes?: string[] // format: /host/path:/container/path[:ro|rw]
   desktop?: boolean
+  desktop_config?: string // format: proto[:ip[:port]]
   enable_logging?: boolean
-  log_method?: string
-  env_vars?: string[]
+  log_method?: string // asciinema | script
+  log_compress?: boolean
+  env_vars?: string[] // format: KEY=value
   hostname?: string
   shell?: string // zsh | bash | tmux
   privileged?: boolean
   capabilities?: string[]
-  devices?: string[]
+  devices?: string[] // e.g. /dev/ttyACM0, /dev/bus/usb/
   comment?: string
   disable_x11?: boolean
   disable_my_resources?: boolean
@@ -353,22 +357,45 @@ export async function createContainer(
 
   const args = ["start", req.name, req.image]
 
+  // Workspace
   if (req.workspace_path) args.push("-w", req.workspace_path)
+  if (req.cwd_mount) args.push("-cwd")
+  if (req.update_fs) args.push("-fs")
+
+  // Network
   if (req.network) args.push("--network", req.network)
   for (const p of req.ports || []) args.push("-p", p)
+  if (req.hostname) args.push("--hostname", req.hostname)
+
+  // VPN
   if (req.vpn_path) args.push("--vpn", req.vpn_path)
   if (req.vpn_auth_path) args.push("--vpn-auth", req.vpn_auth_path)
+
+  // Volumes & devices
   for (const v of req.volumes || []) args.push("-V", v)
+  for (const d of req.devices || []) args.push("--device", d)
+
+  // Desktop
   if (req.desktop) args.push("--desktop")
+  if (req.desktop_config) args.push("--desktop-config", req.desktop_config)
+
+  // Logging
   if (req.enable_logging) args.push("--log")
   if (req.log_method) args.push("--log-method", req.log_method)
+  if (req.log_compress === false) args.push("--log-compress")
+
+  // Environment & shell
   for (const e of req.env_vars || []) args.push("-e", e)
-  if (req.hostname) args.push("--hostname", req.hostname)
   if (req.shell) args.push("--shell", req.shell)
+
+  // Privileges
   if (req.privileged) args.push("--privileged")
   for (const c of req.capabilities || []) args.push("--cap", c)
-  for (const d of req.devices || []) args.push("--device", d)
+
+  // Metadata
   if (req.comment) args.push("--comment", req.comment)
+
+  // Disable defaults
   if (req.disable_x11) args.push("--disable-X11")
   if (req.disable_my_resources) args.push("--disable-my-resources")
   if (req.disable_exegol_resources) args.push("--disable-exegol-resources")
@@ -376,6 +403,29 @@ export async function createContainer(
 
   const result = await runExegol(args, 120000)
   if (!result) return { ok: false, error: "Command timed out" }
+  if (result.code === 0) return { ok: true }
+  return { ok: false, error: extractError(result.stderr || result.stdout) }
+}
+
+// ── Image lifecycle ─────────────────────────────────────────
+
+export async function installImage(
+  name: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const args = ["install", name]
+  // Image installs can take a very long time (downloading GBs)
+  const result = await runExegol(args, 600000)
+  if (!result) return { ok: false, error: "Command timed out (10min limit)" }
+  if (result.code === 0) return { ok: true }
+  return { ok: false, error: extractError(result.stderr || result.stdout) }
+}
+
+export async function updateImage(
+  name: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const args = ["update", name]
+  const result = await runExegol(args, 600000)
+  if (!result) return { ok: false, error: "Command timed out (10min limit)" }
   if (result.code === 0) return { ok: true }
   return { ok: false, error: extractError(result.stderr || result.stdout) }
 }
@@ -388,6 +438,23 @@ export async function uninstallImage(
   if (force) args.push("-F")
   const result = await runExegol(args, 120000)
   if (!result) return { ok: false, error: "Command timed out" }
+  if (result.code === 0) return { ok: true }
+  return { ok: false, error: extractError(result.stderr || result.stdout) }
+}
+
+// ── Container upgrade ───────────────────────────────────────
+
+export async function upgradeContainer(
+  name: string,
+  imageTag?: string,
+  force = false,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isValidName(name)) return { ok: false, error: "Invalid container name" }
+  const args = ["upgrade", name]
+  if (imageTag) args.push("--image", imageTag)
+  if (force) args.push("-F")
+  const result = await runExegol(args, 300000)
+  if (!result) return { ok: false, error: "Command timed out (5min limit)" }
   if (result.code === 0) return { ok: true }
   return { ok: false, error: extractError(result.stderr || result.stdout) }
 }
