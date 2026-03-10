@@ -4,7 +4,7 @@ import {
   type LayoutNode,
   type TerminalGroup,
 } from "../../stores/terminal"
-import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
+import { useWebToolsStore, WEB_TOOLS, type RunningToolInfo } from "../../stores/webtools"
 import { TerminalView } from "./TerminalView"
 import {
   Terminal,
@@ -68,6 +68,7 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
   const [activeToolTab, setActiveToolTab] = useState<string | null>(null)
   const [showToolSettings, setShowToolSettings] = useState(false)
   const [containerPicker, setContainerPicker] = useState<string | null>(null) // toolId waiting for container pick
+  const [closeConfirm, setCloseConfirm] = useState<string | null>(null) // toolId waiting for close confirmation
 
   const openTool = useCallback((id: string) => {
     // If tool is already open, just switch to it
@@ -93,10 +94,16 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
     await launchTool(toolId, container)
   }, [launchTool])
 
-  const closeTool = useCallback((id: string) => {
+  // Show confirmation dialog before closing a tool
+  const requestCloseTool = useCallback((id: string) => {
+    setCloseConfirm(id)
+  }, [])
+
+  // Actually close and stop the tool
+  const confirmCloseTool = useCallback((id: string) => {
+    setCloseConfirm(null)
     setOpenToolTabs((prev) => prev.filter((t) => t !== id))
     setActiveToolTab((prev) => (prev === id ? null : prev))
-    // Also stop the tool on the backend
     stopToolService(id)
   }, [stopToolService])
 
@@ -148,6 +155,14 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
       containerIds={project.containerIds}
       onPick={handleContainerPick}
       onCancel={() => setContainerPicker(null)}
+    />
+  )
+  const closeConfirmModal = closeConfirm && (
+    <ToolCloseConfirmModal
+      toolId={closeConfirm}
+      container={runningTools[closeConfirm]?.container}
+      onConfirm={confirmCloseTool}
+      onCancel={() => setCloseConfirm(null)}
     />
   )
 
@@ -207,20 +222,60 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
     )
   }
 
-  // ── Empty state ──
+  // ── Empty state (no terminals, but may have tool tabs) ──
   if (terminals.length === 0) {
     return (
       <>
       {settingsModal}
       {containerPickerModal}
+      {closeConfirmModal}
       <div className="h-full flex flex-col bg-surface-0">
-        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
-          <NewTerminalButton
-            containerIds={project.containerIds}
-            connected={connected}
-            onAdd={handleAddTerminal}
-          />
-          <div className="ml-auto">
+        <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0 min-w-0">
+          <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 px-2 py-1.5 scrollbar-none">
+            {/* Tool tabs */}
+            {openToolTabs.map((toolId) => {
+              const tool = WEB_TOOLS.find((t) => t.id === toolId)
+              if (!tool) return null
+              const toolInfo = runningTools[toolId]
+              const isStarting = toolInfo?.status === "starting"
+              return (
+                <div
+                  key={toolId}
+                  onClick={() => setActiveToolTab(toolId)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
+                    activeToolTab === toolId
+                      ? "bg-surface-2 text-text-strong"
+                      : "text-text-weak hover:bg-surface-2/50"
+                  }`}
+                >
+                  {isStarting ? (
+                    <Loader2 className="w-3 h-3 shrink-0 animate-spin text-accent" />
+                  ) : (
+                    TOOL_ICONS[tool.icon]
+                  )}
+                  <span className="truncate">{tool.name}</span>
+                  {toolInfo?.container && (
+                    <span className="px-1 py-px rounded text-[9px] font-mono bg-accent/10 text-accent/70 truncate max-w-[80px] shrink-0">
+                      {toolInfo.container.replace(/^exegol-/, "")}
+                    </span>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); requestCloseTool(toolId) }}
+                    className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          <div className="shrink-0 flex items-center gap-0.5 px-2 py-1.5 border-l border-border-weak">
+            <NewTerminalButton
+              containerIds={project.containerIds}
+              connected={connected}
+              onAdd={handleAddTerminal}
+              compact
+            />
             <WebToolsDropdown
               openToolTabs={openToolTabs}
               onLaunch={openTool}
@@ -263,6 +318,7 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
       <>
       {settingsModal}
       {containerPickerModal}
+      {closeConfirmModal}
       <div className="h-full flex flex-col bg-surface-0">
         <SingleGroupTabBar
           group={group}
@@ -272,8 +328,9 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
           connected={connected}
           activeToolTab={activeToolTab}
           openToolTabs={openToolTabs}
-          onToolTabClick={(id) => setActiveToolTab(id)}
-          onToolTabClose={closeTool}
+          runningTools={runningTools}
+          onToolTabClick={(id) => setActiveToolTab(id || null)}
+          onToolTabClose={requestCloseTool}
           onLaunchTool={openTool}
           onToolSettings={() => setShowToolSettings(true)}
         />
@@ -366,6 +423,7 @@ function SingleGroupTabBar({
   connected,
   activeToolTab,
   openToolTabs,
+  runningTools,
   onToolTabClick,
   onToolTabClose,
   onLaunchTool,
@@ -378,6 +436,7 @@ function SingleGroupTabBar({
   connected: boolean
   activeToolTab: string | null
   openToolTabs: string[]
+  runningTools: Record<string, RunningToolInfo>
   onToolTabClick: (id: string) => void
   onToolTabClose: (id: string) => void
   onLaunchTool: (id: string) => void
@@ -431,7 +490,8 @@ function SingleGroupTabBar({
             key={t.id}
             onClick={() => {
               handleTabClick(t.id)
-              if (activeToolTab) onToolTabClick(activeToolTab)
+              // Clear active tool tab to show the terminal
+              if (activeToolTab) onToolTabClick("")
             }}
             onDoubleClick={() => handleDoubleClick(t.id, t.name)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
@@ -481,6 +541,8 @@ function SingleGroupTabBar({
         {openToolTabs.map((toolId) => {
           const tool = WEB_TOOLS.find((t) => t.id === toolId)
           if (!tool) return null
+          const toolInfo = runningTools[toolId]
+          const isStarting = toolInfo?.status === "starting"
           return (
             <div
               key={toolId}
@@ -491,8 +553,17 @@ function SingleGroupTabBar({
                   : "text-text-weak hover:bg-surface-2/50"
               }`}
             >
-              {TOOL_ICONS[tool.icon]}
+              {isStarting ? (
+                <Loader2 className="w-3 h-3 shrink-0 animate-spin text-accent" />
+              ) : (
+                TOOL_ICONS[tool.icon]
+              )}
               <span className="truncate">{tool.name}</span>
+              {toolInfo?.container && (
+                <span className="px-1 py-px rounded text-[9px] font-mono bg-accent/10 text-accent/70 truncate max-w-[80px] shrink-0">
+                  {toolInfo.container.replace(/^exegol-/, "")}
+                </span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); onToolTabClose(toolId) }}
                 className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
@@ -1170,6 +1241,63 @@ function ContainerPickerModal({
               </button>
             ))}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Tool close confirmation modal ──────────────────────────
+
+function ToolCloseConfirmModal({
+  toolId,
+  container,
+  onConfirm,
+  onCancel,
+}: {
+  toolId: string
+  container?: string
+  onConfirm: (toolId: string) => void
+  onCancel: () => void
+}) {
+  const tool = WEB_TOOLS.find((t) => t.id === toolId)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onCancel}>
+      <div
+        className="bg-surface-1 border border-border-weak rounded-xl shadow-2xl w-[380px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-border-weak">
+          <div className="flex items-center gap-2.5">
+            {TOOL_ICONS_SM[tool?.icon || ""]}
+            <h2 className="text-sm font-sans font-semibold text-text-strong">
+              Stop {tool?.name}?
+            </h2>
+          </div>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-xs text-text-weak font-sans leading-relaxed">
+            This will stop all {tool?.name} processes
+            {container && (
+              <> running in <span className="font-mono text-accent">{container.replace(/^exegol-/, "")}</span></>
+            )}
+            {" "}and close the tab.
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-weak">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs font-sans rounded-md text-text-weak hover:text-text-base hover:bg-surface-2 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(toolId)}
+            className="px-3 py-1.5 text-xs font-sans font-medium rounded-md bg-red-500/80 hover:bg-red-500 text-white transition-colors"
+          >
+            Stop & Close
+          </button>
         </div>
       </div>
     </div>
