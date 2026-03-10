@@ -252,87 +252,93 @@ function SingleGroupTabBar({
   }
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
-      {groupTerminals.map((t) => (
-        <div
-          key={t.id}
-          onClick={() => handleTabClick(t.id)}
-          onDoubleClick={() => handleDoubleClick(t.id, t.name)}
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group ${
-            t.id === group.activeTerminalId
-              ? "bg-surface-2 text-text-strong"
-              : "text-text-weak hover:bg-surface-2/50"
-          }`}
-        >
-          <Terminal className="w-3 h-3 shrink-0" />
-
-          {t.hasNotification && t.id !== group.activeTerminalId && (
-            <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-          )}
-
-          {editingTabId === t.id ? (
-            <input
-              ref={editInputRef}
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitRename()
-                if (e.key === "Escape") setEditingTabId(null)
-              }}
-              className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
-              autoFocus
-            />
-          ) : (
-            <>
-              <span className="truncate max-w-[100px]">{t.name}</span>
-              {containerIds.length > 1 && (
-                <ContainerBadge container={t.container} />
-              )}
-            </>
-          )}
-
-          <button
-            onClick={(e) => handleCloseTab(e, t.id)}
-            className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+    <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0 min-w-0">
+      {/* Scrollable tab area */}
+      <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 px-2 py-1.5 scrollbar-none">
+        {groupTerminals.map((t) => (
+          <div
+            key={t.id}
+            onClick={() => handleTabClick(t.id)}
+            onDoubleClick={() => handleDoubleClick(t.id, t.name)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
+              t.id === group.activeTerminalId
+                ? "bg-surface-2 text-text-strong"
+                : "text-text-weak hover:bg-surface-2/50"
+            }`}
           >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      ))}
+            <Terminal className="w-3 h-3 shrink-0" />
 
-      <NewTerminalButton
-        containerIds={containerIds}
-        connected={connected}
-        onAdd={handleAddTerminal}
-        compact
-      />
+            {t.hasNotification && t.id !== group.activeTerminalId && (
+              <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+            )}
 
-      {/* Split actions — only when 2+ terminals */}
-      {groupTerminals.length >= 2 && (
-        <div className="ml-auto flex items-center gap-0.5 border-l border-border-weak pl-2">
-          <button
-            onClick={() =>
-              group.activeTerminalId &&
-              splitTerminal(group.activeTerminalId, "horizontal")
-            }
-            className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
-            title="Split right"
-          >
-            <SplitSquareHorizontal className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() =>
-              group.activeTerminalId &&
-              splitTerminal(group.activeTerminalId, "vertical")
-            }
-            className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
-            title="Split down"
-          >
-            <SplitSquareVertical className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+            {editingTabId === t.id ? (
+              <input
+                ref={editInputRef}
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitRename()
+                  if (e.key === "Escape") setEditingTabId(null)
+                }}
+                className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
+                autoFocus
+              />
+            ) : (
+              <>
+                <span className="truncate max-w-[100px]">{t.name}</span>
+                {containerIds.length > 1 && (
+                  <ContainerBadge container={t.container} />
+                )}
+              </>
+            )}
+
+            <button
+              onClick={(e) => handleCloseTab(e, t.id)}
+              className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Fixed actions area */}
+      <div className="shrink-0 flex items-center gap-0.5 px-2 py-1.5 border-l border-border-weak">
+        <NewTerminalButton
+          containerIds={containerIds}
+          connected={connected}
+          onAdd={handleAddTerminal}
+          compact
+        />
+
+        {/* Split actions — only when 2+ terminals */}
+        {groupTerminals.length >= 2 && (
+          <>
+            <button
+              onClick={() =>
+                group.activeTerminalId &&
+                splitTerminal(group.activeTerminalId, "horizontal")
+              }
+              className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+              title="Split right"
+            >
+              <SplitSquareHorizontal className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() =>
+                group.activeTerminalId &&
+                splitTerminal(group.activeTerminalId, "vertical")
+              }
+              className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+              title="Split down"
+            >
+              <SplitSquareVertical className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -578,58 +584,61 @@ function SplitGroupPane({
       onClick={() => focusGroup(groupId)}
     >
       {/* Tab bar — same style as the single-group one */}
-      <div className="flex items-center gap-1 px-2 py-1.5 bg-surface-1 shrink-0 overflow-x-auto border-b border-border-weak">
-        {groupTerminals.map((t) => (
-          <div
-            key={t.id}
-            onClick={() => handleTabClick(t.id)}
-            onDoubleClick={() => handleDoubleClick(t.id, t.name)}
-            onContextMenu={(e) => handleContextMenu(e, t.id)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group ${
-              t.id === group.activeTerminalId
-                ? "bg-surface-2 text-text-strong"
-                : "text-text-weak hover:bg-surface-2/50"
-            }`}
-          >
-            <Terminal className="w-3 h-3 shrink-0" />
-
-            {t.hasNotification && t.id !== group.activeTerminalId && (
-              <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-            )}
-
-            {editingTabId === t.id ? (
-              <input
-                ref={editInputRef}
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitRename()
-                  if (e.key === "Escape") setEditingTabId(null)
-                }}
-                className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
-                autoFocus
-              />
-            ) : (
-              <>
-                <span className="truncate max-w-[100px]">{t.name}</span>
-                {containerIds.length > 1 && (
-                  <ContainerBadge container={t.container} />
-                )}
-              </>
-            )}
-
-            <button
-              onClick={(e) => handleCloseTab(e, t.id)}
-              className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+      <div className="flex items-center bg-surface-1 shrink-0 border-b border-border-weak min-w-0">
+        {/* Scrollable tab area */}
+        <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 px-2 py-1.5 scrollbar-none">
+          {groupTerminals.map((t) => (
+            <div
+              key={t.id}
+              onClick={() => handleTabClick(t.id)}
+              onDoubleClick={() => handleDoubleClick(t.id, t.name)}
+              onContextMenu={(e) => handleContextMenu(e, t.id)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
+                t.id === group.activeTerminalId
+                  ? "bg-surface-2 text-text-strong"
+                  : "text-text-weak hover:bg-surface-2/50"
+              }`}
             >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        ))}
+              <Terminal className="w-3 h-3 shrink-0" />
 
-        {/* Group actions */}
-        <div className="ml-auto flex items-center gap-0.5 shrink-0">
+              {t.hasNotification && t.id !== group.activeTerminalId && (
+                <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+              )}
+
+              {editingTabId === t.id ? (
+                <input
+                  ref={editInputRef}
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename()
+                    if (e.key === "Escape") setEditingTabId(null)
+                  }}
+                  className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
+                  autoFocus
+                />
+              ) : (
+                <>
+                  <span className="truncate max-w-[100px]">{t.name}</span>
+                  {containerIds.length > 1 && (
+                    <ContainerBadge container={t.container} />
+                  )}
+                </>
+              )}
+
+              <button
+                onClick={(e) => handleCloseTab(e, t.id)}
+                className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Fixed actions area */}
+        <div className="shrink-0 flex items-center gap-0.5 px-2 py-1.5 border-l border-border-weak">
           <NewTerminalButton
             containerIds={containerIds}
             connected={true}
