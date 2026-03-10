@@ -321,7 +321,7 @@ function ChatSidePanel({
           {rightTab === "chat" ? (
             <ChatPanel projectId={projectId} />
           ) : (
-            <FileTreeWithSelector project={project} />
+            <FileTree />
           )}
         </div>
       </div>
@@ -335,59 +335,6 @@ function ChatSidePanel({
           onMouseDown={handleResizeStart}
         />
       )}
-    </div>
-  )
-}
-
-// ─── File tree with container selector ───────────────────────
-
-function FileTreeWithSelector({ project }: { project: Project }) {
-  const [selectedContainer, setSelectedContainer] = useState(
-    project.containerIds[0] || "",
-  )
-  const setActiveContainer = useContainerStore((s) => s.setActiveContainer)
-  const containers = useContainerStore((s) => s.containers)
-
-  useEffect(() => {
-    if (selectedContainer) {
-      const c = containers.find((c) => c.name === selectedContainer)
-      if (c) setActiveContainer(c.id)
-    }
-  }, [selectedContainer, containers, setActiveContainer])
-
-  if (project.containerIds.length === 0) {
-    return (
-      <div className="h-full flex items-center justify-center p-4 text-center">
-        <div>
-          <Box className="w-6 h-6 text-text-weaker mx-auto mb-2" />
-          <p className="text-xs text-text-weaker font-sans">
-            Add a container to browse files
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {project.containerIds.length > 1 && (
-        <div className="px-2 py-1.5 border-b border-border-weak shrink-0">
-          <select
-            value={selectedContainer}
-            onChange={(e) => setSelectedContainer(e.target.value)}
-            className="w-full bg-surface-1 border border-border-weak rounded px-2 py-1 text-xs text-text-base font-sans focus:outline-none focus:border-accent/50"
-          >
-            {project.containerIds.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      <div className="flex-1 overflow-y-auto">
-        <FileTree />
-      </div>
     </div>
   )
 }
