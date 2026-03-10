@@ -261,7 +261,7 @@ function SessionRow({
   onSelect: () => void
   onDelete: () => void
 }) {
-  const msgCount = session.messages.length
+  const msgCount = session.messages?.length ?? 0
   const timeAgo = formatTimeAgo(session.updatedAt)
 
   return (

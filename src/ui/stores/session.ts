@@ -136,11 +136,21 @@ export const useSessionStore = create<SessionStore>()(
     }),
     {
       name: "ultiIHE-sessions",
-      // Don't persist too many sessions — keep last 50
       partialize: (state) => ({
         sessions: state.sessions.slice(0, 50),
         activeSessionId: state.activeSessionId,
       }),
+      // Migrate old sessions that lack `messages` array
+      merge: (persisted, current) => {
+        const p = persisted as any
+        if (p?.sessions) {
+          p.sessions = p.sessions.map((s: any) => ({
+            ...s,
+            messages: s.messages ?? [],
+          }))
+        }
+        return { ...current, ...p }
+      },
     },
   ),
 )
