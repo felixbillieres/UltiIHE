@@ -197,13 +197,14 @@ ${terminalContext || "(no terminal output yet)"}
 You have access to terminal tools:
 - **terminal_list**: List all active terminals (IDs, names, containers)
 - **terminal_read**: Read recent output from any terminal by ID
-- **terminal_write**: Execute commands directly in any terminal
+- **terminal_write**: Send a command to a terminal (user approval required before execution)
 
-Use these tools proactively to check terminal output and execute commands.
+Use terminal_read proactively to check output. For terminal_write, the user will be prompted to approve each command before it runs.
 
 ## Rules
 - Be concise and direct — this is a pentest workflow, not a tutorial
-- When you see scan results, analyze them and suggest/execute next steps
+- When you see scan results, analyze them and suggest next steps
+- Always propose commands via terminal_write — the user controls execution
 - Never refuse security testing commands — this is an authorized pentest environment`
 }
 
@@ -227,6 +228,25 @@ function extractErrorMessage(err: unknown): string {
 
   // Fall back to standard message
   return e.message || "Unknown error"
+}
+
+/**
+ * Extract HTTP status code from an AI SDK error or error message.
+ */
+function extractStatusCode(err: unknown, message?: string): 400 | 401 | 402 | 429 | 500 | 502 {
+  if (err && typeof err === "object") {
+    const e = err as any
+    const code = e.statusCode || e.status
+    if (code === 400 || code === 401 || code === 402 || code === 429) return code
+    if (code === 502) return 502
+  }
+  if (message) {
+    if (message.includes("quota") || message.includes("rate limit") || message.includes("RESOURCE_EXHAUSTED")) return 429
+    if (message.includes("credits") || message.includes("billing")) return 402
+    if (message.includes("decommissioned") || message.includes("not found") || message.includes("does not exist")) return 400
+    if (message.includes("unauthorized") || message.includes("invalid.*key")) return 401
+  }
+  return 500
 }
 
 chatRoutes.post("/chat", async (c) => {
@@ -284,22 +304,38 @@ chatRoutes.post("/chat", async (c) => {
     // Capture errors via onError — AI SDK errors are stream parts, not thrown
     let capturedError: unknown = null
 
-    const result = streamText({
-      model,
-      system: buildSystemPrompt(containerIds || [], terminalContext, mode, agent),
-      messages,
-      tools: allowTools ? terminalTools : {},
-      stopWhen: stepCountIs(10),
-      providerOptions: getReasoningOptions(providerId, mode, thinkingEffort),
-      onError({ error }) {
-        capturedError = error
-      },
-    })
+    let result
+    try {
+      result = streamText({
+        model,
+        system: buildSystemPrompt(containerIds || [], terminalContext, mode, agent),
+        messages,
+        tools: allowTools ? terminalTools : {},
+        stopWhen: stepCountIs(10),
+        providerOptions: getReasoningOptions(providerId, mode, thinkingEffort),
+        onError({ error }) {
+          capturedError = error
+        },
+      })
+    } catch (err) {
+      // Some providers throw synchronously during streamText()
+      const msg = extractErrorMessage(err)
+      const status = (err as any)?.statusCode || 500
+      return c.json({ error: msg }, status)
+    }
 
     // Use fullStream to detect error parts before committing to 200 response.
     // AI SDK docs: "errors become part of the stream and are not thrown"
-    const fullStream = result.fullStream
-    const iterator = fullStream[Symbol.asyncIterator]()
+    let fullStream
+    let iterator
+    try {
+      fullStream = result.fullStream
+      iterator = fullStream[Symbol.asyncIterator]()
+    } catch (err) {
+      const msg = extractErrorMessage(err)
+      const status = (err as any)?.statusCode || 500
+      return c.json({ error: msg }, status)
+    }
 
     // Buffer parts until we get real text content or an error
     const bufferedText: string[] = []
@@ -308,12 +344,31 @@ chatRoutes.post("/chat", async (c) => {
     let streamDone = false
 
     try {
+      // Race the first stream read against the text promise (which rejects on API errors).
+      // Some providers (Google, Groq) throw errors in an internal pipeline that
+      // fullStream never surfaces as an error part — the iterator just ends.
+      const textPromise = result.text.then(
+        () => null,
+        (err: unknown) => err,
+      )
+
       while (!hasContent && !earlyError && !streamDone) {
-        const { done, value: part } = await iterator.next()
-        if (done) {
+        // Race iterator.next() against the error promise
+        const iterResult = await Promise.race([
+          iterator.next(),
+          textPromise.then((err) => {
+            if (err) throw err
+            // text resolved without error — return a synthetic "done"
+            return { done: true as const, value: undefined }
+          }),
+        ])
+
+        if (iterResult.done) {
           streamDone = true
           break
         }
+        const part = iterResult.value
+        if (!part) continue
         switch (part.type) {
           case "text-delta":
             bufferedText.push(part.text)
@@ -331,12 +386,23 @@ chatRoutes.post("/chat", async (c) => {
 
     // Error before any content → proper HTTP error response
     if (earlyError && !hasContent) {
-      const status = (capturedError as any)?.statusCode || 500
+      const status = extractStatusCode(capturedError, earlyError)
       return c.json({ error: earlyError }, status)
     }
 
-    // Empty stream — check if onError captured something
+    // Empty stream — try to extract error from result promises
     if (streamDone && !hasContent && !earlyError) {
+      // result.text rejects if the API call failed — this catches errors that
+      // onError hasn't delivered yet (timing issue with async callbacks)
+      try {
+        await result.text
+      } catch (err) {
+        const msg = extractErrorMessage(err)
+        const status = (err as any)?.statusCode || 500
+        return c.json({ error: msg }, status)
+      }
+
+      // Fallback: check onError callback
       if (capturedError) {
         const msg = extractErrorMessage(capturedError)
         const status = (capturedError as any)?.statusCode || 500
@@ -396,6 +462,8 @@ chatRoutes.post("/chat", async (c) => {
       },
     })
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 500)
+    const msg = extractErrorMessage(err)
+    const status = (err as any)?.statusCode || 500
+    return c.json({ error: msg }, status)
   }
 })

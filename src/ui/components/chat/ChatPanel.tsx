@@ -7,6 +7,8 @@ import {
   type AgentId,
   type ThinkingEffort,
 } from "../../stores/settings"
+import { useCommandApprovalStore, type PendingCommand } from "../../stores/commandApproval"
+import { useWebSocket } from "../../hooks/useWebSocket"
 import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
 import { useChatContextStore, type TerminalQuote } from "../../stores/chatContext"
@@ -197,6 +199,12 @@ export function ChatPanel({ projectId }: Props) {
   const removeQuote = useChatContextStore((s) => s.removeQuote)
   const clearQuotes = useChatContextStore((s) => s.clearQuotes)
 
+  const pendingCommands = useCommandApprovalStore((s) => s.pending)
+  const approvalMode = useCommandApprovalStore((s) => s.mode)
+  const removePendingCommand = useCommandApprovalStore((s) => s.removePending)
+  const setApprovalMode = useCommandApprovalStore((s) => s.setMode)
+  const { send: wsSend } = useWebSocket()
+
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -250,7 +258,8 @@ export function ChatPanel({ projectId }: Props) {
   }, [input])
 
   async function handleSend() {
-    if (!input.trim() || streaming) return
+    if (streaming) return
+    if (!input.trim() && quotes.length === 0) return
 
     const provider = getActiveProvider()
     if (!provider?.apiKey) {
@@ -276,7 +285,8 @@ export function ChatPanel({ projectId }: Props) {
     }
 
     // Build message content with terminal context
-    let messageContent = input.trim()
+    const userText = input.trim()
+    let messageContent = userText
     if (quotes.length > 0) {
       const contextBlock = quotes
         .map((q) => {
@@ -286,7 +296,9 @@ export function ChatPanel({ projectId }: Props) {
           return `<terminal name="${q.terminalName}" lines="${q.lineCount}">${commentLine}\n${q.text}\n</terminal>`
         })
         .join("\n\n")
-      messageContent = `${contextBlock}\n\n${messageContent}`
+      messageContent = userText
+        ? `${contextBlock}\n\n${userText}`
+        : contextBlock
       clearQuotes()
     }
 
@@ -533,6 +545,37 @@ export function ChatPanel({ projectId }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Permission banner — OpenCode style */}
+      {pendingCommands.length > 0 && (
+        <PermissionBanner
+          command={pendingCommands[0]}
+          queueSize={pendingCommands.length}
+          onAllowOnce={() => {
+            wsSend({
+              type: "command:approve",
+              data: { commandId: pendingCommands[0].id },
+            })
+            removePendingCommand(pendingCommands[0].id)
+          }}
+          onAllowAlways={() => {
+            wsSend({
+              type: "command:approve",
+              data: { commandId: pendingCommands[0].id, allowAll: true },
+            })
+            removePendingCommand(pendingCommands[0].id)
+            setApprovalMode("allow-all-session")
+            wsSend({ type: "command:set-mode", data: { mode: "allow-all-session" } })
+          }}
+          onDeny={() => {
+            wsSend({
+              type: "command:reject",
+              data: { commandId: pendingCommands[0].id },
+            })
+            removePendingCommand(pendingCommands[0].id)
+          }}
+        />
+      )}
+
       {/* Input area */}
       <div className="shrink-0 border-t border-border-weak">
         {/* Terminal context quotes */}
@@ -587,7 +630,7 @@ export function ChatPanel({ projectId }: Props) {
             ) : (
               <button
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() && quotes.length === 0}
                 className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
@@ -1004,6 +1047,9 @@ function MessageBubble({
   const isUser = message.role === "user"
   const isError = !isUser && message.content.startsWith("⚠️")
 
+  // Parse terminal context blocks from user messages
+  const parsed = isUser ? parseTerminalBlocks(message.content) : null
+
   return (
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
       <div
@@ -1024,42 +1070,194 @@ function MessageBubble({
         )}
       </div>
       <div className={`flex-1 min-w-0 ${isUser ? "text-right" : ""}`}>
-        <div
-          className={`inline-block text-sm leading-relaxed whitespace-pre-wrap break-words font-sans ${
-            isUser
-              ? "bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm max-w-[85%]"
-              : isError
-                ? "bg-status-error/8 border border-status-error/20 text-status-error px-3 py-2 rounded-lg max-w-[95%]"
-                : "text-text-base"
-          }`}
-        >
-          {isStreaming ? (
-            <span className="inline-flex items-center gap-1 text-text-weaker">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              Thinking...
-            </span>
-          ) : (
-            <MarkdownContent content={message.content} />
-          )}
-        </div>
+        {isUser && parsed && parsed.terminals.length > 0 ? (
+          <div className="inline-flex flex-col gap-2 max-w-[85%] items-end">
+            {parsed.terminals.map((t, i) => (
+              <TerminalContextBlock key={i} block={t} />
+            ))}
+            {parsed.text && (
+              <div className="bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-left w-full">
+                <InlineMarkdown text={parsed.text} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className={`inline-block text-sm leading-relaxed whitespace-pre-wrap break-words font-sans ${
+              isUser
+                ? "bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm max-w-[85%]"
+                : isError
+                  ? "bg-status-error/8 border border-status-error/20 text-status-error px-3 py-2 rounded-lg max-w-[95%]"
+                  : "text-text-base"
+            }`}
+          >
+            {isStreaming ? (
+              <span className="inline-flex items-center gap-1 text-text-weaker">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Thinking...
+              </span>
+            ) : (
+              <MarkdownContent content={message.content} />
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
+interface TerminalBlock {
+  name: string
+  lines: string
+  comment?: string
+  content: string
+}
+
+function parseTerminalBlocks(raw: string): { terminals: TerminalBlock[]; text: string } {
+  const terminals: TerminalBlock[] = []
+  const remaining = raw.replace(
+    /<terminal name="([^"]*)" lines="([^"]*)">\n?(?:User comment: ([^\n]*)\n)?([\s\S]*?)\n?<\/terminal>/g,
+    (_, name, lines, comment, content) => {
+      terminals.push({ name, lines, comment: comment?.trim(), content: content.trim() })
+      return ""
+    },
+  )
+  return { terminals, text: remaining.trim() }
+}
+
+function TerminalContextBlock({ block }: { block: TerminalBlock }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div className="w-full rounded-lg border border-border-weak bg-surface-1 overflow-hidden text-left">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-2/50 transition-colors"
+      >
+        <div className="w-4 h-4 rounded bg-cyan-400/15 flex items-center justify-center shrink-0">
+          <Terminal className="w-2.5 h-2.5 text-cyan-400" />
+        </div>
+        <span className="text-[11px] text-text-weak font-sans flex-1 text-left truncate">
+          <span className="text-cyan-400 font-medium">{block.name}</span>
+          <span className="text-text-weaker ml-1.5">{block.lines} lines</span>
+        </span>
+        {block.comment && (
+          <span className="text-[11px] text-text-base font-sans truncate max-w-[180px]">
+            {block.comment}
+          </span>
+        )}
+        <ChevronDown
+          className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+      {expanded && (
+        <div className="border-t border-border-weak">
+          {block.comment && (
+            <div className="px-3 py-1.5 bg-accent/5 border-b border-border-weak">
+              <span className="text-[11px] text-accent font-sans">{block.comment}</span>
+            </div>
+          )}
+          <pre className="px-3 py-2 text-[11px] font-mono text-text-weak leading-relaxed max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-thin bg-[#101010]">
+            {block.content}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Permission Banner (OpenCode style) ─────────────────────
+
+function PermissionBanner({
+  command,
+  queueSize,
+  onAllowOnce,
+  onAllowAlways,
+  onDeny,
+}: {
+  command: PendingCommand
+  queueSize: number
+  onAllowOnce: () => void
+  onAllowAlways: () => void
+  onDeny: () => void
+}) {
+  // Strip trailing newline (real or literal \n) for display
+  const displayCmd = command.command.replace(/\\n/g, "\n").replace(/\n+$/, "")
+
+  return (
+    <div className="shrink-0 border-t border-status-warning/30 bg-surface-1">
+      {/* Content */}
+      <div className="px-4 pt-3 pb-2">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle className="w-4 h-4 text-status-warning shrink-0" />
+          <span className="text-sm font-medium text-text-strong font-sans">
+            Permission required
+          </span>
+          {queueSize > 1 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-2 text-text-weaker font-sans">
+              +{queueSize - 1} more
+            </span>
+          )}
+        </div>
+
+        {/* Description */}
+        <div className="ml-6 mb-2">
+          <span className="text-xs text-text-weak font-sans">
+            Execute command in{" "}
+            <span className="text-cyan-400 font-medium">{command.terminalName}</span>
+          </span>
+        </div>
+
+        {/* Command */}
+        <div className="ml-6 rounded-lg bg-[#101010] border border-border-weak overflow-hidden">
+          <pre className="px-3 py-2.5 text-xs font-mono text-text-base leading-relaxed overflow-x-auto max-h-[120px] overflow-y-auto scrollbar-thin">
+            <span className="text-text-weaker select-none">$ </span>
+            {displayCmd}
+          </pre>
+        </div>
+      </div>
+
+      {/* Buttons — exactly like OpenCode: Deny | Allow always | Allow once */}
+      <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-weak bg-surface-0/50">
+        <button
+          onClick={onDeny}
+          className="text-xs font-sans text-text-weak hover:text-text-base transition-colors px-3 py-1.5"
+        >
+          Deny
+        </button>
+        <button
+          onClick={onAllowAlways}
+          className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg border border-border-base text-text-base hover:bg-surface-2 transition-colors"
+        >
+          Allow always
+        </button>
+        <button
+          onClick={onAllowOnce}
+          className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg bg-text-strong text-surface-0 hover:opacity-90 transition-opacity"
+        >
+          Allow once
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Markdown rendering ──────────────────────────────────────
+
 function MarkdownContent({ content }: { content: string }) {
-  // Split on code blocks and inline code first
-  const parts = content.split(/(```[\s\S]*?```|`[^`]+`)/g)
+  // Split on code blocks first
+  const codeBlocks = content.split(/(```[\s\S]*?```)/g)
 
   return (
     <>
-      {parts.map((part, i) => {
-        if (part.startsWith("```")) {
-          const match = part.match(/```(\w+)?\n?([\s\S]*?)```/)
-          const code = match?.[2] || part.slice(3, -3)
+      {codeBlocks.map((block, bi) => {
+        if (block.startsWith("```")) {
+          const match = block.match(/```(\w+)?\n?([\s\S]*?)```/)
+          const code = match?.[2] || block.slice(3, -3)
           return (
             <pre
-              key={i}
+              key={bi}
               className="my-2 p-3 rounded-lg bg-surface-1 border border-border-weak overflow-x-auto"
             >
               <code className="text-xs font-mono text-text-strong">
@@ -1068,17 +1266,116 @@ function MarkdownContent({ content }: { content: string }) {
             </pre>
           )
         }
+        // Process line-level markdown (headers, bullets) then inline
+        return <MarkdownLines key={bi} text={block} />
+      })}
+    </>
+  )
+}
+
+function MarkdownLines({ text }: { text: string }) {
+  const lines = text.split("\n")
+  const result: React.ReactNode[] = []
+  let listItems: React.ReactNode[] = []
+
+  function flushList() {
+    if (listItems.length > 0) {
+      result.push(
+        <ul key={`ul-${result.length}`} className="my-1 ml-4 space-y-0.5 list-disc list-outside">
+          {listItems}
+        </ul>,
+      )
+      listItems = []
+    }
+  }
+
+  lines.forEach((line, li) => {
+    // Headers
+    const h3Match = line.match(/^###\s+(.+)/)
+    if (h3Match) {
+      flushList()
+      result.push(
+        <div key={li} className="font-semibold text-text-strong text-xs mt-2 mb-0.5">
+          <InlineText text={h3Match[1]} />
+        </div>,
+      )
+      return
+    }
+    const h2Match = line.match(/^##\s+(.+)/)
+    if (h2Match) {
+      flushList()
+      result.push(
+        <div key={li} className="font-semibold text-text-strong mt-2 mb-0.5">
+          <InlineText text={h2Match[1]} />
+        </div>,
+      )
+      return
+    }
+    const h1Match = line.match(/^#\s+(.+)/)
+    if (h1Match) {
+      flushList()
+      result.push(
+        <div key={li} className="font-bold text-text-strong text-base mt-2 mb-1">
+          <InlineText text={h1Match[1]} />
+        </div>,
+      )
+      return
+    }
+
+    // Bullet lists (- or * at start, with optional indentation)
+    const bulletMatch = line.match(/^(\s*)[-*]\s+(.+)/)
+    if (bulletMatch) {
+      listItems.push(
+        <li key={li} className="text-text-base" style={{ marginLeft: bulletMatch[1].length > 0 ? 16 : 0 }}>
+          <InlineText text={bulletMatch[2]} />
+        </li>,
+      )
+      return
+    }
+
+    // Numbered lists
+    const numMatch = line.match(/^(\s*)\d+[.)]\s+(.+)/)
+    if (numMatch) {
+      flushList()
+      result.push(
+        <div key={li} className="ml-4" style={{ marginLeft: numMatch[1].length > 0 ? 32 : 16 }}>
+          <InlineText text={line.trimStart()} />
+        </div>,
+      )
+      return
+    }
+
+    // Regular line
+    flushList()
+    if (line.trim() === "") {
+      result.push(<div key={li} className="h-2" />)
+    } else {
+      result.push(
+        <span key={li}>
+          <InlineText text={line} />
+          {li < lines.length - 1 && "\n"}
+        </span>,
+      )
+    }
+  })
+
+  flushList()
+  return <>{result}</>
+}
+
+function InlineText({ text }: { text: string }) {
+  // Split on inline code first, then process markdown
+  const parts = text.split(/(`[^`]+`)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
         if (part.startsWith("`") && part.endsWith("`")) {
           return (
-            <code
-              key={i}
-              className="px-1 py-0.5 rounded bg-surface-2 text-xs font-mono text-accent"
-            >
+            <code key={i} className="px-1 py-0.5 rounded bg-surface-2 text-xs font-mono text-accent">
               {part.slice(1, -1)}
             </code>
           )
         }
-        // Render inline markdown: **bold**, *italic*, [links](url)
         return <InlineMarkdown key={i} text={part} />
       })}
     </>
@@ -1086,15 +1383,15 @@ function MarkdownContent({ content }: { content: string }) {
 }
 
 function InlineMarkdown({ text }: { text: string }) {
-  // Match **bold**, *italic*, [text](url)
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g)
+  // Match **bold** (allowing special chars inside), *italic*, [links](url)
+  const parts = text.split(/(\*\*(?:(?!\*\*).)+\*\*|\*(?:(?!\*).)+\*|\[[^\]]+\]\([^)]+\))/g)
   return (
     <>
       {parts.map((seg, i) => {
-        if (seg.startsWith("**") && seg.endsWith("**")) {
+        if (seg.startsWith("**") && seg.endsWith("**") && seg.length > 4) {
           return <strong key={i} className="font-semibold text-text-strong">{seg.slice(2, -2)}</strong>
         }
-        if (seg.startsWith("*") && seg.endsWith("*")) {
+        if (seg.startsWith("*") && seg.endsWith("*") && !seg.startsWith("**") && seg.length > 2) {
           return <em key={i}>{seg.slice(1, -1)}</em>
         }
         const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/)

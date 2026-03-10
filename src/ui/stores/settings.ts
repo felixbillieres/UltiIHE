@@ -25,6 +25,8 @@ export interface ProviderInfo {
   models: ModelInfo[]
   freeTier?: boolean
   freeNote?: string
+  signupUrl?: string
+  description?: string
 }
 
 export interface ProviderConfig {
@@ -123,6 +125,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "Anthropic",
     type: "anthropic",
     envVar: "ANTHROPIC_API_KEY",
+    signupUrl: "https://console.anthropic.com/",
+    description: "$5 free credits on signup",
     models: [
       {
         id: "claude-opus-4-20250514",
@@ -164,6 +168,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "OpenAI",
     type: "openai",
     envVar: "OPENAI_API_KEY",
+    signupUrl: "https://platform.openai.com/api-keys",
+    description: "Pay-as-you-go, no free tier",
     models: [
       {
         id: "gpt-4o",
@@ -207,6 +213,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     envVar: "GOOGLE_GENERATIVE_AI_API_KEY",
     freeTier: true,
     freeNote: "Free tier available with rate limits",
+    signupUrl: "https://aistudio.google.com/apikey",
+    description: "Free API key, generous rate limits",
     models: [
       {
         id: "gemini-2.5-pro",
@@ -237,6 +245,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "Mistral",
     type: "mistral",
     envVar: "MISTRAL_API_KEY",
+    signupUrl: "https://console.mistral.ai/api-keys",
+    description: "Pay-as-you-go, Codestral free for coding",
     models: [
       {
         id: "mistral-large-latest",
@@ -269,6 +279,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     envVar: "GROQ_API_KEY",
     freeTier: true,
     freeNote: "Free tier with generous rate limits",
+    signupUrl: "https://console.groq.com/keys",
+    description: "Free tier, ultra-fast inference",
     models: [
       {
         id: "llama-3.3-70b-versatile",
@@ -295,6 +307,10 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "OpenRouter",
     type: "openrouter",
     envVar: "OPENROUTER_API_KEY",
+    freeTier: true,
+    freeNote: "Some free models available",
+    signupUrl: "https://openrouter.ai/keys",
+    description: "Multi-provider gateway, some free models",
     models: [
       {
         id: "anthropic/claude-sonnet-4",
@@ -339,6 +355,10 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "xAI",
     type: "xai",
     envVar: "XAI_API_KEY",
+    freeTier: true,
+    freeNote: "$25 free credits monthly",
+    signupUrl: "https://console.x.ai/",
+    description: "$25/mo free credits for Grok",
     models: [
       {
         id: "grok-3",
@@ -365,6 +385,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "DeepSeek",
     type: "deepseek",
     envVar: "DEEPSEEK_API_KEY",
+    signupUrl: "https://platform.deepseek.com/api_keys",
+    description: "Very cheap, great reasoning models",
     models: [
       {
         id: "deepseek-chat",
@@ -397,6 +419,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     envVar: "TOGETHER_AI_API_KEY",
     freeTier: true,
     freeNote: "Some free models available",
+    signupUrl: "https://api.together.ai/settings/api-keys",
+    description: "$5 free credits on signup",
     models: [
       {
         id: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
@@ -423,6 +447,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "Perplexity",
     type: "perplexity",
     envVar: "PERPLEXITY_API_KEY",
+    signupUrl: "https://www.perplexity.ai/settings/api",
+    description: "Search-augmented AI, pay-as-you-go",
     models: [
       {
         id: "sonar-pro",
@@ -453,6 +479,10 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "Fireworks AI",
     type: "fireworks",
     envVar: "FIREWORKS_API_KEY",
+    freeTier: true,
+    freeNote: "Free tier with rate limits",
+    signupUrl: "https://fireworks.ai/api-keys",
+    description: "Free tier, fast open-source models",
     models: [
       {
         id: "accounts/fireworks/models/llama-v3p3-70b-instruct",
@@ -481,6 +511,8 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     envVar: "CEREBRAS_API_KEY",
     freeTier: true,
     freeNote: "Free tier with fast inference",
+    signupUrl: "https://cloud.cerebras.ai/",
+    description: "Free tier, fastest inference available",
     models: [
       {
         id: "llama-3.3-70b",
@@ -507,6 +539,10 @@ export const PROVIDER_CATALOG: ProviderInfo[] = [
     name: "Cohere",
     type: "cohere",
     envVar: "COHERE_API_KEY",
+    freeTier: true,
+    freeNote: "Free trial API key",
+    signupUrl: "https://dashboard.cohere.com/api-keys",
+    description: "Free trial key, rate-limited",
     models: [
       {
         id: "command-r-plus",

@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { terminalManager } from "../terminal/manager"
+import { commandQueue } from "../terminal/command-queue"
 import type { ServerWebSocket } from "bun"
 
 // --- Message Schemas ---
@@ -36,11 +37,37 @@ const terminalCloseSchema = z.object({
   }),
 })
 
+const commandApproveSchema = z.object({
+  type: z.literal("command:approve"),
+  data: z.object({
+    commandId: z.string(),
+    allowAll: z.boolean().optional(),
+    editedCommand: z.string().optional(),
+  }),
+})
+
+const commandRejectSchema = z.object({
+  type: z.literal("command:reject"),
+  data: z.object({
+    commandId: z.string(),
+  }),
+})
+
+const commandSetModeSchema = z.object({
+  type: z.literal("command:set-mode"),
+  data: z.object({
+    mode: z.enum(["ask", "auto-run", "allow-all-session"]),
+  }),
+})
+
 const clientMessageSchema = z.discriminatedUnion("type", [
   terminalCreateSchema,
   terminalInputSchema,
   terminalResizeSchema,
   terminalCloseSchema,
+  commandApproveSchema,
+  commandRejectSchema,
+  commandSetModeSchema,
 ])
 
 type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -111,6 +138,15 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
     case "terminal:close":
       handleTerminalClose(ws, msg.data)
       break
+    case "command:approve":
+      await handleCommandApprove(ws, msg.data)
+      break
+    case "command:reject":
+      handleCommandReject(ws, msg.data)
+      break
+    case "command:set-mode":
+      handleCommandSetMode(ws, msg.data)
+      break
   }
 }
 
@@ -170,7 +206,55 @@ function handleTerminalClose(
   }
 }
 
+// --- Command approval handlers ---
+
+async function handleCommandApprove(
+  ws: ServerWebSocket<unknown>,
+  data: { commandId: string; allowAll?: boolean; editedCommand?: string },
+): Promise<void> {
+  try {
+    if (data.editedCommand) {
+      await commandQueue.approveEdited(data.commandId, data.editedCommand)
+    } else {
+      await commandQueue.approve(data.commandId, data.allowAll || false)
+    }
+    sendTo(ws, {
+      type: "command:executed",
+      data: { commandId: data.commandId },
+    })
+  } catch (err) {
+    sendError(ws, (err as Error).message)
+  }
+}
+
+function handleCommandReject(
+  _ws: ServerWebSocket<unknown>,
+  data: { commandId: string },
+): void {
+  commandQueue.reject(data.commandId)
+}
+
+function handleCommandSetMode(
+  _ws: ServerWebSocket<unknown>,
+  data: { mode: "ask" | "auto-run" | "allow-all-session" },
+): void {
+  commandQueue.setMode(data.mode)
+  console.log(`[Command] Approval mode set to: ${data.mode}`)
+}
+
 // --- Exported WebSocket handlers for Bun.serve() ---
+
+// Wire command queue broadcast to WS clients
+commandQueue.setBroadcast((message: object) => {
+  const payload = JSON.stringify(message)
+  for (const client of connectedClients) {
+    try {
+      client.send(payload)
+    } catch {
+      connectedClients.delete(client)
+    }
+  }
+})
 
 export const websocketHandlers = {
   open(ws: ServerWebSocket<unknown>) {

@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { terminalManager } from "../../terminal/manager"
+import { commandQueue } from "../../terminal/command-queue"
 import type { Tool } from "ai"
 
 /**
@@ -68,20 +69,42 @@ export const terminalListTool: Tool<
 
 export const terminalWriteTool: Tool<
   { terminalId: string; input: string },
-  { success: boolean; terminalId: string } | { error: string }
+  { success: boolean; terminalId: string; status: string } | { error: string }
 > = {
   description:
-    "Write/inject a command into a terminal. The command is sent to the terminal's PTY stdin. " +
-    "Use this to execute commands in the Exegol container. Always add a trailing newline (\\n) " +
-    "to actually execute the command.",
+    "Propose a command for execution in a terminal. The command will be shown to the user " +
+    "for approval before being injected into the terminal's PTY. Always add a trailing " +
+    "newline (\\n) to actually execute the command.",
   inputSchema: z.object({
     terminalId: z.string().describe("The terminal ID to write to"),
     input: z.string().describe("The text to send to the terminal (include \\n to execute)"),
   }),
   execute: async ({ terminalId, input }) => {
     try {
-      terminalManager.write(terminalId, input)
-      return { success: true, terminalId }
+      const terminal = terminalManager.getTerminal(terminalId)
+      if (!terminal) {
+        return { error: `Terminal not found: ${terminalId}` }
+      }
+      if (!terminal.alive) {
+        return { error: `Terminal is closed: ${terminalId}` }
+      }
+
+      // Normalize literal \n sequences to real newlines
+      // (some models send the two-char sequence instead of actual newline)
+      const normalizedInput = input.replace(/\\n/g, "\n")
+
+      // Queue the command for user approval (or auto-run if enabled)
+      const result = await commandQueue.enqueue({
+        terminalId,
+        terminalName: terminal.name,
+        command: normalizedInput,
+      })
+
+      if (result.approved) {
+        return { success: true, terminalId, status: "executed" }
+      } else {
+        return { success: false, terminalId, status: "rejected" }
+      }
     } catch (err) {
       return { error: (err as Error).message }
     }

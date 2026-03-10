@@ -133,6 +133,24 @@ class TerminalManager {
     terminal.process.write(input)
   }
 
+  /**
+   * Write input with a typing effect — char by char with a small delay.
+   * Returns a promise that resolves when all chars have been written.
+   */
+  async writeTyping(terminalId: string, input: string, charDelay = 12): Promise<void> {
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal) throw new Error(`Terminal not found: ${terminalId}`)
+    if (!terminal.alive) throw new Error(`Terminal is closed: ${terminalId}`)
+
+    for (const char of input) {
+      if (!terminal.alive) break
+      terminal.process.write(char)
+      if (charDelay > 0) {
+        await new Promise((r) => setTimeout(r, charDelay))
+      }
+    }
+  }
+
   resize(terminalId: string, cols: number, rows: number): void {
     const terminal = this.terminals.get(terminalId)
     if (!terminal) throw new Error(`Terminal not found: ${terminalId}`)

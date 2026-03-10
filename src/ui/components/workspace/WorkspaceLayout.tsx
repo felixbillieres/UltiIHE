@@ -5,6 +5,7 @@ import { useContainerStore } from "../../stores/container"
 import { useSessionStore, type Session } from "../../stores/session"
 import { useFileStore } from "../../stores/files"
 import { useWebSocket } from "../../hooks/useWebSocket"
+import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { ChatPanel } from "../chat/ChatPanel"
 import { TerminalArea } from "../terminal/TerminalArea"
 import { FileEditor } from "../files/FileEditor"
@@ -90,6 +91,27 @@ export function WorkspaceLayout({ project }: Props) {
   }, [fetchContainers])
 
   const { send, connected, subscribe } = useWebSocket({ enabled: true })
+  const addPendingCommand = useCommandApprovalStore((s) => s.addPending)
+  const removePendingCommand = useCommandApprovalStore((s) => s.removePending)
+
+  // Subscribe to command approval messages from server
+  useEffect(() => {
+    return subscribe((msg) => {
+      if (msg.type === "command:pending" && msg.data) {
+        addPendingCommand({
+          id: msg.data.commandId as string || msg.data.id as string,
+          terminalId: msg.data.terminalId as string,
+          terminalName: msg.data.terminalName as string,
+          command: msg.data.command as string,
+        })
+      }
+      if (msg.type === "command:executed" && msg.data) {
+        const cmdId = msg.data.commandId as string || msg.data.id as string
+        removePendingCommand(cmdId)
+      }
+    })
+  }, [subscribe, addPendingCommand, removePendingCommand])
+
   const hasContainers = project.containerIds.length > 0
 
   // Panel toggle handlers
