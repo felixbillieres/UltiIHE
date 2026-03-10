@@ -1,6 +1,8 @@
 import { z } from "zod"
 import { terminalManager } from "../terminal/manager"
 import { commandQueue } from "../terminal/command-queue"
+import { questionQueue } from "../ai/tool/question-queue"
+import { toolApprovalQueue } from "../ai/tool/tool-approval"
 import type { ServerWebSocket } from "bun"
 
 // --- Message Schemas ---
@@ -60,6 +62,29 @@ const commandSetModeSchema = z.object({
   }),
 })
 
+const questionAnswerSchema = z.object({
+  type: z.literal("question:answer"),
+  data: z.object({
+    questionId: z.string(),
+    answer: z.string(),
+  }),
+})
+
+const toolApproveSchema = z.object({
+  type: z.literal("tool:approve"),
+  data: z.object({
+    id: z.string(),
+    allowAlways: z.boolean().optional(),
+  }),
+})
+
+const toolRejectSchema = z.object({
+  type: z.literal("tool:reject"),
+  data: z.object({
+    id: z.string(),
+  }),
+})
+
 const clientMessageSchema = z.discriminatedUnion("type", [
   terminalCreateSchema,
   terminalInputSchema,
@@ -68,6 +93,9 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   commandApproveSchema,
   commandRejectSchema,
   commandSetModeSchema,
+  questionAnswerSchema,
+  toolApproveSchema,
+  toolRejectSchema,
 ])
 
 type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -146,6 +174,15 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
       break
     case "command:set-mode":
       handleCommandSetMode(ws, msg.data)
+      break
+    case "question:answer":
+      handleQuestionAnswer(ws, msg.data)
+      break
+    case "tool:approve":
+      toolApprovalQueue.approve(msg.data.id, msg.data.allowAlways || false)
+      break
+    case "tool:reject":
+      toolApprovalQueue.reject(msg.data.id)
       break
   }
 }
@@ -242,10 +279,19 @@ function handleCommandSetMode(
   console.log(`[Command] Approval mode set to: ${data.mode}`)
 }
 
+// --- Question answer handler ---
+
+function handleQuestionAnswer(
+  _ws: ServerWebSocket<unknown>,
+  data: { questionId: string; answer: string },
+): void {
+  questionQueue.answer(data.questionId, data.answer)
+}
+
 // --- Exported WebSocket handlers for Bun.serve() ---
 
-// Wire command queue broadcast to WS clients
-commandQueue.setBroadcast((message: object) => {
+// Wire broadcast to WS clients for both queues
+const broadcastToClients = (message: object) => {
   const payload = JSON.stringify(message)
   for (const client of connectedClients) {
     try {
@@ -254,7 +300,10 @@ commandQueue.setBroadcast((message: object) => {
       connectedClients.delete(client)
     }
   }
-})
+}
+commandQueue.setBroadcast(broadcastToClients)
+questionQueue.setBroadcast(broadcastToClients)
+toolApprovalQueue.setBroadcast(broadcastToClients)
 
 export const websocketHandlers = {
   open(ws: ServerWebSocket<unknown>) {

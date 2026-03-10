@@ -8,6 +8,7 @@ import {
   type ThinkingEffort,
 } from "../../stores/settings"
 import { useCommandApprovalStore, type PendingCommand } from "../../stores/commandApproval"
+import { useToolApprovalStore, type PendingToolCall } from "../../stores/toolApproval"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
@@ -203,6 +204,8 @@ export function ChatPanel({ projectId }: Props) {
   const approvalMode = useCommandApprovalStore((s) => s.mode)
   const removePendingCommand = useCommandApprovalStore((s) => s.removePending)
   const setApprovalMode = useCommandApprovalStore((s) => s.setMode)
+  const pendingTools = useToolApprovalStore((s) => s.pending)
+  const removePendingTool = useToolApprovalStore((s) => s.removePending)
   const { send: wsSend } = useWebSocket()
 
   const [input, setInput] = useState("")
@@ -545,7 +548,7 @@ export function ChatPanel({ projectId }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Permission banner — OpenCode style */}
+      {/* Permission banners — command + tool approval */}
       {pendingCommands.length > 0 && (
         <PermissionBanner
           command={pendingCommands[0]}
@@ -572,6 +575,24 @@ export function ChatPanel({ projectId }: Props) {
               data: { commandId: pendingCommands[0].id },
             })
             removePendingCommand(pendingCommands[0].id)
+          }}
+        />
+      )}
+      {pendingTools.length > 0 && pendingCommands.length === 0 && (
+        <ToolPermissionBanner
+          tool={pendingTools[0]}
+          queueSize={pendingTools.length}
+          onAllowOnce={() => {
+            wsSend({ type: "tool:approve", data: { id: pendingTools[0].id } })
+            removePendingTool(pendingTools[0].id)
+          }}
+          onAllowAlways={() => {
+            wsSend({ type: "tool:approve", data: { id: pendingTools[0].id, allowAlways: true } })
+            removePendingTool(pendingTools[0].id)
+          }}
+          onDeny={() => {
+            wsSend({ type: "tool:reject", data: { id: pendingTools[0].id } })
+            removePendingTool(pendingTools[0].id)
           }}
         />
       )}
@@ -1219,6 +1240,96 @@ function PermissionBanner({
       </div>
 
       {/* Buttons — exactly like OpenCode: Deny | Allow always | Allow once */}
+      <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-weak bg-surface-0/50">
+        <button
+          onClick={onDeny}
+          className="text-xs font-sans text-text-weak hover:text-text-base transition-colors px-3 py-1.5"
+        >
+          Deny
+        </button>
+        <button
+          onClick={onAllowAlways}
+          className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg border border-border-base text-text-base hover:bg-surface-2 transition-colors"
+        >
+          Allow always
+        </button>
+        <button
+          onClick={onAllowOnce}
+          className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg bg-text-strong text-surface-0 hover:opacity-90 transition-opacity"
+        >
+          Allow once
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Tool permission banner ──────────────────────────────────
+
+/** Build a single-line human-readable summary for a tool call. */
+function toolSummary(name: string, args: Record<string, unknown>): string {
+  switch (name) {
+    case "web_search":
+      return `web_search("${args.query || ""}")`
+    case "web_fetch":
+      return `web_fetch(${args.url || ""})`
+    case "file_write":
+      return `file_write(${args.container}:${args.filePath})`
+    case "file_edit":
+      return `file_edit(${args.container}:${args.filePath})`
+    case "todo_write":
+      return `todo_write(${Array.isArray(args.todos) ? args.todos.length : 0} items)`
+    default:
+      return `${name}()`
+  }
+}
+
+function ToolPermissionBanner({
+  tool,
+  queueSize,
+  onAllowOnce,
+  onAllowAlways,
+  onDeny,
+}: {
+  tool: PendingToolCall
+  queueSize: number
+  onAllowOnce: () => void
+  onAllowAlways: () => void
+  onDeny: () => void
+}) {
+  return (
+    <div className="shrink-0 border-t border-status-warning/30 bg-surface-1">
+      <div className="px-4 pt-3 pb-2">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle className="w-4 h-4 text-status-warning shrink-0" />
+          <span className="text-sm font-medium text-text-strong font-sans">
+            Permission required
+          </span>
+          {queueSize > 1 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-surface-2 text-text-weaker font-sans">
+              +{queueSize - 1} more
+            </span>
+          )}
+        </div>
+
+        {/* Description */}
+        <div className="ml-6 mb-2">
+          <span className="text-xs text-text-weak font-sans">
+            {tool.description}
+          </span>
+        </div>
+
+        {/* Tool call — same style as command code block */}
+        <div className="ml-6 rounded-lg bg-[#101010] border border-border-weak overflow-hidden">
+          <pre className="px-3 py-2.5 text-xs font-mono text-text-base leading-relaxed overflow-x-auto">
+            <span className="text-text-weaker select-none">{">"} </span>
+            {toolSummary(tool.toolName, tool.args)}
+          </pre>
+        </div>
+      </div>
+
+      {/* Buttons */}
       <div className="flex items-center justify-end gap-2 px-4 py-2.5 border-t border-border-weak bg-surface-0/50">
         <button
           onClick={onDeny}

@@ -16,7 +16,7 @@ import { createAzure } from "@ai-sdk/azure"
 import { createCohere } from "@ai-sdk/cohere"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { terminalManager } from "../../terminal/manager"
-import { terminalTools } from "../../ai/tool/terminal-tools"
+import { allTools, readOnlyTools } from "../../ai/tool"
 
 export const chatRoutes = new Hono()
 
@@ -194,17 +194,38 @@ ${terminalContext || "(no terminal output yet)"}
 \`\`\`
 
 ## Tools
-You have access to terminal tools:
-- **terminal_list**: List all active terminals (IDs, names, containers)
-- **terminal_read**: Read recent output from any terminal by ID
-- **terminal_write**: Send a command to a terminal (user approval required before execution)
 
-Use terminal_read proactively to check output. For terminal_write, the user will be prompted to approve each command before it runs.
+### Terminal (interactive)
+- **terminal_list**: List all active terminals
+- **terminal_read**: Read recent output from any terminal
+- **terminal_write**: Send a command to a terminal (user approval required)
+
+### Files (container filesystem)
+- **file_read**: Read a file or directory listing from a container
+- **file_write**: Write/create a file in a container
+- **file_edit**: Find & replace in a file (surgical edits)
+
+### Search (container filesystem)
+- **search_find**: Find files by glob pattern, or list a directory tree (no pattern = tree mode)
+- **search_grep**: Search file contents by regex
+
+### Web
+- **web_search**: Search the web (CVEs, exploits, writeups, docs) via Exa AI
+- **web_fetch**: Fetch content from a specific URL (markdown, text, or raw HTML)
+
+### Workflow
+- **todo_read** / **todo_write**: Track pentest tasks and progress
+- **user_question**: Ask the user a question when you need clarification
+- **batch**: Execute multiple tool calls in parallel (max 25)
+
+For interactive commands (nmap, sqlmap, etc.), use **terminal_write** — the user approves each command.
+For quick lookups (read configs, search files), use file/search tools directly.
 
 ## Rules
 - Be concise and direct — this is a pentest workflow, not a tutorial
 - When you see scan results, analyze them and suggest next steps
-- Always propose commands via terminal_write — the user controls execution
+- Use terminal_write for interactive commands — the user controls execution
+- Use file/search tools for quick operations without cluttering the terminal
 - Never refuse security testing commands — this is an authorized pentest environment`
 }
 
@@ -298,8 +319,8 @@ chatRoutes.post("/chat", async (c) => {
     const registry = createRegistry(providerId, apiKey, baseUrl)
     const model = registry.languageModel(`${providerId}:${modelId}`)
 
-    // Report agent cannot execute commands
-    const allowTools = agent !== "report" && mode !== "plan"
+    // Report agent and plan mode get read-only tools; others get everything
+    const tools = agent === "report" || mode === "plan" ? readOnlyTools : allTools
 
     // Capture errors via onError — AI SDK errors are stream parts, not thrown
     let capturedError: unknown = null
@@ -310,7 +331,7 @@ chatRoutes.post("/chat", async (c) => {
         model,
         system: buildSystemPrompt(containerIds || [], terminalContext, mode, agent),
         messages,
-        tools: allowTools ? terminalTools : {},
+        tools,
         stopWhen: stepCountIs(10),
         providerOptions: getReasoningOptions(providerId, mode, thinkingEffort),
         onError({ error }) {

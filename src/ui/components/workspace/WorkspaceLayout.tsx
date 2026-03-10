@@ -6,6 +6,7 @@ import { useSessionStore, type Session } from "../../stores/session"
 import { useFileStore } from "../../stores/files"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
+import { useToolApprovalStore } from "../../stores/toolApproval"
 import { ChatPanel } from "../chat/ChatPanel"
 import { TerminalArea } from "../terminal/TerminalArea"
 import { FileEditor } from "../files/FileEditor"
@@ -94,9 +95,14 @@ export function WorkspaceLayout({ project }: Props) {
   const addPendingCommand = useCommandApprovalStore((s) => s.addPending)
   const removePendingCommand = useCommandApprovalStore((s) => s.removePending)
 
-  // Subscribe to command approval messages from server
+  // Lazy import to avoid circular deps
+  const addPendingTool = useToolApprovalStore((s) => s.addPending)
+  const removePendingTool = useToolApprovalStore((s) => s.removePending)
+
+  // Subscribe to command + tool approval messages from server
   useEffect(() => {
     return subscribe((msg) => {
+      // Command approval (terminal_write)
       if (msg.type === "command:pending" && msg.data) {
         addPendingCommand({
           id: msg.data.commandId as string || msg.data.id as string,
@@ -109,8 +115,17 @@ export function WorkspaceLayout({ project }: Props) {
         const cmdId = msg.data.commandId as string || msg.data.id as string
         removePendingCommand(cmdId)
       }
+      // Tool approval (file_write, web_fetch, web_search, etc.)
+      if (msg.type === "tool:pending") {
+        addPendingTool({
+          id: msg.id as string,
+          toolName: msg.toolName as string,
+          description: msg.description as string,
+          args: (msg.args as Record<string, unknown>) || {},
+        })
+      }
     })
-  }, [subscribe, addPendingCommand, removePendingCommand])
+  }, [subscribe, addPendingCommand, removePendingCommand, addPendingTool, removePendingTool])
 
   const hasContainers = project.containerIds.length > 0
 

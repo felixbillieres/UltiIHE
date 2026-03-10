@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 export interface WSMessage {
   type: string
   data?: Record<string, unknown>
+  [key: string]: unknown
 }
 
 export type WSMessageHandler = (msg: WSMessage) => void
