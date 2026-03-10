@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react"
 import { useSessionStore, type Message } from "../../stores/session"
 import { useSettingsStore } from "../../stores/settings"
-import { useContainerStore } from "../../stores/container"
+import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
 import { Send, Bot, User, Loader2, Square } from "lucide-react"
 
@@ -21,7 +21,7 @@ export function ChatPanel({ projectId }: Props) {
 
   const { activeModel, activeProvider, activeMode, getActiveProvider } =
     useSettingsStore()
-  const container = useContainerStore((s) => s.getActiveContainer())
+  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId))
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId)
 
   const [input, setInput] = useState("")
@@ -114,7 +114,7 @@ export function ChatPanel({ projectId }: Props) {
           providerId: activeProvider,
           modelId: activeModel,
           apiKey: provider.apiKey,
-          containerName: container?.name,
+          containerIds: project?.containerIds || [],
           activeTerminalId,
           mode: activeMode,
         }),

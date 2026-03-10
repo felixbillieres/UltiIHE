@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useCallback } from "react"
-import { useContainerStore } from "../../stores/container"
 import {
   useTerminalStore,
   type LayoutNode,
@@ -14,19 +13,30 @@ import {
   SplitSquareVertical,
   Merge,
   GripVertical,
+  ChevronDown,
 } from "lucide-react"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
+import type { Project } from "../../stores/project"
 
 interface Props {
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
   connected: boolean
+  project: Project
+}
+
+/** Short container badge shown when project has multiple containers */
+function ContainerBadge({ container }: { container: string }) {
+  return (
+    <span className="px-1 py-px rounded text-[9px] font-mono bg-accent/10 text-accent/70 truncate max-w-[60px] shrink-0">
+      {container}
+    </span>
+  )
 }
 
 // ─── Main component ──────────────────────────────────────────
 
-export function TerminalArea({ send, subscribe, connected }: Props) {
-  const container = useContainerStore((s) => s.getActiveContainer())
+export function TerminalArea({ send, subscribe, connected, project }: Props) {
   const terminals = useTerminalStore((s) => s.terminals)
   const groups = useTerminalStore((s) => s.groups)
   const layout = useTerminalStore((s) => s.layout)
@@ -34,6 +44,7 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
   const unsplitAll = useTerminalStore((s) => s.unsplitAll)
 
   const terminalCountRef = useRef(0)
+  const hasContainers = project.containerIds.length > 0
 
   // Listen for terminal:created
   useEffect(() => {
@@ -42,7 +53,7 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
         const serverId = msg.data.terminalId as string
         const name = (msg.data.name as string) || serverId.slice(0, 8)
         const containerName =
-          (msg.data.container as string) || container?.name || "unknown"
+          (msg.data.container as string) || "unknown"
 
         const state = useTerminalStore.getState()
         if (!state.terminals.find((t) => t.id === serverId)) {
@@ -50,6 +61,7 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
             id: serverId,
             name,
             container: containerName,
+            projectId: project.id,
             createdAt: Date.now(),
             hasNotification: false,
           })
@@ -57,17 +69,18 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
       }
     })
     return unsubscribe
-  }, [subscribe, addTerminal, container])
+  }, [subscribe, addTerminal, project.id])
 
-  const handleAddTerminal = useCallback(() => {
-    if (!container || !connected) return
+  const handleAddTerminal = useCallback((containerName?: string) => {
+    if (!hasContainers || !connected) return
+    const target = containerName || project.containerIds[0]
     terminalCountRef.current += 1
     const name = `Terminal ${terminalCountRef.current}`
     send({
       type: "terminal:create",
-      data: { container: container.name, name },
+      data: { container: target, name },
     })
-  }, [container, connected, send])
+  }, [hasContainers, connected, send, project.containerIds])
 
   const isSingleGroup = groups.length <= 1
 
@@ -76,14 +89,11 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
     return (
       <div className="h-full flex flex-col bg-surface-0">
         <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
-          <button
-            onClick={handleAddTerminal}
-            disabled={!container || !connected}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-text-weak hover:text-text-base rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="font-sans">New terminal</span>
-          </button>
+          <NewTerminalButton
+            containerIds={project.containerIds}
+            connected={connected}
+            onAdd={handleAddTerminal}
+          />
         </div>
         <div
           className="flex-1 flex items-center justify-center"
@@ -93,9 +103,9 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
             <Terminal className="w-10 h-10 text-text-weaker mx-auto mb-3" />
             <p className="text-sm text-text-weak mb-1">Terminal</p>
             <p className="text-xs text-text-weaker">
-              {container
+              {hasContainers
                 ? 'Click "+" to open a terminal'
-                : "No container selected"}
+                : "No container linked"}
             </p>
           </div>
         </div>
@@ -113,7 +123,7 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
           group={group}
           send={send}
           handleAddTerminal={handleAddTerminal}
-          container={container}
+          containerIds={project.containerIds}
           connected={connected}
         />
         <div
@@ -146,14 +156,12 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
     <div className="h-full flex flex-col bg-surface-0">
       {/* Global toolbar — merge button */}
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
-        <button
-          onClick={handleAddTerminal}
-          disabled={!container || !connected}
-          className="p-1 rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
-          title="New terminal (in focused group)"
-        >
-          <Plus className="w-3.5 h-3.5 text-text-weaker" />
-        </button>
+        <NewTerminalButton
+          containerIds={project.containerIds}
+          connected={connected}
+          onAdd={handleAddTerminal}
+          compact
+        />
 
         <span className="text-[10px] text-text-weaker font-sans ml-1">
           {groups.length} groups
@@ -181,6 +189,7 @@ export function TerminalArea({ send, subscribe, connected }: Props) {
             send={send}
             subscribe={subscribe}
             handleAddTerminal={handleAddTerminal}
+            containerIds={project.containerIds}
           />
         )}
       </div>
@@ -194,13 +203,13 @@ function SingleGroupTabBar({
   group,
   send,
   handleAddTerminal,
-  container,
+  containerIds,
   connected,
 }: {
   group: TerminalGroup
   send: (msg: WSMessage) => void
-  handleAddTerminal: () => void
-  container: { name: string } | undefined
+  handleAddTerminal: (containerName?: string) => void
+  containerIds: string[]
   connected: boolean
 }) {
   const terminals = useTerminalStore((s) => s.terminals)
@@ -275,7 +284,12 @@ function SingleGroupTabBar({
               autoFocus
             />
           ) : (
-            <span className="truncate max-w-[100px]">{t.name}</span>
+            <>
+              <span className="truncate max-w-[100px]">{t.name}</span>
+              {containerIds.length > 1 && (
+                <ContainerBadge container={t.container} />
+              )}
+            </>
           )}
 
           <button
@@ -287,14 +301,12 @@ function SingleGroupTabBar({
         </div>
       ))}
 
-      <button
-        onClick={handleAddTerminal}
-        disabled={!container || !connected}
-        className="p-1 rounded hover:bg-surface-2 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        title="New terminal"
-      >
-        <Plus className="w-3.5 h-3.5 text-text-weaker" />
-      </button>
+      <NewTerminalButton
+        containerIds={containerIds}
+        connected={connected}
+        onAdd={handleAddTerminal}
+        compact
+      />
 
       {/* Split actions — only when 2+ terminals */}
       {groupTerminals.length >= 2 && (
@@ -333,12 +345,14 @@ function LayoutRenderer({
   send,
   subscribe,
   handleAddTerminal,
+  containerIds,
 }: {
   node: LayoutNode
   path: number[]
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
-  handleAddTerminal: () => void
+  handleAddTerminal: (containerName?: string) => void
+  containerIds: string[]
 }) {
   if (node.type === "leaf") {
     return (
@@ -347,6 +361,7 @@ function LayoutRenderer({
         send={send}
         subscribe={subscribe}
         handleAddTerminal={handleAddTerminal}
+        containerIds={containerIds}
       />
     )
   }
@@ -358,6 +373,7 @@ function LayoutRenderer({
       send={send}
       subscribe={subscribe}
       handleAddTerminal={handleAddTerminal}
+      containerIds={containerIds}
     />
   )
 }
@@ -370,12 +386,14 @@ function SplitContainer({
   send,
   subscribe,
   handleAddTerminal,
+  containerIds,
 }: {
   node: Extract<LayoutNode, { type: "split" }>
   path: number[]
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
-  handleAddTerminal: () => void
+  handleAddTerminal: (containerName?: string) => void
+  containerIds: string[]
 }) {
   const setGroupSizes = useTerminalStore((s) => s.setGroupSizes)
   const isHorizontal = node.direction === "horizontal"
@@ -452,6 +470,7 @@ function SplitContainer({
               send={send}
               subscribe={subscribe}
               handleAddTerminal={handleAddTerminal}
+              containerIds={containerIds}
             />
           </div>
           {i < node.children.length - 1 && (
@@ -477,11 +496,13 @@ function SplitGroupPane({
   send,
   subscribe,
   handleAddTerminal,
+  containerIds,
 }: {
   groupId: string
   send: (msg: WSMessage) => void
   subscribe: (handler: WSMessageHandler) => () => void
-  handleAddTerminal: () => void
+  handleAddTerminal: (containerName?: string) => void
+  containerIds: string[]
 }) {
   const group = useTerminalStore((s) => s.groups.find((g) => g.id === groupId))
   const terminals = useTerminalStore((s) => s.terminals)
@@ -590,7 +611,12 @@ function SplitGroupPane({
                 autoFocus
               />
             ) : (
-              <span className="truncate max-w-[100px]">{t.name}</span>
+              <>
+                <span className="truncate max-w-[100px]">{t.name}</span>
+                {containerIds.length > 1 && (
+                  <ContainerBadge container={t.container} />
+                )}
+              </>
             )}
 
             <button
@@ -604,13 +630,12 @@ function SplitGroupPane({
 
         {/* Group actions */}
         <div className="ml-auto flex items-center gap-0.5 shrink-0">
-          <button
-            onClick={handleAddTerminal}
-            className="p-1 rounded hover:bg-surface-2 transition-colors"
-            title="New terminal in this group"
-          >
-            <Plus className="w-3.5 h-3.5 text-text-weaker" />
-          </button>
+          <NewTerminalButton
+            containerIds={containerIds}
+            connected={true}
+            onAdd={handleAddTerminal}
+            compact
+          />
           {group.activeTerminalId && groupTerminals.length >= 2 && (
             <>
               <button
@@ -688,6 +713,107 @@ function SplitGroupPane({
             setContextMenu(null)
           }}
         />
+      )}
+    </div>
+  )
+}
+
+// ─── New terminal button (with container dropdown) ──────────
+
+function NewTerminalButton({
+  containerIds,
+  connected,
+  onAdd,
+  compact,
+}: {
+  containerIds: string[]
+  connected: boolean
+  onAdd: (containerName?: string) => void
+  compact?: boolean
+}) {
+  const [showDropdown, setShowDropdown] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showDropdown) return
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setShowDropdown(false)
+      }
+    }
+    window.addEventListener("mousedown", close)
+    return () => window.removeEventListener("mousedown", close)
+  }, [showDropdown])
+
+  const disabled = containerIds.length === 0 || !connected
+
+  // Single container: just a button
+  if (containerIds.length <= 1) {
+    if (compact) {
+      return (
+        <button
+          onClick={() => onAdd()}
+          disabled={disabled}
+          className="p-1 rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
+          title="New terminal"
+        >
+          <Plus className="w-3.5 h-3.5 text-text-weaker" />
+        </button>
+      )
+    }
+    return (
+      <button
+        onClick={() => onAdd()}
+        disabled={disabled}
+        className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-text-weak hover:text-text-base rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
+      >
+        <Plus className="w-3.5 h-3.5" />
+        <span className="font-sans">New terminal</span>
+      </button>
+    )
+  }
+
+  // Multiple containers: dropdown
+  return (
+    <div ref={ref} className="relative">
+      {compact ? (
+        <button
+          onClick={() => setShowDropdown(!showDropdown)}
+          disabled={disabled}
+          className="flex items-center gap-0.5 p-1 rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
+          title="New terminal"
+        >
+          <Plus className="w-3.5 h-3.5 text-text-weaker" />
+          <ChevronDown className="w-2.5 h-2.5 text-text-weaker" />
+        </button>
+      ) : (
+        <button
+          onClick={() => setShowDropdown(!showDropdown)}
+          disabled={disabled}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-text-weak hover:text-text-base rounded hover:bg-surface-2 transition-colors disabled:opacity-30"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="font-sans">New terminal</span>
+          <ChevronDown className="w-3 h-3" />
+        </button>
+      )}
+
+      {showDropdown && (
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-[180px] bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans">
+          {containerIds.map((name) => (
+            <button
+              key={name}
+              onClick={() => {
+                onAdd(name)
+                setShowDropdown(false)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+            >
+              <Terminal className="w-3 h-3 text-text-weaker shrink-0" />
+              <span className="truncate">{name}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   )

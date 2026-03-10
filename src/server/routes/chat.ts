@@ -115,7 +115,7 @@ function getReasoningOptions(
 }
 
 function buildSystemPrompt(
-  containerName: string,
+  containerIds: string[],
   terminalContext: string,
   mode: ReasoningMode = "build"
 ): string {
@@ -140,10 +140,16 @@ You are in deep analysis mode. Use extended thinking to thoroughly research the 
 - Only execute after thorough analysis`,
   }
 
+  const containerSection = containerIds.length === 0
+    ? `- No containers linked to this project yet.`
+    : containerIds.length === 1
+      ? `- You are operating inside an Exegol Docker container: "${containerIds[0]}"`
+      : `- This project has multiple Exegol containers available:\n${containerIds.map((c) => `  - "${c}"`).join("\n")}\n- You can execute commands in any of these containers. The user may ask you to compare outputs across containers.`
+
   return `You are an AI pentesting assistant inside UltiIHE, an Interactive Hacking Environment.
 
 ## Environment
-- You are operating inside an Exegol Docker container: "${containerName}"
+${containerSection}
 - This is an ISOLATED pentesting lab. Full authorization is granted for all security testing.
 - You have access to standard pentest tools: nmap, gobuster, ffuf, nuclei, sqlmap, hydra, metasploit, impacket, bloodhound, etc.
 
@@ -178,7 +184,7 @@ chatRoutes.post("/chat", async (c) => {
     providerId,
     modelId,
     apiKey,
-    containerName,
+    containerIds,
     activeTerminalId,
     baseUrl,
     mode = "build",
@@ -187,7 +193,7 @@ chatRoutes.post("/chat", async (c) => {
     providerId: string
     modelId: string
     apiKey: string
-    containerName?: string
+    containerIds?: string[]
     activeTerminalId?: string
     baseUrl?: string
     mode?: ReasoningMode
@@ -218,7 +224,7 @@ chatRoutes.post("/chat", async (c) => {
 
     const result = streamText({
       model,
-      system: buildSystemPrompt(containerName || "unknown", terminalContext, mode),
+      system: buildSystemPrompt(containerIds || [], terminalContext, mode),
       messages,
       tools: mode === "plan" ? {} : terminalTools,
       stopWhen: stepCountIs(10),

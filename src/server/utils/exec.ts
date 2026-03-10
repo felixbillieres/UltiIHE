@@ -5,7 +5,7 @@ const execPromise = promisify(exec)
 
 export async function execAsync(
   command: string,
-  timeout = 10000,
+  timeout = 30000,
 ): Promise<{ stdout: string; stderr: string }> {
   return execPromise(command, {
     timeout,

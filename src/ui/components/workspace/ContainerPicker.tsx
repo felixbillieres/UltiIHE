@@ -29,9 +29,11 @@ export function ContainerPicker({ projectId }: Props) {
     fetchContainers()
   }, [fetchContainers])
 
+  const addContainerToProject = useProjectStore((s) => s.addContainerToProject)
+
   function handleSelect(container: ExegolContainer) {
     setActiveContainer(container.id)
-    updateProject(projectId, { containerName: container.name })
+    addContainerToProject(projectId, container.name)
   }
 
   async function handleStart(container: ExegolContainer) {

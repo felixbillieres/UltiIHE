@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { type Project, useProjectStore } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
@@ -11,15 +11,16 @@ import { TerminalArea } from "../terminal/TerminalArea"
 import { FileEditor } from "../files/FileEditor"
 import { FileTree } from "../layout/FileTree"
 import { SettingsDialog } from "../settings/SettingsDialog"
+import { ExegolManager } from "../exegol/ExegolManager"
 import {
-  Shield,
-  Settings,
+  Settings as SettingsIcon,
   Plus,
   MessageSquare,
   Trash2,
-  Bot,
   FolderTree,
   Sparkles,
+  Box,
+  X,
 } from "lucide-react"
 
 interface Props {
@@ -28,55 +29,62 @@ interface Props {
 
 export function WorkspaceLayout({ project }: Props) {
   const navigate = useNavigate()
-  const container = useContainerStore((s) => s.getActiveContainer())
   const { activeModel } = useSettingsStore()
   const projects = useProjectStore((s) => s.projects)
   const setActiveProject = useProjectStore((s) => s.setActiveProject)
+  const fetchContainers = useContainerStore((s) => s.fetchContainers)
 
   const [showSettings, setShowSettings] = useState(false)
+  const [showContainerManager, setShowContainerManager] = useState(false)
   const [rightTab, setRightTab] = useState<"chat" | "files">("chat")
   const [rightPanelWidth] = useState(400)
 
-  const { send, connected, subscribe } = useWebSocket({
-    enabled: !!container,
-  })
+  // Fetch containers on mount
+  useEffect(() => {
+    fetchContainers()
+  }, [fetchContainers])
+
+  // WebSocket is always connected (terminals can be from any container)
+  const { send, connected, subscribe } = useWebSocket({ enabled: true })
+
+  // Show container manager if project has no containers
+  const hasContainers = project.containerIds.length > 0
 
   return (
     <div className="h-full flex flex-col">
-      {/* Main layout */}
       <div className="flex-1 flex overflow-hidden">
-        {/* ── Icon rail (48px) ── */}
+        {/* Icon rail */}
         <IconRail
           project={project}
           projects={projects}
-          container={container}
-          onNavigateHome={() => {
-            useContainerStore.getState().setActiveContainer(null)
-            navigate("/")
-          }}
+          onNavigateHome={() => navigate("/")}
           onSwitchProject={(id) => {
             setActiveProject(id)
             navigate(`/project/${id}`)
           }}
           onOpenSettings={() => setShowSettings(true)}
+          onOpenContainers={() => setShowContainerManager(true)}
+          containerCount={project.containerIds.length}
         />
 
-        {/* ── Session panel (220px) ── */}
+        {/* Session panel */}
         <SessionPanel projectId={project.id} />
 
-        {/* ── Center: terminals + file editor ── */}
+        {/* Center: terminals + file editor */}
         <CenterArea
           send={send}
           subscribe={subscribe}
           connected={connected}
+          project={project}
+          showContainerManager={!hasContainers || showContainerManager}
+          onCloseContainerManager={() => setShowContainerManager(false)}
         />
 
-        {/* ── Right panel: Chat / Files tabs (400px) ── */}
+        {/* Right panel: Chat / Files tabs */}
         <div
           className="shrink-0 border-l border-border-weak flex flex-col"
           style={{ width: rightPanelWidth }}
         >
-          {/* Tab bar */}
           <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0">
             <RightPanelTab
               active={rightTab === "chat"}
@@ -90,21 +98,17 @@ export function WorkspaceLayout({ project }: Props) {
               icon={<FolderTree className="w-3.5 h-3.5" />}
               label="Files"
             />
-            <div className="ml-auto pr-2 flex items-center gap-1">
+            <div className="ml-auto pr-2">
               <span className="text-[10px] text-text-weaker font-mono truncate max-w-[100px]">
                 {activeModel}
               </span>
             </div>
           </div>
-
-          {/* Panel content */}
           <div className="flex-1 overflow-hidden">
             {rightTab === "chat" ? (
               <ChatPanel projectId={project.id} />
             ) : (
-              <div className="h-full overflow-y-auto">
-                <FileTree />
-              </div>
+              <FileTreeWithSelector project={project} />
             )}
           </div>
         </div>
@@ -117,26 +121,82 @@ export function WorkspaceLayout({ project }: Props) {
   )
 }
 
+// ─── File tree with container selector ───────────────────────
+
+function FileTreeWithSelector({ project }: { project: Project }) {
+  const [selectedContainer, setSelectedContainer] = useState(
+    project.containerIds[0] || "",
+  )
+  const setActiveContainer = useContainerStore((s) => s.setActiveContainer)
+  const containers = useContainerStore((s) => s.containers)
+
+  // Keep selectedContainer in sync
+  useEffect(() => {
+    if (selectedContainer) {
+      const c = containers.find((c) => c.name === selectedContainer)
+      if (c) setActiveContainer(c.id)
+    }
+  }, [selectedContainer, containers, setActiveContainer])
+
+  if (project.containerIds.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center p-4 text-center">
+        <div>
+          <Box className="w-6 h-6 text-text-weaker mx-auto mb-2" />
+          <p className="text-xs text-text-weaker font-sans">
+            Add a container to browse files
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Container selector */}
+      {project.containerIds.length > 1 && (
+        <div className="px-2 py-1.5 border-b border-border-weak shrink-0">
+          <select
+            value={selectedContainer}
+            onChange={(e) => setSelectedContainer(e.target.value)}
+            className="w-full bg-surface-1 border border-border-weak rounded px-2 py-1 text-xs text-text-base font-sans focus:outline-none focus:border-accent/50"
+          >
+            {project.containerIds.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto">
+        <FileTree />
+      </div>
+    </div>
+  )
+}
+
 // ─── Icon rail ───────────────────────────────────────────────
 
 function IconRail({
   project,
   projects,
-  container,
   onNavigateHome,
   onSwitchProject,
   onOpenSettings,
+  onOpenContainers,
+  containerCount,
 }: {
   project: Project
   projects: Project[]
-  container: { name: string } | undefined
   onNavigateHome: () => void
   onSwitchProject: (id: string) => void
   onOpenSettings: () => void
+  onOpenContainers: () => void
+  containerCount: number
 }) {
   return (
     <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center py-3 gap-2">
-      {/* Project icons */}
       <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto no-scrollbar w-full px-1.5">
         {projects.map((p) => {
           const isActive = p.id === project.id
@@ -144,9 +204,7 @@ function IconRail({
           return (
             <button
               key={p.id}
-              onClick={() =>
-                isActive ? undefined : onSwitchProject(p.id)
-              }
+              onClick={() => (!isActive ? onSwitchProject(p.id) : undefined)}
               className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-sans font-bold transition-all shrink-0 ${
                 isActive
                   ? "bg-accent/20 text-accent ring-2 ring-accent/50"
@@ -168,22 +226,25 @@ function IconRail({
         </button>
       </div>
 
-      {/* Bottom actions */}
       <div className="shrink-0 flex flex-col items-center gap-2 pt-2 border-t border-border-weak/50 w-full px-1.5">
-        {container && (
-          <div
-            className="w-9 h-9 rounded-lg flex items-center justify-center bg-status-success/10 shrink-0"
-            title={container.name}
-          >
-            <Shield className="w-4 h-4 text-status-success" />
-          </div>
-        )}
+        <button
+          onClick={onOpenContainers}
+          className="relative w-9 h-9 rounded-lg flex items-center justify-center text-text-weaker hover:bg-surface-2 hover:text-text-weak transition-colors shrink-0"
+          title="Manage containers"
+        >
+          <Box className="w-4 h-4" />
+          {containerCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-status-success text-[8px] text-white flex items-center justify-center font-bold">
+              {containerCount}
+            </span>
+          )}
+        </button>
         <button
           onClick={onOpenSettings}
           className="w-9 h-9 rounded-lg flex items-center justify-center text-text-weaker hover:bg-surface-2 hover:text-text-weak transition-colors shrink-0"
           title="Settings"
         >
-          <Settings className="w-4 h-4" />
+          <SettingsIcon className="w-4 h-4" />
         </button>
       </div>
     </div>
@@ -205,7 +266,6 @@ function SessionPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="w-56 shrink-0 border-r border-border-weak bg-surface-0 flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-weak shrink-0">
         <span className="text-xs text-text-strong font-sans font-medium">
           Sessions
@@ -218,8 +278,6 @@ function SessionPanel({ projectId }: { projectId: string }) {
           <Plus className="w-3.5 h-3.5 text-text-weaker" />
         </button>
       </div>
-
-      {/* Session list */}
       <div className="flex-1 overflow-y-auto py-1">
         {sessions.length === 0 ? (
           <div className="px-3 py-8 text-center">
@@ -261,12 +319,34 @@ function SessionRow({
   onSelect: () => void
   onDelete: () => void
 }) {
+  const renameSession = useSessionStore((s) => s.renameSession)
+  const [editing, setEditing] = useState(false)
+  const [editName, setEditName] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+
   const msgCount = session.messages?.length ?? 0
   const timeAgo = formatTimeAgo(session.updatedAt)
+
+  const startEditing = () => {
+    setEditName(session.title)
+    setEditing(true)
+    setTimeout(() => inputRef.current?.select(), 0)
+  }
+
+  const commitRename = () => {
+    if (editName.trim() && editName.trim() !== session.title) {
+      renameSession(session.id, editName.trim())
+    }
+    setEditing(false)
+  }
 
   return (
     <div
       onClick={onSelect}
+      onDoubleClick={(e) => {
+        e.stopPropagation()
+        startEditing()
+      }}
       className={`flex items-start gap-2 px-3 py-2 cursor-pointer group transition-colors ${
         isActive
           ? "bg-accent/8 border-l-2 border-accent"
@@ -281,13 +361,29 @@ function SessionRow({
         <MessageSquare className="w-3.5 h-3.5" />
       </div>
       <div className="flex-1 min-w-0">
-        <div
-          className={`text-xs truncate font-sans ${
-            isActive ? "text-text-strong" : "text-text-weak"
-          }`}
-        >
-          {session.title}
-        </div>
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRename()
+              if (e.key === "Escape") setEditing(false)
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full bg-transparent border-b border-accent text-xs text-text-strong font-sans outline-none"
+            autoFocus
+          />
+        ) : (
+          <div
+            className={`text-xs truncate font-sans ${
+              isActive ? "text-text-strong" : "text-text-weak"
+            }`}
+          >
+            {session.title}
+          </div>
+        )}
         <div className="text-[10px] text-text-weaker font-sans mt-0.5">
           {msgCount} msg{msgCount !== 1 ? "s" : ""} · {timeAgo}
         </div>
@@ -333,70 +429,102 @@ function RightPanelTab({
   )
 }
 
-// ─── Center area (terminals + file editor) ───────────────────
+// ─── Center area ─────────────────────────────────────────────
 
 function CenterArea({
   send,
   subscribe,
   connected,
+  project,
+  showContainerManager,
+  onCloseContainerManager,
 }: {
   send: (data: any) => void
   subscribe: (handler: (data: any) => void) => () => void
   connected: boolean
+  project: Project
+  showContainerManager: boolean
+  onCloseContainerManager: () => void
 }) {
   const hasOpenFiles = useFileStore((s) => s.openFiles.length > 0)
   const [editorHeight, setEditorHeight] = useState(300)
   const [dragging, setDragging] = useState(false)
 
-  if (!hasOpenFiles) {
+  // If no containers, show exegol manager
+  if (showContainerManager && project.containerIds.length === 0) {
     return (
-      <div className="flex-1 min-w-0">
-        <TerminalArea
-          send={send}
-          subscribe={subscribe}
-          connected={connected}
+      <div className="flex-1 min-w-0 flex items-center justify-center bg-surface-0">
+        <ExegolManager
+          project={project}
+          onClose={onCloseContainerManager}
+          canClose={project.containerIds.length > 0}
         />
       </div>
     )
   }
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col">
-      <div className="shrink-0" style={{ height: editorHeight }}>
-        <FileEditor />
-      </div>
-      <div
-        className={`h-1 cursor-row-resize shrink-0 transition-colors ${
-          dragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
-        }`}
-        onMouseDown={(e) => {
-          e.preventDefault()
-          setDragging(true)
-          const startY = e.clientY
-          const startH = editorHeight
-          function onMove(ev: MouseEvent) {
-            const delta = ev.clientY - startY
-            setEditorHeight(Math.max(120, Math.min(startH + delta, 600)))
-          }
-          function onUp() {
-            setDragging(false)
-            document.removeEventListener("mousemove", onMove)
-            document.removeEventListener("mouseup", onUp)
-          }
-          document.addEventListener("mousemove", onMove)
-          document.addEventListener("mouseup", onUp)
-        }}
-      />
-      <div className="flex-1 min-h-0">
+    <div className="flex-1 min-w-0 flex flex-col relative">
+      {/* Exegol manager overlay */}
+      {showContainerManager && (
+        <div className="absolute inset-0 z-20 bg-black/70 backdrop-blur-sm flex items-center justify-center">
+          <ExegolManager
+            project={project}
+            onClose={onCloseContainerManager}
+            canClose={true}
+          />
+        </div>
+      )}
+
+      {hasOpenFiles ? (
+        <>
+          <div className="shrink-0" style={{ height: editorHeight }}>
+            <FileEditor />
+          </div>
+          <div
+            className={`h-1 cursor-row-resize shrink-0 transition-colors ${
+              dragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
+            }`}
+            onMouseDown={(e) => {
+              e.preventDefault()
+              setDragging(true)
+              const startY = e.clientY
+              const startH = editorHeight
+              function onMove(ev: MouseEvent) {
+                const delta = ev.clientY - startY
+                setEditorHeight(Math.max(120, Math.min(startH + delta, 600)))
+              }
+              function onUp() {
+                setDragging(false)
+                document.removeEventListener("mousemove", onMove)
+                document.removeEventListener("mouseup", onUp)
+              }
+              document.addEventListener("mousemove", onMove)
+              document.addEventListener("mouseup", onUp)
+            }}
+          />
+          <div className="flex-1 min-h-0">
+            <TerminalArea
+              send={send}
+              subscribe={subscribe}
+              connected={connected}
+              project={project}
+            />
+          </div>
+        </>
+      ) : (
         <TerminalArea
           send={send}
           subscribe={subscribe}
           connected={connected}
+          project={project}
         />
-      </div>
+      )}
     </div>
   )
 }
+
+// ─── Container manager ───────────────────────────────────────
 
 // ─── Helpers ─────────────────────────────────────────────────
 

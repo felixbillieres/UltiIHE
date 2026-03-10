@@ -28,6 +28,7 @@ interface SessionStore {
   // Session CRUD
   createSession: (projectId: string, title?: string) => Session
   deleteSession: (id: string) => void
+  renameSession: (id: string, title: string) => void
   setActiveSession: (id: string | null) => void
   getProjectSessions: (projectId: string) => Session[]
 
@@ -68,6 +69,14 @@ export const useSessionStore = create<SessionStore>()(
           sessions: s.sessions.filter((sess) => sess.id !== id),
           activeSessionId:
             s.activeSessionId === id ? null : s.activeSessionId,
+        }))
+      },
+
+      renameSession: (id, title) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === id ? { ...sess, title, updatedAt: Date.now() } : sess,
+          ),
         }))
       },
 

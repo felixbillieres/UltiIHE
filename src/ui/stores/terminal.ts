@@ -6,6 +6,7 @@ export interface TerminalInstance {
   id: string
   name: string
   container: string
+  projectId: string
   createdAt: number
   hasNotification: boolean
 }
@@ -26,7 +27,7 @@ export type LayoutNode =
       type: "split"
       direction: SplitDirection
       children: LayoutNode[]
-      sizes: number[] // percentages, always sum to 100
+      sizes: number[]
     }
 
 // ─── Store ────────────────────────────────────────────────────
@@ -36,8 +37,6 @@ interface TerminalStore {
   groups: TerminalGroup[]
   layout: LayoutNode | null
   focusedGroupId: string | null
-
-  // The "global" active terminal — used by chat panel for AI context
   activeTerminalId: string | null
 
   // Terminal CRUD
@@ -53,6 +52,10 @@ interface TerminalStore {
   moveTerminalToGroup: (terminalId: string, targetGroupId: string) => void
   unsplitAll: () => void
   setGroupSizes: (parentPath: number[], sizes: number[]) => void
+
+  // Project scoping — returns terminals for a given project
+  getProjectTerminals: (projectId: string) => TerminalInstance[]
+  getProjectGroups: (projectId: string) => TerminalGroup[]
 }
 
 let groupCounter = 0
@@ -62,7 +65,6 @@ function newGroupId() {
 
 // ─── Layout tree helpers ──────────────────────────────────────
 
-/** Find which group a terminal belongs to */
 function findGroupForTerminal(
   groups: TerminalGroup[],
   terminalId: string,
@@ -70,7 +72,6 @@ function findGroupForTerminal(
   return groups.find((g) => g.terminalIds.includes(terminalId))
 }
 
-/** Remove a group from the layout tree and simplify */
 function removeGroupFromLayout(
   node: LayoutNode | null,
   groupId: string,
@@ -94,14 +95,12 @@ function removeGroupFromLayout(
   if (newChildren.length === 0) return null
   if (newChildren.length === 1) return newChildren[0]
 
-  // Re-normalize sizes
   const total = newSizes.reduce((a, b) => a + b, 0)
   const normalizedSizes = newSizes.map((s) => (s / total) * 100)
 
   return { ...node, children: newChildren, sizes: normalizedSizes }
 }
 
-/** Replace a leaf groupId with a new node */
 function replaceLeaf(
   node: LayoutNode,
   groupId: string,
@@ -116,7 +115,6 @@ function replaceLeaf(
   }
 }
 
-/** Update sizes at a specific path in the layout tree */
 function updateSizesAtPath(
   node: LayoutNode,
   path: number[],
@@ -154,7 +152,6 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         : null
 
       if (targetGroup) {
-        // Add to existing group
         return {
           terminals: [...state.terminals, terminal],
           groups: state.groups.map((g) =>
@@ -171,7 +168,6 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         }
       }
 
-      // No group exists — create first group
       const gId = newGroupId()
       const group: TerminalGroup = {
         id: gId,
@@ -199,24 +195,21 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
       const newTerminalIds = group.terminalIds.filter((tid) => tid !== id)
       let newActive = group.activeTerminalId
       if (newActive === id) {
-        newActive = newTerminalIds.length > 0 ? newTerminalIds[newTerminalIds.length - 1] : null
+        newActive =
+          newTerminalIds.length > 0
+            ? newTerminalIds[newTerminalIds.length - 1]
+            : null
       }
 
-      // Group is now empty — remove it
       if (newTerminalIds.length === 0) {
         const newGroups = state.groups.filter((g) => g.id !== group.id)
         const newLayout = removeGroupFromLayout(state.layout, group.id)
-
-        // Update focused group
         let newFocused = state.focusedGroupId
         if (newFocused === group.id) {
           newFocused = newGroups.length > 0 ? newGroups[0].id : null
         }
-
-        // Update global active terminal
         const focusedGroup = newGroups.find((g) => g.id === newFocused)
         const globalActive = focusedGroup?.activeTerminalId || null
-
         return {
           terminals: remaining,
           groups: newGroups,
@@ -226,18 +219,14 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         }
       }
 
-      // Update group with terminal removed
       const newGroups = state.groups.map((g) =>
         g.id === group.id
           ? { ...g, terminalIds: newTerminalIds, activeTerminalId: newActive }
           : g,
       )
 
-      // If removed terminal was global active, update
       let globalActive = state.activeTerminalId
-      if (globalActive === id) {
-        globalActive = newActive
-      }
+      if (globalActive === id) globalActive = newActive
 
       return {
         terminals: remaining,
@@ -270,8 +259,8 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
     }),
 
   setActiveInGroup: (groupId, terminalId) =>
-    set((state) => ({
-      groups: state.groups.map((g) =>
+    set(() => ({
+      groups: get().groups.map((g) =>
         g.id === groupId ? { ...g, activeTerminalId: terminalId } : g,
       ),
       activeTerminalId: terminalId,
@@ -283,7 +272,6 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
       const sourceGroup = findGroupForTerminal(state.groups, terminalId)
       if (!sourceGroup || !state.layout) return state
 
-      // Create new group with the terminal moved there
       const newGId = newGroupId()
       const newGroup: TerminalGroup = {
         id: newGId,
@@ -291,28 +279,26 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         activeTerminalId: terminalId,
       }
 
-      // Remove terminal from source group
-      const newSourceIds = sourceGroup.terminalIds.filter((t) => t !== terminalId)
+      const newSourceIds = sourceGroup.terminalIds.filter(
+        (t) => t !== terminalId,
+      )
+      if (newSourceIds.length === 0) return state
+
       let newSourceActive = sourceGroup.activeTerminalId
       if (newSourceActive === terminalId) {
-        newSourceActive = newSourceIds.length > 0 ? newSourceIds[0] : null
-      }
-
-      // If source group would be empty, replace it entirely
-      if (newSourceIds.length === 0) {
-        // Can't split the only terminal in the only group into... itself
-        // Instead, just create an empty split with the terminal in the new group
-        // Actually this is a no-op — you can't split away the last terminal
-        return state
+        newSourceActive = newSourceIds[0] || null
       }
 
       const updatedGroups = state.groups.map((g) =>
         g.id === sourceGroup.id
-          ? { ...g, terminalIds: newSourceIds, activeTerminalId: newSourceActive }
+          ? {
+              ...g,
+              terminalIds: newSourceIds,
+              activeTerminalId: newSourceActive,
+            }
           : g,
       )
 
-      // Replace the source leaf with a split containing source + new
       const splitNode: LayoutNode = {
         type: "split",
         direction,
@@ -337,12 +323,12 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
     set((state) => {
       const sourceGroup = findGroupForTerminal(state.groups, terminalId)
       if (!sourceGroup || sourceGroup.id === targetGroupId) return state
-
       const targetGroup = state.groups.find((g) => g.id === targetGroupId)
       if (!targetGroup) return state
 
-      // Remove from source
-      const newSourceIds = sourceGroup.terminalIds.filter((t) => t !== terminalId)
+      const newSourceIds = sourceGroup.terminalIds.filter(
+        (t) => t !== terminalId,
+      )
       let newSourceActive = sourceGroup.activeTerminalId
       if (newSourceActive === terminalId) {
         newSourceActive = newSourceIds.length > 0 ? newSourceIds[0] : null
@@ -350,7 +336,11 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
 
       let newGroups = state.groups.map((g) => {
         if (g.id === sourceGroup.id) {
-          return { ...g, terminalIds: newSourceIds, activeTerminalId: newSourceActive }
+          return {
+            ...g,
+            terminalIds: newSourceIds,
+            activeTerminalId: newSourceActive,
+          }
         }
         if (g.id === targetGroupId) {
           return {
@@ -363,8 +353,6 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
       })
 
       let newLayout = state.layout
-
-      // If source group is now empty, remove it from layout
       if (newSourceIds.length === 0) {
         newGroups = newGroups.filter((g) => g.id !== sourceGroup.id)
         newLayout = removeGroupFromLayout(newLayout, sourceGroup.id)
@@ -381,20 +369,16 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
   unsplitAll: () =>
     set((state) => {
       if (state.groups.length <= 1) return state
-
-      // Merge all terminals into one group
       const allTerminalIds = state.groups.flatMap((g) => g.terminalIds)
       const activeId =
         state.activeTerminalId ||
         (allTerminalIds.length > 0 ? allTerminalIds[0] : null)
-
       const gId = state.groups[0].id
       const merged: TerminalGroup = {
         id: gId,
         terminalIds: allTerminalIds,
         activeTerminalId: activeId,
       }
-
       return {
         groups: [merged],
         layout: { type: "leaf" as const, groupId: gId },
@@ -409,4 +393,19 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         ? updateSizesAtPath(state.layout, parentPath, sizes)
         : state.layout,
     })),
+
+  getProjectTerminals: (projectId) =>
+    get().terminals.filter((t) => t.projectId === projectId),
+
+  getProjectGroups: (projectId) => {
+    const projectTerminalIds = new Set(
+      get()
+        .terminals.filter((t) => t.projectId === projectId)
+        .map((t) => t.id),
+    )
+    return get()
+      .groups.filter((g) =>
+        g.terminalIds.some((tid) => projectTerminalIds.has(tid)),
+      )
+  },
 }))

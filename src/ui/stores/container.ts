@@ -42,8 +42,11 @@ export const useContainerStore = create<ContainerStore>()((set, get) => ({
 
   startContainer: async (name) => {
     try {
-      const res = await fetch(`/api/containers/${name}/start`, { method: "POST" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const res = await fetch(`/api/containers/${encodeURIComponent(name)}/start`, { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `HTTP ${res.status}`)
+      }
       await get().fetchContainers()
     } catch (e) {
       set({ error: (e as Error).message })
@@ -52,8 +55,11 @@ export const useContainerStore = create<ContainerStore>()((set, get) => ({
 
   stopContainer: async (name) => {
     try {
-      const res = await fetch(`/api/containers/${name}/stop`, { method: "POST" })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const res = await fetch(`/api/containers/${encodeURIComponent(name)}/stop`, { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || `HTTP ${res.status}`)
+      }
       await get().fetchContainers()
     } catch (e) {
       set({ error: (e as Error).message })
