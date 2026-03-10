@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback, type ComponentProps } from "react"
+import Markdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { useSessionStore, type Message } from "../../stores/session"
 import {
   useSettingsStore,
@@ -1101,7 +1103,7 @@ function MessageBubble({
             ))}
             {parsed.text && (
               <div className="bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-left w-full">
-                <InlineMarkdown text={parsed.text} />
+                <MarkdownContent content={parsed.text} />
               </div>
             )}
           </div>
@@ -1361,167 +1363,73 @@ function ToolPermissionBanner({
 
 // ─── Markdown rendering ──────────────────────────────────────
 
+const mdComponents: ComponentProps<typeof Markdown>["components"] = {
+  h1: ({ children }) => (
+    <div className="font-bold text-text-strong text-base mt-2 mb-1">{children}</div>
+  ),
+  h2: ({ children }) => (
+    <div className="font-semibold text-text-strong mt-2 mb-0.5">{children}</div>
+  ),
+  h3: ({ children }) => (
+    <div className="font-semibold text-text-strong text-xs mt-2 mb-0.5">{children}</div>
+  ),
+  p: ({ children }) => <p className="my-1">{children}</p>,
+  ul: ({ children }) => (
+    <ul className="my-1 ml-4 space-y-0.5 list-disc list-outside">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-1 ml-4 space-y-0.5 list-decimal list-outside">{children}</ol>
+  ),
+  li: ({ children }) => <li className="text-text-base">{children}</li>,
+  strong: ({ children }) => (
+    <strong className="font-semibold text-text-strong">{children}</strong>
+  ),
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+      {children}
+    </a>
+  ),
+  code: ({ className, children }) => {
+    const isBlock = className?.startsWith("language-") || String(children).includes("\n")
+    if (isBlock) {
+      return (
+        <pre className="my-2 p-3 rounded-lg bg-surface-1 border border-border-weak overflow-x-auto">
+          <code className="text-xs font-mono text-text-strong">{children}</code>
+        </pre>
+      )
+    }
+    return (
+      <code className="px-1 py-0.5 rounded bg-surface-2 text-xs font-mono text-accent">
+        {children}
+      </code>
+    )
+  },
+  pre: ({ children }) => <>{children}</>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-accent/30 pl-3 my-1 text-text-weak italic">
+      {children}
+    </blockquote>
+  ),
+  table: ({ children }) => (
+    <div className="my-2 overflow-x-auto">
+      <table className="text-xs border-collapse">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-border-weak px-2 py-1 bg-surface-1 text-text-strong font-semibold text-left">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-border-weak px-2 py-1">{children}</td>
+  ),
+  hr: () => <hr className="my-2 border-border-weak" />,
+}
+
 function MarkdownContent({ content }: { content: string }) {
-  // Split on code blocks first
-  const codeBlocks = content.split(/(```[\s\S]*?```)/g)
-
   return (
-    <>
-      {codeBlocks.map((block, bi) => {
-        if (block.startsWith("```")) {
-          const match = block.match(/```(\w+)?\n?([\s\S]*?)```/)
-          const code = match?.[2] || block.slice(3, -3)
-          return (
-            <pre
-              key={bi}
-              className="my-2 p-3 rounded-lg bg-surface-1 border border-border-weak overflow-x-auto"
-            >
-              <code className="text-xs font-mono text-text-strong">
-                {code.trim()}
-              </code>
-            </pre>
-          )
-        }
-        // Process line-level markdown (headers, bullets) then inline
-        return <MarkdownLines key={bi} text={block} />
-      })}
-    </>
-  )
-}
-
-function MarkdownLines({ text }: { text: string }) {
-  const lines = text.split("\n")
-  const result: React.ReactNode[] = []
-  let listItems: React.ReactNode[] = []
-
-  function flushList() {
-    if (listItems.length > 0) {
-      result.push(
-        <ul key={`ul-${result.length}`} className="my-1 ml-4 space-y-0.5 list-disc list-outside">
-          {listItems}
-        </ul>,
-      )
-      listItems = []
-    }
-  }
-
-  lines.forEach((line, li) => {
-    // Headers
-    const h3Match = line.match(/^###\s+(.+)/)
-    if (h3Match) {
-      flushList()
-      result.push(
-        <div key={li} className="font-semibold text-text-strong text-xs mt-2 mb-0.5">
-          <InlineText text={h3Match[1]} />
-        </div>,
-      )
-      return
-    }
-    const h2Match = line.match(/^##\s+(.+)/)
-    if (h2Match) {
-      flushList()
-      result.push(
-        <div key={li} className="font-semibold text-text-strong mt-2 mb-0.5">
-          <InlineText text={h2Match[1]} />
-        </div>,
-      )
-      return
-    }
-    const h1Match = line.match(/^#\s+(.+)/)
-    if (h1Match) {
-      flushList()
-      result.push(
-        <div key={li} className="font-bold text-text-strong text-base mt-2 mb-1">
-          <InlineText text={h1Match[1]} />
-        </div>,
-      )
-      return
-    }
-
-    // Bullet lists (- or * at start, with optional indentation)
-    const bulletMatch = line.match(/^(\s*)[-*]\s+(.+)/)
-    if (bulletMatch) {
-      listItems.push(
-        <li key={li} className="text-text-base" style={{ marginLeft: bulletMatch[1].length > 0 ? 16 : 0 }}>
-          <InlineText text={bulletMatch[2]} />
-        </li>,
-      )
-      return
-    }
-
-    // Numbered lists
-    const numMatch = line.match(/^(\s*)\d+[.)]\s+(.+)/)
-    if (numMatch) {
-      flushList()
-      result.push(
-        <div key={li} className="ml-4" style={{ marginLeft: numMatch[1].length > 0 ? 32 : 16 }}>
-          <InlineText text={line.trimStart()} />
-        </div>,
-      )
-      return
-    }
-
-    // Regular line
-    flushList()
-    if (line.trim() === "") {
-      result.push(<div key={li} className="h-2" />)
-    } else {
-      result.push(
-        <span key={li}>
-          <InlineText text={line} />
-          {li < lines.length - 1 && "\n"}
-        </span>,
-      )
-    }
-  })
-
-  flushList()
-  return <>{result}</>
-}
-
-function InlineText({ text }: { text: string }) {
-  // Split on inline code first, then process markdown
-  const parts = text.split(/(`[^`]+`)/g)
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (part.startsWith("`") && part.endsWith("`")) {
-          return (
-            <code key={i} className="px-1 py-0.5 rounded bg-surface-2 text-xs font-mono text-accent">
-              {part.slice(1, -1)}
-            </code>
-          )
-        }
-        return <InlineMarkdown key={i} text={part} />
-      })}
-    </>
-  )
-}
-
-function InlineMarkdown({ text }: { text: string }) {
-  // Match **bold** (allowing special chars inside), *italic*, [links](url)
-  const parts = text.split(/(\*\*(?:(?!\*\*).)+\*\*|\*(?:(?!\*).)+\*|\[[^\]]+\]\([^)]+\))/g)
-  return (
-    <>
-      {parts.map((seg, i) => {
-        if (seg.startsWith("**") && seg.endsWith("**") && seg.length > 4) {
-          return <strong key={i} className="font-semibold text-text-strong">{seg.slice(2, -2)}</strong>
-        }
-        if (seg.startsWith("*") && seg.endsWith("*") && !seg.startsWith("**") && seg.length > 2) {
-          return <em key={i}>{seg.slice(1, -1)}</em>
-        }
-        const linkMatch = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
-        if (linkMatch) {
-          return (
-            <a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer"
-              className="text-accent hover:underline"
-            >
-              {linkMatch[1]}
-            </a>
-          )
-        }
-        return <span key={i}>{seg}</span>
-      })}
-    </>
+    <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+      {content}
+    </Markdown>
   )
 }

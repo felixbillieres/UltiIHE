@@ -1,4 +1,4 @@
-// UltiIHE i18n translations
+// Exegol IHE i18n translations
 // Flat dot-notation keys, 6 languages
 
 export type TranslationKey =

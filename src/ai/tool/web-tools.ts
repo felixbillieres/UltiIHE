@@ -100,7 +100,7 @@ export const webFetchTool: Tool<
       if (response.status === 403 && response.headers.get("cf-mitigated") === "challenge") {
         response = await fetch(url, {
           signal: controller.signal,
-          headers: { ...headers, "User-Agent": "UltiIHE" },
+          headers: { ...headers, "User-Agent": "ExegolIHE" },
         })
       }
 

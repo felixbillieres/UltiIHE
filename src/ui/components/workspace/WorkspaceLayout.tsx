@@ -372,8 +372,13 @@ function IconRail({
 }) {
   return (
     <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center gap-2">
+      {/* Exegol logo */}
+      <div className="shrink-0 flex items-center justify-center w-full py-2.5 border-b border-border-weak/50">
+        <img src="/exegol-symbol.svg" alt="Exegol" className="w-6 h-6" />
+      </div>
+
       {/* Project buttons — scrollable */}
-      <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto scrollbar-none w-full px-1.5 pt-3">
+      <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto scrollbar-none w-full px-1.5 pt-1">
         {projects.map((p) => {
           const isActive = p.id === project.id
           const initial = p.name.charAt(0).toUpperCase()

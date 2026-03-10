@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom"
 import { useProjectStore, type Project } from "../../stores/project"
 import { ProjectCard } from "./ProjectCard"
 import { CreateProjectDialog } from "./CreateProjectDialog"
-import { Shield, Plus, Terminal } from "lucide-react"
+import { Plus } from "lucide-react"
 
 export function StartPanel() {
   const navigate = useNavigate()
@@ -30,16 +30,18 @@ export function StartPanel() {
       <div className="w-full max-w-2xl px-6">
         {/* Header */}
         <div className="text-center mb-12">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-surface-2 border border-border-weak">
-              <Shield className="w-8 h-8 text-accent" />
-            </div>
+          <div className="flex items-center justify-center gap-4 mb-5">
+            <img
+              src="/exegol-symbol.svg"
+              alt="Exegol"
+              className="w-12 h-12"
+            />
           </div>
-          <h1 className="text-2xl font-semibold text-text-strong mb-2 font-sans">
-            UltiIHE
+          <h1 className="text-2xl font-semibold text-text-strong mb-1.5 font-sans tracking-tight">
+            Exegol IHE
           </h1>
           <p className="text-text-weak text-sm font-sans">
-            Interactive Hacking Environment for Exegol
+            Interactive Hacking Environment
           </p>
         </div>
 
@@ -82,9 +84,9 @@ export function StartPanel() {
 
         {/* Footer */}
         <div className="mt-12 text-center">
-          <div className="flex items-center justify-center gap-2 text-text-weaker text-xs font-sans">
-            <Terminal className="w-3 h-3" />
-            <span>Powered by Exegol</span>
+          <div className="flex items-center justify-center gap-2.5 text-text-weaker text-xs font-sans">
+            <img src="/exegol-symbol.svg" alt="" className="w-3.5 h-3.5 opacity-40" />
+            <span>Built by the Exegol team</span>
           </div>
         </div>
       </div>

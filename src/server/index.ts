@@ -49,12 +49,12 @@ const server = Bun.serve({
   websocket: websocketHandlers,
 })
 
-console.log(`[UltiIHE] Server running on http://localhost:${server.port}`)
-console.log(`[UltiIHE] WebSocket available at ws://localhost:${server.port}/ws`)
+console.log(`[Exegol IHE] Server running on http://localhost:${server.port}`)
+console.log(`[Exegol IHE] WebSocket available at ws://localhost:${server.port}/ws`)
 
 // Graceful shutdown
 function shutdown() {
-  console.log("\n[UltiIHE] Shutting down...")
+  console.log("\n[Exegol IHE] Shutting down...")
   terminalManager.closeAll()
   server.stop()
   process.exit(0)
@@ -68,5 +68,5 @@ process.on("unhandledRejection", (reason) => {
   // Only log, don't crash — AI SDK sometimes fires rejections internally
   // even when we properly handle errors via fullStream/onError
   const msg = reason instanceof Error ? reason.message : String(reason)
-  console.warn(`[UltiIHE] Unhandled rejection (suppressed): ${msg.slice(0, 200)}`)
+  console.warn(`[Exegol IHE] Unhandled rejection (suppressed): ${msg.slice(0, 200)}`)
 })
