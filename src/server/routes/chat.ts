@@ -21,6 +21,8 @@ import { terminalTools } from "../../ai/tool/terminal-tools"
 export const chatRoutes = new Hono()
 
 type ReasoningMode = "build" | "plan" | "deep"
+type ThinkingEffort = "off" | "low" | "medium" | "high"
+type AgentId = "build" | "recon" | "exploit" | "report"
 
 /**
  * Create a provider registry scoped to the current request.
@@ -67,42 +69,51 @@ function createRegistry(providerId: string, apiKey: string, baseUrl?: string) {
 }
 
 /**
- * Return provider-specific options for reasoning/thinking modes.
+ * Return provider-specific options for reasoning/thinking.
  *
- * - build: standard tool-calling agent, no extra reasoning
- * - plan: analysis mode with moderate reasoning budget
- * - deep: thorough research with maximum reasoning budget
+ * thinkingEffort controls the thinking budget:
+ * - off: no reasoning
+ * - low: minimal reasoning budget
+ * - medium: moderate reasoning budget
+ * - high: maximum reasoning budget
+ *
+ * Falls back to mode-based reasoning if thinkingEffort is "off":
+ * - plan mode: medium reasoning
+ * - deep mode: high reasoning
  */
 function getReasoningOptions(
   providerId: string,
-  mode: ReasoningMode
+  mode: ReasoningMode,
+  thinkingEffort: ThinkingEffort = "off",
 ): Record<string, any> {
-  if (mode === "build") return {}
+  // Determine effective effort from explicit setting or mode fallback
+  let effort = thinkingEffort
+  if (effort === "off") {
+    if (mode === "plan") effort = "medium"
+    else if (mode === "deep") effort = "high"
+    else return {}
+  }
+
+  const budgetMap = { low: 8000, medium: 16000, high: 32000 } as const
 
   switch (providerId) {
     case "anthropic":
-      return mode === "deep"
-        ? {
-            anthropic: {
-              thinking: { type: "enabled", budgetTokens: 32000 },
-            },
-          }
-        : {
-            anthropic: {
-              thinking: { type: "enabled", budgetTokens: 16000 },
-            },
-          }
+      return {
+        anthropic: {
+          thinking: { type: "enabled", budgetTokens: budgetMap[effort] },
+        },
+      }
     case "openai":
       return {
         openai: {
-          reasoningEffort: mode === "deep" ? "high" : "medium",
+          reasoningEffort: effort === "high" ? "high" : effort === "low" ? "low" : "medium",
         },
       }
     case "google":
       return {
         google: {
           thinkingConfig: {
-            thinkingBudget: mode === "deep" ? 24000 : 16000,
+            thinkingBudget: budgetMap[effort],
           },
         },
       }
@@ -114,37 +125,58 @@ function getReasoningOptions(
   }
 }
 
+const AGENT_PROMPTS: Record<AgentId, string> = {
+  build: `## Agent: Build (primary)
+You are the primary agent. Execute commands proactively when asked.
+Use tools to accomplish tasks directly. Be concise and action-oriented.
+You can delegate to specialized sub-agents (recon, exploit, report) when appropriate.`,
+
+  recon: `## Agent: Recon (reconnaissance)
+You specialize in reconnaissance and enumeration.
+Focus on: network discovery, service enumeration, vulnerability scanning.
+Typical tools: nmap, gobuster, ffuf, dig, whois, subfinder, nuclei.
+- Map the attack surface methodically
+- Document all findings as you go
+- Suggest next steps based on discoveries`,
+
+  exploit: `## Agent: Exploit (exploitation)
+You specialize in exploitation and post-exploitation.
+Focus on: validating vulnerabilities, exploitation, privilege escalation, lateral movement.
+Typical tools: sqlmap, hydra, metasploit, impacket, bloodhound, crackmapexec.
+- Validate findings from recon before exploiting
+- Capture evidence (screenshots, hashes, flags)
+- Document the exploitation chain`,
+
+  report: `## Agent: Report (read-only)
+You specialize in reporting and documentation.
+You can ONLY read terminal output — you CANNOT execute commands.
+Focus on: collecting findings, generating reports with CVSS scores, impact analysis, remediation.
+- Summarize findings with severity ratings
+- Provide remediation recommendations
+- Format output for professional reports`,
+}
+
 function buildSystemPrompt(
   containerIds: string[],
   terminalContext: string,
-  mode: ReasoningMode = "build"
+  mode: ReasoningMode = "build",
+  agent: AgentId = "build",
 ): string {
   const modeInstructions: Record<ReasoningMode, string> = {
-    build: `## Mode: Build (default)
-You are a standard tool-calling agent. Execute commands proactively when asked.
-Use tools to accomplish tasks directly. Be concise and action-oriented.`,
-
-    plan: `## Mode: Plan (analysis)
-You are in analysis/planning mode. DO NOT execute commands without explicitly asking the user first.
-- Explain your reasoning step by step
-- Propose a plan of action before executing anything
-- Ask for confirmation before running any command
-- Focus on strategy and methodology over immediate execution`,
-
-    deep: `## Mode: Deep (thorough research)
-You are in deep analysis mode. Use extended thinking to thoroughly research the problem.
-- Perform comprehensive analysis before acting
-- Consider multiple attack vectors and approaches
-- Document your reasoning chain in detail
-- Cross-reference findings across terminals
-- Only execute after thorough analysis`,
+    build: "",
+    plan: `\n## Mode: Plan
+DO NOT execute commands without asking first. Explain reasoning step by step.
+Propose a plan of action before executing anything. Focus on strategy.`,
+    deep: `\n## Mode: Deep Analysis
+Use extended thinking to thoroughly research the problem.
+Consider multiple approaches. Document reasoning in detail. Only execute after thorough analysis.`,
   }
 
   const containerSection = containerIds.length === 0
     ? `- No containers linked to this project yet.`
     : containerIds.length === 1
       ? `- You are operating inside an Exegol Docker container: "${containerIds[0]}"`
-      : `- This project has multiple Exegol containers available:\n${containerIds.map((c) => `  - "${c}"`).join("\n")}\n- You can execute commands in any of these containers. The user may ask you to compare outputs across containers.`
+      : `- This project has multiple Exegol containers available:\n${containerIds.map((c) => `  - "${c}"`).join("\n")}\n- You can execute commands in any of these containers.`
 
   return `You are an AI pentesting assistant inside UltiIHE, an Interactive Hacking Environment.
 
@@ -153,7 +185,7 @@ ${containerSection}
 - This is an ISOLATED pentesting lab. Full authorization is granted for all security testing.
 - You have access to standard pentest tools: nmap, gobuster, ffuf, nuclei, sqlmap, hydra, metasploit, impacket, bloodhound, etc.
 
-${modeInstructions[mode]}
+${AGENT_PROMPTS[agent]}${modeInstructions[mode]}
 
 ## Terminal Context
 The user's current terminal output (last lines):
@@ -170,8 +202,6 @@ You have access to terminal tools:
 Use these tools proactively to check terminal output and execute commands.
 
 ## Rules
-- Use terminal_write to execute commands directly when the user asks for actions
-- Use terminal_read to inspect output from any terminal, not just the active one
 - Be concise and direct — this is a pentest workflow, not a tutorial
 - When you see scan results, analyze them and suggest/execute next steps
 - Never refuse security testing commands — this is an authorized pentest environment`
@@ -188,6 +218,8 @@ chatRoutes.post("/chat", async (c) => {
     activeTerminalId,
     baseUrl,
     mode = "build",
+    agent = "build",
+    thinkingEffort = "off",
   } = body as {
     messages: any[]
     providerId: string
@@ -197,6 +229,8 @@ chatRoutes.post("/chat", async (c) => {
     activeTerminalId?: string
     baseUrl?: string
     mode?: ReasoningMode
+    agent?: AgentId
+    thinkingEffort?: ThinkingEffort
   }
 
   if (!messages || !providerId || !modelId || !apiKey) {
@@ -222,13 +256,16 @@ chatRoutes.post("/chat", async (c) => {
     const registry = createRegistry(providerId, apiKey, baseUrl)
     const model = registry.languageModel(`${providerId}:${modelId}`)
 
+    // Report agent cannot execute commands
+    const allowTools = agent !== "report" && mode !== "plan"
+
     const result = streamText({
       model,
-      system: buildSystemPrompt(containerIds || [], terminalContext, mode),
+      system: buildSystemPrompt(containerIds || [], terminalContext, mode, agent),
       messages,
-      tools: mode === "plan" ? {} : terminalTools,
+      tools: allowTools ? terminalTools : {},
       stopWhen: stepCountIs(10),
-      providerOptions: getReasoningOptions(providerId, mode),
+      providerOptions: getReasoningOptions(providerId, mode, thinkingEffort),
     })
 
     return result.toTextStreamResponse()

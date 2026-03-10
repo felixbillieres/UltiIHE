@@ -1,9 +1,26 @@
 import { useState, useRef, useEffect } from "react"
 import { useSessionStore, type Message } from "../../stores/session"
-import { useSettingsStore } from "../../stores/settings"
+import {
+  useSettingsStore,
+  PROVIDER_CATALOG,
+  AGENTS,
+  type AgentId,
+  type ThinkingEffort,
+} from "../../stores/settings"
 import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
-import { Send, Bot, User, Loader2, Square } from "lucide-react"
+import {
+  Send,
+  Bot,
+  User,
+  Loader2,
+  Square,
+  ChevronDown,
+  Brain,
+  Eye,
+  Wrench,
+  Zap,
+} from "lucide-react"
 
 interface Props {
   projectId: string
@@ -19,9 +36,19 @@ export function ChatPanel({ projectId }: Props) {
     getActiveSession,
   } = useSessionStore()
 
-  const { activeModel, activeProvider, activeMode, getActiveProvider } =
-    useSettingsStore()
-  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId))
+  const {
+    activeModel,
+    activeProvider,
+    activeMode,
+    activeAgent,
+    thinkingEffort,
+    getActiveProvider,
+    getActiveModelInfo,
+  } = useSettingsStore()
+
+  const project = useProjectStore((s) =>
+    s.projects.find((p) => p.id === projectId),
+  )
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId)
 
   const [input, setInput] = useState("")
@@ -117,6 +144,8 @@ export function ChatPanel({ projectId }: Props) {
           containerIds: project?.containerIds || [],
           activeTerminalId,
           mode: activeMode,
+          agent: activeAgent,
+          thinkingEffort,
         }),
       })
 
@@ -214,46 +243,294 @@ export function ChatPanel({ projectId }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-3 border-t border-border-weak shrink-0">
-        <div className="flex items-end gap-2 bg-surface-1 border border-border-base rounded-lg p-2 focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20 transition-colors">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask the AI agent..."
-            rows={1}
-            className="flex-1 bg-transparent text-sm text-text-strong placeholder-text-weaker resize-none focus:outline-none min-h-[24px] max-h-[120px] font-sans"
-          />
-          {streaming ? (
-            <button
-              onClick={handleStop}
-              className="p-1.5 rounded-lg bg-status-error/15 hover:bg-status-error/25 text-status-error transition-colors shrink-0"
-            >
-              <Square className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <button
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
-            >
-              <Send className="w-3.5 h-3.5" />
-            </button>
-          )}
+      {/* Input area */}
+      <div className="shrink-0 border-t border-border-weak">
+        {/* Editor */}
+        <div className="p-3">
+          <div className="flex items-end gap-2 bg-surface-1 border border-border-base rounded-lg p-2 focus-within:border-accent/50 focus-within:ring-1 focus-within:ring-accent/20 transition-colors">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask the AI agent..."
+              rows={1}
+              className="flex-1 bg-transparent text-sm text-text-strong placeholder-text-weaker resize-none focus:outline-none min-h-[24px] max-h-[120px] font-sans"
+            />
+            {streaming ? (
+              <button
+                onClick={handleStop}
+                className="p-1.5 rounded-lg bg-status-error/15 hover:bg-status-error/25 text-status-error transition-colors shrink-0"
+              >
+                <Square className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center justify-between mt-1.5 px-1">
-          <span className="text-[10px] text-text-weaker font-sans">
-            Shift+Enter for new line
-          </span>
-          <span className="text-[10px] text-text-weaker font-sans">
-            {activeProvider}
-          </span>
-        </div>
+
+        {/* Control bar — OpenCode-style */}
+        <ControlBar />
       </div>
     </div>
   )
+}
+
+// ─── Control bar ──────────────────────────────────────────────
+
+function ControlBar() {
+  const {
+    activeAgent,
+    activeModel,
+    activeProvider,
+    thinkingEffort,
+    cycleAgent,
+    cycleThinkingEffort,
+    setActiveModel,
+    setActiveProvider,
+    getActiveModelInfo,
+  } = useSettingsStore()
+
+  const modelInfo = getActiveModelInfo()
+  const agentInfo = AGENTS.find((a) => a.id === activeAgent)
+
+  const [showModelPicker, setShowModelPicker] = useState(false)
+
+  // Short model name for display
+  const modelDisplayName = modelInfo?.name || activeModel.split("/").pop() || activeModel
+
+  return (
+    <div className="px-3 pb-2 flex items-center gap-2 min-w-0">
+      {/* Agent selector */}
+      <button
+        onClick={cycleAgent}
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-2 transition-colors shrink-0"
+        title={`Agent: ${agentInfo?.name} — Click to cycle\n${agentInfo?.description}`}
+      >
+        <span
+          className={`w-2 h-2 rounded-full shrink-0 ${agentColorBg(activeAgent)}`}
+        />
+        <span className="text-xs font-sans font-medium text-text-base capitalize">
+          {agentInfo?.name || activeAgent}
+        </span>
+      </button>
+
+      <Separator />
+
+      {/* Model selector */}
+      <div className="relative min-w-0 flex-1">
+        <button
+          onClick={() => setShowModelPicker(!showModelPicker)}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-2 transition-colors min-w-0 max-w-full"
+          title={`Model: ${modelDisplayName}\nProvider: ${activeProvider}`}
+        >
+          <span className="text-xs font-sans text-text-weak truncate">
+            {modelDisplayName}
+          </span>
+          <ChevronDown className="w-3 h-3 text-text-weaker shrink-0" />
+        </button>
+
+        {showModelPicker && (
+          <ModelPicker
+            currentProvider={activeProvider}
+            currentModel={activeModel}
+            onSelect={(providerId, modelId) => {
+              setActiveProvider(providerId)
+              setActiveModel(modelId)
+              setShowModelPicker(false)
+            }}
+            onClose={() => setShowModelPicker(false)}
+          />
+        )}
+      </div>
+
+      {/* Capabilities badges */}
+      <div className="flex items-center gap-1 shrink-0">
+        {modelInfo?.reasoning && (
+          <CapBadge
+            icon={<Brain className="w-3 h-3" />}
+            label={thinkingEffort !== "off" ? thinkingEffort : "think"}
+            active={thinkingEffort !== "off"}
+            onClick={cycleThinkingEffort}
+            title="Thinking effort — Click to cycle (off > low > medium > high)"
+          />
+        )}
+        {modelInfo?.vision && (
+          <CapBadge
+            icon={<Eye className="w-3 h-3" />}
+            label="vision"
+            active
+          />
+        )}
+        {modelInfo?.toolCalling && (
+          <CapBadge
+            icon={<Wrench className="w-3 h-3" />}
+            label="tools"
+            active
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Capability badge ─────────────────────────────────────────
+
+function CapBadge({
+  icon,
+  label,
+  active,
+  onClick,
+  title,
+}: {
+  icon: React.ReactNode
+  label: string
+  active: boolean
+  onClick?: () => void
+  title?: string
+}) {
+  const Tag = onClick ? "button" : "span"
+  return (
+    <Tag
+      onClick={onClick}
+      title={title}
+      className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans transition-colors ${
+        active
+          ? "bg-accent/10 text-accent"
+          : "bg-surface-2 text-text-weaker"
+      } ${onClick ? "cursor-pointer hover:bg-accent/15" : ""}`}
+    >
+      {icon}
+      {label}
+    </Tag>
+  )
+}
+
+// ─── Model picker dropdown ────────────────────────────────────
+
+function ModelPicker({
+  currentProvider,
+  currentModel,
+  onSelect,
+  onClose,
+}: {
+  currentProvider: string
+  currentModel: string
+  onSelect: (providerId: string, modelId: string) => void
+  onClose: () => void
+}) {
+  const providers = useSettingsStore((s) => s.providers)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    window.addEventListener("mousedown", close)
+    return () => window.removeEventListener("mousedown", close)
+  }, [onClose])
+
+  // Only show providers that have API keys configured
+  const configuredProviderIds = new Set(
+    providers.filter((p) => p.apiKey).map((p) => p.id),
+  )
+
+  const availableProviders = PROVIDER_CATALOG.filter((p) =>
+    configuredProviderIds.has(p.id),
+  )
+
+  if (availableProviders.length === 0) {
+    return (
+      <div
+        ref={ref}
+        className="absolute bottom-full left-0 mb-1 z-50 w-64 bg-surface-2 border border-border-base rounded-lg shadow-xl p-3"
+      >
+        <p className="text-xs text-text-weaker font-sans">
+          No providers configured. Go to Settings to add an API key.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="absolute bottom-full left-0 mb-1 z-50 w-72 max-h-[300px] overflow-y-auto bg-surface-2 border border-border-base rounded-lg shadow-xl py-1"
+    >
+      {availableProviders.map((provider) => (
+        <div key={provider.id}>
+          <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wide font-sans font-medium">
+            {provider.name}
+          </div>
+          {provider.models.map((model) => {
+            const isSelected =
+              provider.id === currentProvider && model.id === currentModel
+            return (
+              <button
+                key={model.id}
+                onClick={() => onSelect(provider.id, model.id)}
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition-colors ${
+                  isSelected
+                    ? "bg-accent/10 text-accent"
+                    : "text-text-base hover:bg-surface-3"
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-sans truncate">{model.name}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-text-weaker font-mono">
+                      {(model.contextWindow / 1000).toFixed(0)}k ctx
+                    </span>
+                    {model.reasoning && (
+                      <span className="text-[10px] text-purple-400">
+                        reasoning
+                      </span>
+                    )}
+                    {model.vision && (
+                      <span className="text-[10px] text-blue-400">vision</span>
+                    )}
+                  </div>
+                </div>
+                {isSelected && (
+                  <Zap className="w-3 h-3 text-accent shrink-0" />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Helpers ──────────────────────────────────────────────────
+
+function Separator() {
+  return <div className="w-px h-4 bg-border-weak shrink-0" />
+}
+
+function agentColorBg(agent: AgentId): string {
+  switch (agent) {
+    case "build":
+      return "bg-accent"
+    case "recon":
+      return "bg-cyan-400"
+    case "exploit":
+      return "bg-red-400"
+    case "report":
+      return "bg-purple-400"
+    default:
+      return "bg-text-weaker"
+  }
 }
 
 // ─── Message bubble ──────────────────────────────────────────

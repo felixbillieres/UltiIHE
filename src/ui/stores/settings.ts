@@ -68,6 +68,49 @@ export interface KeybindAction {
 
 export type ReasoningMode = "build" | "plan" | "deep"
 
+export type ThinkingEffort = "off" | "low" | "medium" | "high"
+
+export type AgentId = "build" | "recon" | "exploit" | "report"
+
+export interface AgentInfo {
+  id: AgentId
+  name: string
+  color: string // tailwind color class
+  description: string
+  canExecute: boolean // can run commands
+}
+
+export const AGENTS: AgentInfo[] = [
+  {
+    id: "build",
+    name: "Build",
+    color: "text-accent",
+    description: "Primary agent — full access to all tools",
+    canExecute: true,
+  },
+  {
+    id: "recon",
+    name: "Recon",
+    color: "text-cyan-400",
+    description: "Reconnaissance — network discovery, enumeration, scanning",
+    canExecute: true,
+  },
+  {
+    id: "exploit",
+    name: "Exploit",
+    color: "text-red-400",
+    description: "Exploitation — validate vulnerabilities, capture evidence",
+    canExecute: true,
+  },
+  {
+    id: "report",
+    name: "Report",
+    color: "text-purple-400",
+    description: "Reporting — read-only, generates findings and reports",
+    canExecute: false,
+  },
+]
+
 export type Language = "en" | "fr" | "de" | "es" | "ja" | "zh"
 
 // ---------------------------------------------------------------------------
@@ -785,6 +828,8 @@ interface SettingsStore {
   activeProvider: string
   activeModel: string
   activeMode: ReasoningMode
+  activeAgent: AgentId
+  thinkingEffort: ThinkingEffort
 
   // Keybindings
   customKeybinds: Record<string, string>
@@ -805,6 +850,10 @@ interface SettingsStore {
   setActiveProvider: (id: string) => void
   setActiveModel: (model: string) => void
   setActiveMode: (mode: ReasoningMode) => void
+  setActiveAgent: (agent: AgentId) => void
+  setThinkingEffort: (effort: ThinkingEffort) => void
+  cycleAgent: () => void
+  cycleThinkingEffort: () => void
 
   // Actions - Keybindings
   setKeybind: (actionId: string, key: string) => void
@@ -834,6 +883,8 @@ export const useSettingsStore = create<SettingsStore>()(
       activeProvider: "anthropic",
       activeModel: "claude-sonnet-4-20250514",
       activeMode: "build",
+      activeAgent: "build" as AgentId,
+      thinkingEffort: "off" as ThinkingEffort,
       customKeybinds: {},
 
       // --- Appearance ---
@@ -879,6 +930,26 @@ export const useSettingsStore = create<SettingsStore>()(
       setActiveModel: (model) => set({ activeModel: model }),
 
       setActiveMode: (mode) => set({ activeMode: mode }),
+
+      setActiveAgent: (agent) => set({ activeAgent: agent }),
+
+      setThinkingEffort: (effort) => set({ thinkingEffort: effort }),
+
+      cycleAgent: () => {
+        const current = get().activeAgent
+        const ids = AGENTS.map((a) => a.id)
+        const idx = ids.indexOf(current)
+        set({ activeAgent: ids[(idx + 1) % ids.length] })
+      },
+
+      cycleThinkingEffort: () => {
+        const model = get().getActiveModelInfo()
+        if (!model?.reasoning) return // no cycling if model doesn't support reasoning
+        const efforts: ThinkingEffort[] = ["off", "low", "medium", "high"]
+        const current = get().thinkingEffort
+        const idx = efforts.indexOf(current)
+        set({ thinkingEffort: efforts[(idx + 1) % efforts.length] })
+      },
 
       // --- Keybindings ---
       setKeybind: (actionId, key) =>
@@ -930,6 +1001,8 @@ export const useSettingsStore = create<SettingsStore>()(
         activeProvider: state.activeProvider,
         activeModel: state.activeModel,
         activeMode: state.activeMode,
+        activeAgent: state.activeAgent,
+        thinkingEffort: state.thinkingEffort,
         customKeybinds: state.customKeybinds,
       }),
     },

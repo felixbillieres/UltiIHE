@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { type Project, useProjectStore } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
-import { useSettingsStore } from "../../stores/settings"
 import { useSessionStore, type Session } from "../../stores/session"
 import { useFileStore } from "../../stores/files"
 import { useWebSocket } from "../../hooks/useWebSocket"
@@ -29,7 +28,6 @@ interface Props {
 
 export function WorkspaceLayout({ project }: Props) {
   const navigate = useNavigate()
-  const { activeModel } = useSettingsStore()
   const projects = useProjectStore((s) => s.projects)
   const setActiveProject = useProjectStore((s) => s.setActiveProject)
   const fetchContainers = useContainerStore((s) => s.fetchContainers)
@@ -98,11 +96,6 @@ export function WorkspaceLayout({ project }: Props) {
               icon={<FolderTree className="w-3.5 h-3.5" />}
               label="Files"
             />
-            <div className="ml-auto pr-2">
-              <span className="text-[10px] text-text-weaker font-mono truncate max-w-[100px]">
-                {activeModel}
-              </span>
-            </div>
           </div>
           <div className="flex-1 overflow-hidden">
             {rightTab === "chat" ? (
@@ -196,8 +189,8 @@ function IconRail({
   containerCount: number
 }) {
   return (
-    <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center py-3 gap-2">
-      <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto no-scrollbar w-full px-1.5">
+    <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center gap-2">
+      <div className="flex-1 flex flex-col items-center gap-2 overflow-y-auto scrollbar-none w-full px-1.5 pt-3">
         {projects.map((p) => {
           const isActive = p.id === project.id
           const initial = p.name.charAt(0).toUpperCase()
@@ -226,7 +219,7 @@ function IconRail({
         </button>
       </div>
 
-      <div className="shrink-0 flex flex-col items-center gap-2 pt-2 border-t border-border-weak/50 w-full px-1.5">
+      <div className="shrink-0 flex flex-col items-center gap-2 py-3 border-t border-border-weak/50 w-full px-1.5">
         <button
           onClick={onOpenContainers}
           className="relative w-9 h-9 rounded-lg flex items-center justify-center text-text-weaker hover:bg-surface-2 hover:text-text-weak transition-colors shrink-0"
