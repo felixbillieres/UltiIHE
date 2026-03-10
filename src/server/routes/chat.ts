@@ -230,6 +230,10 @@ ${terminalContext || "(no terminal output yet)"}
 - **web_search**: Search the web (CVEs, exploits, writeups, docs) via Exa AI
 - **web_fetch**: Fetch content from a specific URL (markdown, text, or raw HTML)
 
+### Caido Proxy
+- **caido_read**: List or inspect HTTP requests captured by Caido proxy. Without requestId: lists recent requests (supports HTTPQL filters). With requestId: full request/response including headers and body.
+- **caido_scope**: List Caido proxy scopes to see what hosts/paths are in scope.
+
 ### Workflow
 - **todo_read** / **todo_write**: Track pentest tasks and progress
 - **user_question**: Ask the user a question when you need clarification

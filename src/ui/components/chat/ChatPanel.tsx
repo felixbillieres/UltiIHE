@@ -1291,6 +1291,12 @@ function toolSummary(name: string, args: Record<string, unknown>): string {
       return `todo_write(${Array.isArray(args.todos) ? args.todos.length : 0} items)`
     case "terminal_create":
       return `terminal_create("${args.name || "unnamed"}", container: ${args.container || "?"})`
+    case "caido_read":
+      return args.requestId
+        ? `caido_read(request: ${args.requestId})`
+        : `caido_read(${args.filter ? `filter: "${args.filter}"` : `last ${args.count || 20}`})`
+    case "caido_scope":
+      return `caido_scope()`
     default:
       return `${name}()`
   }

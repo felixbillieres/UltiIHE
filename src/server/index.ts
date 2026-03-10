@@ -3,6 +3,8 @@ import { cors } from "hono/cors"
 import { containerRoutes } from "./routes/containers"
 import { filesRoutes } from "./routes/files"
 import { chatRoutes } from "./routes/chat"
+import { caidoRoutes } from "./routes/caido"
+import { webtoolRoutes } from "./routes/webtool"
 import { websocketHandlers } from "./ws"
 import { terminalManager } from "../terminal/manager"
 
@@ -12,6 +14,8 @@ app.use("*", cors())
 app.route("/api", containerRoutes)
 app.route("/api", filesRoutes)
 app.route("/api", chatRoutes)
+app.route("/api", caidoRoutes)
+app.route("/api", webtoolRoutes)
 
 app.get("/api/health", (c) => c.json({ status: "ok", uptime: process.uptime() }))
 

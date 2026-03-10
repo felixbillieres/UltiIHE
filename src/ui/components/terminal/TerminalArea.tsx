@@ -4,6 +4,7 @@ import {
   type LayoutNode,
   type TerminalGroup,
 } from "../../stores/terminal"
+import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
 import { TerminalView } from "./TerminalView"
 import {
   Terminal,
@@ -14,9 +15,25 @@ import {
   Merge,
   GripVertical,
   ChevronDown,
+  Radar,
+  Network,
+  Wrench,
+  Settings as SettingsIcon,
+  ExternalLink,
+  Loader2,
 } from "lucide-react"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
 import type { Project } from "../../stores/project"
+
+const TOOL_ICONS: Record<string, React.ReactNode> = {
+  Radar: <Radar className="w-3 h-3 shrink-0" />,
+  Network: <Network className="w-3 h-3 shrink-0" />,
+}
+
+const TOOL_ICONS_SM: Record<string, React.ReactNode> = {
+  Radar: <Radar className="w-3.5 h-3.5" />,
+  Network: <Network className="w-3.5 h-3.5" />,
+}
 
 interface Props {
   send: (msg: WSMessage) => void
@@ -42,6 +59,46 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
   const layout = useTerminalStore((s) => s.layout)
   const addTerminal = useTerminalStore((s) => s.addTerminal)
   const unsplitAll = useTerminalStore((s) => s.unsplitAll)
+
+  const launchTool = useWebToolsStore((s) => s.launchTool)
+  const stopToolService = useWebToolsStore((s) => s.stopTool)
+  const getProxyUrl = useWebToolsStore((s) => s.getProxyUrl)
+  const runningTools = useWebToolsStore((s) => s.runningTools)
+  const [openToolTabs, setOpenToolTabs] = useState<string[]>([])
+  const [activeToolTab, setActiveToolTab] = useState<string | null>(null)
+  const [showToolSettings, setShowToolSettings] = useState(false)
+  const [containerPicker, setContainerPicker] = useState<string | null>(null) // toolId waiting for container pick
+
+  const openTool = useCallback((id: string) => {
+    // If tool is already open, just switch to it
+    if (openToolTabs.includes(id)) {
+      setActiveToolTab(id)
+      return
+    }
+    // If tool is already running on backend, just open the tab
+    const running = useWebToolsStore.getState().runningTools[id]
+    if (running && running.status === "ready") {
+      setOpenToolTabs((prev) => [...prev, id])
+      setActiveToolTab(id)
+      return
+    }
+    // Show container picker to choose where to launch
+    setContainerPicker(id)
+  }, [openToolTabs])
+
+  const handleContainerPick = useCallback(async (toolId: string, container: string) => {
+    setContainerPicker(null)
+    setOpenToolTabs((prev) => (prev.includes(toolId) ? prev : [...prev, toolId]))
+    setActiveToolTab(toolId)
+    await launchTool(toolId, container)
+  }, [launchTool])
+
+  const closeTool = useCallback((id: string) => {
+    setOpenToolTabs((prev) => prev.filter((t) => t !== id))
+    setActiveToolTab((prev) => (prev === id ? null : prev))
+    // Also stop the tool on the backend
+    stopToolService(id)
+  }, [stopToolService])
 
   const terminalCountRef = useRef(0)
   const hasContainers = project.containerIds.length > 0
@@ -84,9 +141,78 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
 
   const isSingleGroup = groups.length <= 1
 
+  const settingsModal = showToolSettings && <WebToolsSettings onClose={() => setShowToolSettings(false)} />
+  const containerPickerModal = containerPicker && (
+    <ContainerPickerModal
+      toolId={containerPicker}
+      containerIds={project.containerIds}
+      onPick={handleContainerPick}
+      onCancel={() => setContainerPicker(null)}
+    />
+  )
+
+  /** Render tool iframe or loading/error state */
+  const renderToolPanel = (toolId: string, visible: boolean) => {
+    const toolInfo = runningTools[toolId]
+    const isReady = toolInfo?.status === "ready"
+    const isStarting = toolInfo?.status === "starting"
+    const hasError = toolInfo?.status === "error"
+
+    return (
+      <div
+        key={toolId}
+        className="absolute inset-0"
+        style={{ visibility: visible ? "visible" : "hidden" }}
+      >
+        {isReady && (
+          <iframe
+            src={getProxyUrl(toolId)}
+            className="w-full h-full border-0"
+            title={WEB_TOOLS.find((t) => t.id === toolId)?.name || ""}
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
+          />
+        )}
+        {isStarting && (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 text-accent animate-spin mx-auto mb-3" />
+              <p className="text-sm text-text-weak font-sans">
+                Starting {WEB_TOOLS.find((t) => t.id === toolId)?.name}...
+              </p>
+              <p className="text-xs text-text-weaker font-sans mt-1">
+                Launching in {toolInfo.container}
+              </p>
+            </div>
+          </div>
+        )}
+        {hasError && (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center max-w-md">
+              <X className="w-8 h-8 text-red-400 mx-auto mb-3" />
+              <p className="text-sm text-text-weak font-sans mb-2">
+                Failed to start {WEB_TOOLS.find((t) => t.id === toolId)?.name}
+              </p>
+              <p className="text-xs text-red-400/80 font-mono bg-surface-2 rounded px-3 py-2">
+                {toolInfo.error || "Unknown error"}
+              </p>
+            </div>
+          </div>
+        )}
+        {!toolInfo && (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-6 h-6 text-text-weaker animate-spin" />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Empty state ──
   if (terminals.length === 0) {
     return (
+      <>
+      {settingsModal}
+      {containerPickerModal}
       <div className="h-full flex flex-col bg-surface-0">
         <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
           <NewTerminalButton
@@ -94,22 +220,38 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
             connected={connected}
             onAdd={handleAddTerminal}
           />
-        </div>
-        <div
-          className="flex-1 flex items-center justify-center"
-          style={{ backgroundColor: "#101010" }}
-        >
-          <div className="text-center">
-            <Terminal className="w-10 h-10 text-text-weaker mx-auto mb-3" />
-            <p className="text-sm text-text-weak mb-1">Terminal</p>
-            <p className="text-xs text-text-weaker">
-              {hasContainers
-                ? 'Click "+" to open a terminal'
-                : "No container linked"}
-            </p>
+          <div className="ml-auto">
+            <WebToolsDropdown
+              openToolTabs={openToolTabs}
+              onLaunch={openTool}
+              onSettings={() => setShowToolSettings(true)}
+            />
           </div>
         </div>
+        <div
+          className="flex-1 overflow-hidden relative"
+          style={{ backgroundColor: "#101010" }}
+        >
+          {/* Web tool panels */}
+          {openToolTabs.map((toolId) => renderToolPanel(toolId, activeToolTab === toolId))}
+
+          {/* Empty state */}
+          {!activeToolTab && (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <Terminal className="w-10 h-10 text-text-weaker mx-auto mb-3" />
+                <p className="text-sm text-text-weak mb-1">Terminal</p>
+                <p className="text-xs text-text-weaker">
+                  {hasContainers
+                    ? 'Click "+" to open a terminal'
+                    : "No container linked"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+      </>
     )
   }
 
@@ -118,6 +260,9 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
     const group = groups[0]
     if (!group) return null
     return (
+      <>
+      {settingsModal}
+      {containerPickerModal}
       <div className="h-full flex flex-col bg-surface-0">
         <SingleGroupTabBar
           group={group}
@@ -125,18 +270,27 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
           handleAddTerminal={handleAddTerminal}
           containerIds={project.containerIds}
           connected={connected}
+          activeToolTab={activeToolTab}
+          openToolTabs={openToolTabs}
+          onToolTabClick={(id) => setActiveToolTab(id)}
+          onToolTabClose={closeTool}
+          onLaunchTool={openTool}
+          onToolSettings={() => setShowToolSettings(true)}
         />
         <div
           className="flex-1 overflow-hidden relative"
           style={{ backgroundColor: "#101010" }}
         >
+          {/* Web tool panels — kept mounted to preserve state */}
+          {openToolTabs.map((toolId) => renderToolPanel(toolId, activeToolTab === toolId))}
+
           {group.terminalIds.map((tid) => (
             <div
               key={tid}
               className="absolute inset-0"
               style={{
                 visibility:
-                  tid === group.activeTerminalId ? "visible" : "hidden",
+                  tid === group.activeTerminalId && !activeToolTab ? "visible" : "hidden",
               }}
             >
               <TerminalView
@@ -148,11 +302,15 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
           ))}
         </div>
       </div>
+      </>
     )
   }
 
   // ── Multiple groups: global bar + recursive layout ──
   return (
+    <>
+    {settingsModal}
+    {containerPickerModal}
     <div className="h-full flex flex-col bg-surface-0">
       {/* Global toolbar — merge button */}
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
@@ -194,6 +352,7 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
         )}
       </div>
     </div>
+    </>
   )
 }
 
@@ -205,12 +364,24 @@ function SingleGroupTabBar({
   handleAddTerminal,
   containerIds,
   connected,
+  activeToolTab,
+  openToolTabs,
+  onToolTabClick,
+  onToolTabClose,
+  onLaunchTool,
+  onToolSettings,
 }: {
   group: TerminalGroup
   send: (msg: WSMessage) => void
   handleAddTerminal: (containerName?: string) => void
   containerIds: string[]
   connected: boolean
+  activeToolTab: string | null
+  openToolTabs: string[]
+  onToolTabClick: (id: string) => void
+  onToolTabClose: (id: string) => void
+  onLaunchTool: (id: string) => void
+  onToolSettings: () => void
 }) {
   const terminals = useTerminalStore((s) => s.terminals)
   const setActiveInGroup = useTerminalStore((s) => s.setActiveInGroup)
@@ -258,10 +429,13 @@ function SingleGroupTabBar({
         {groupTerminals.map((t) => (
           <div
             key={t.id}
-            onClick={() => handleTabClick(t.id)}
+            onClick={() => {
+              handleTabClick(t.id)
+              if (activeToolTab) onToolTabClick(activeToolTab)
+            }}
             onDoubleClick={() => handleDoubleClick(t.id, t.name)}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
-              t.id === group.activeTerminalId
+              t.id === group.activeTerminalId && !activeToolTab
                 ? "bg-surface-2 text-text-strong"
                 : "text-text-weak hover:bg-surface-2/50"
             }`}
@@ -302,6 +476,32 @@ function SingleGroupTabBar({
             </button>
           </div>
         ))}
+
+        {/* Open web tool tabs */}
+        {openToolTabs.map((toolId) => {
+          const tool = WEB_TOOLS.find((t) => t.id === toolId)
+          if (!tool) return null
+          return (
+            <div
+              key={toolId}
+              onClick={() => onToolTabClick(toolId)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
+                activeToolTab === toolId
+                  ? "bg-surface-2 text-text-strong"
+                  : "text-text-weak hover:bg-surface-2/50"
+              }`}
+            >
+              {TOOL_ICONS[tool.icon]}
+              <span className="truncate">{tool.name}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); onToolTabClose(toolId) }}
+                className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )
+        })}
       </div>
 
       {/* Fixed actions area */}
@@ -338,6 +538,12 @@ function SingleGroupTabBar({
             </button>
           </>
         )}
+
+        <WebToolsDropdown
+          openToolTabs={openToolTabs}
+          onLaunch={onLaunchTool}
+          onSettings={onToolSettings}
+        />
       </div>
     </div>
   )
@@ -824,6 +1030,239 @@ function NewTerminalButton({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Web tools dropdown ─────────────────────────────────────
+
+function WebToolsDropdown({
+  openToolTabs,
+  onLaunch,
+  onSettings,
+}: {
+  openToolTabs: string[]
+  onLaunch: (id: string) => void
+  onSettings: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener("mousedown", close)
+    return () => window.removeEventListener("mousedown", close)
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={`p-1 rounded transition-colors ${
+          open ? "bg-surface-2 text-text-base" : "text-text-weaker hover:bg-surface-2/50 hover:text-text-weak"
+        }`}
+        title="Web tools"
+      >
+        <Wrench className="w-3.5 h-3.5" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans">
+          <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wider">
+            Web Tools
+          </div>
+          {WEB_TOOLS.map((tool) => {
+            const isOpen = openToolTabs.includes(tool.id)
+            return (
+              <button
+                key={tool.id}
+                onClick={() => {
+                  onLaunch(tool.id)
+                  setOpen(false)
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+              >
+                <span className="shrink-0 text-text-weak">
+                  {TOOL_ICONS_SM[tool.icon]}
+                </span>
+                <span className="flex-1">{tool.name}</span>
+                {isOpen && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                )}
+              </button>
+            )
+          })}
+          <div className="h-px bg-border-weak my-1" />
+          <button
+            onClick={() => {
+              onSettings()
+              setOpen(false)
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-left text-text-weak hover:bg-surface-3 hover:text-text-base transition-colors"
+          >
+            <SettingsIcon className="w-3.5 h-3.5 shrink-0" />
+            <span>Configure tools...</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Container picker modal ─────────────────────────────────
+
+function ContainerPickerModal({
+  toolId,
+  containerIds,
+  onPick,
+  onCancel,
+}: {
+  toolId: string
+  containerIds: string[]
+  onPick: (toolId: string, container: string) => void
+  onCancel: () => void
+}) {
+  const tool = WEB_TOOLS.find((t) => t.id === toolId)
+
+  // If only one container, auto-pick
+  useEffect(() => {
+    if (containerIds.length === 1) {
+      onPick(toolId, containerIds[0])
+    }
+  }, [containerIds, toolId, onPick])
+
+  // Don't render if auto-picking
+  if (containerIds.length <= 1) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onCancel}>
+      <div
+        className="bg-surface-1 border border-border-weak rounded-xl shadow-2xl w-[360px]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-weak">
+          <div className="flex items-center gap-2.5">
+            {TOOL_ICONS_SM[tool?.icon || ""]}
+            <h2 className="text-sm font-sans font-semibold text-text-strong">
+              Launch {tool?.name}
+            </h2>
+          </div>
+          <button onClick={onCancel} className="p-1 rounded hover:bg-surface-2 transition-colors">
+            <X className="w-4 h-4 text-text-weaker" />
+          </button>
+        </div>
+        <div className="p-4">
+          <p className="text-xs text-text-weak font-sans mb-3">
+            Select a container to run {tool?.name} in:
+          </p>
+          <div className="space-y-1.5">
+            {containerIds.map((cid) => (
+              <button
+                key={cid}
+                onClick={() => onPick(toolId, cid)}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md bg-surface-0 hover:bg-surface-2 border border-border-weak hover:border-accent/30 transition-colors"
+              >
+                <Terminal className="w-3.5 h-3.5 text-text-weaker shrink-0" />
+                <span className="text-xs font-mono text-text-base">{cid}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Web tools settings modal ───────────────────────────────
+
+function WebToolsSettings({ onClose }: { onClose: () => void }) {
+  const runningTools = useWebToolsStore((s) => s.runningTools)
+  const stopTool = useWebToolsStore((s) => s.stopTool)
+  const getProxyUrl = useWebToolsStore((s) => s.getProxyUrl)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="bg-surface-1 border border-border-weak rounded-xl shadow-2xl w-[480px] max-h-[80vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-weak">
+          <div className="flex items-center gap-2.5">
+            <Wrench className="w-4 h-4 text-text-weak" />
+            <h2 className="text-sm font-sans font-semibold text-text-strong">Web Tools</h2>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-surface-2 transition-colors">
+            <X className="w-4 h-4 text-text-weaker" />
+          </button>
+        </div>
+
+        {/* Tool list */}
+        <div className="p-5 space-y-4">
+          {WEB_TOOLS.map((tool) => {
+            const running = runningTools[tool.id]
+            return (
+              <div key={tool.id} className="flex items-center gap-3 p-3 rounded-lg bg-surface-0 border border-border-weak">
+                <span className="text-text-weak shrink-0">{TOOL_ICONS_SM[tool.icon]}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-sans font-medium text-text-strong">{tool.name}</div>
+                  {running ? (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {running.status === "ready" && (
+                        <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-sans">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Running in {running.container}
+                        </span>
+                      )}
+                      {running.status === "starting" && (
+                        <span className="flex items-center gap-1 text-[10px] text-amber-400 font-sans">
+                          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                          Starting in {running.container}...
+                        </span>
+                      )}
+                      {running.status === "error" && (
+                        <span className="text-[10px] text-red-400 font-sans">
+                          Error: {running.error?.slice(0, 80)}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-text-weaker font-sans">Not running</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {running?.status === "ready" && (
+                    <>
+                      <a
+                        href={getProxyUrl(tool.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 rounded-md bg-surface-2 hover:bg-surface-3 text-text-weak hover:text-text-base transition-colors"
+                        title="Open in browser"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <button
+                        onClick={() => stopTool(tool.id)}
+                        className="px-2 py-1 text-[10px] font-sans rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                      >
+                        Stop
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="px-5 py-3 border-t border-border-weak text-[10px] text-text-weaker font-sans">
+          Tools are launched inside Exegol containers and proxied through the server.
+        </div>
+      </div>
     </div>
   )
 }

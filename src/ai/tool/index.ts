@@ -15,6 +15,7 @@ import { searchTools } from "./search-tools"
 import { webTools } from "./web-tools"
 import { todoTools } from "./todo-tools"
 import { userQuestionTool, createBatchTool } from "./workflow-tools"
+import { caidoTools } from "./caido-tools"
 import { toolApprovalQueue } from "./tool-approval"
 
 // ── Approval wrapper ────────────────────────────────────────────
@@ -48,6 +49,8 @@ const passthrough = {
   search_find: searchTools.search_find,
   search_grep: searchTools.search_grep,
   todo_read: todoTools.todo_read,
+  caido_read: caidoTools.caido_read,
+  caido_scope: caidoTools.caido_scope,
   user_question: userQuestionTool,
 }
 
@@ -99,6 +102,8 @@ export const readOnlyTools: Record<string, any> = {
   search_find: searchTools.search_find,
   search_grep: searchTools.search_grep,
   todo_read: todoTools.todo_read,
+  caido_read: caidoTools.caido_read,
+  caido_scope: caidoTools.caido_scope,
   // web tools still need approval even in read-only mode
   web_fetch: approved.web_fetch,
   web_search: approved.web_search,
