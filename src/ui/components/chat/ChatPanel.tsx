@@ -196,6 +196,7 @@ export function ChatPanel({ projectId }: Props) {
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   )
+  const terminals = useTerminalStore((s) => s.terminals)
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId)
 
   const quotes = useChatContextStore((s) => s.quotes)
@@ -262,8 +263,11 @@ export function ChatPanel({ projectId }: Props) {
     }
   }, [input])
 
+  const hasTerminals = terminals.length > 0
+
   async function handleSend() {
     if (streaming) return
+    if (!hasTerminals) return
     if (!input.trim() && quotes.length === 0) return
 
     const provider = getActiveProvider()
@@ -642,9 +646,10 @@ export function ChatPanel({ projectId }: Props) {
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Message, /command, or @mention..."
+              placeholder={hasTerminals ? "Message, /command, or @mention..." : "Open a terminal to start chatting..."}
               rows={1}
-              className="flex-1 bg-transparent text-sm text-text-strong placeholder-text-weaker resize-none focus:outline-none min-h-[24px] max-h-[120px] font-sans"
+              disabled={!hasTerminals}
+              className={`flex-1 bg-transparent text-sm placeholder-text-weaker resize-none focus:outline-none min-h-[24px] max-h-[120px] font-sans ${hasTerminals ? "text-text-strong" : "text-text-weaker cursor-not-allowed"}`}
             />
             {streaming ? (
               <button
@@ -656,7 +661,7 @@ export function ChatPanel({ projectId }: Props) {
             ) : (
               <button
                 onClick={handleSend}
-                disabled={!input.trim() && quotes.length === 0}
+                disabled={!hasTerminals || (!input.trim() && quotes.length === 0)}
                 className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />
