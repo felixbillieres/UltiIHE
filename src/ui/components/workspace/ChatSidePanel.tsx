@@ -100,9 +100,11 @@ function SessionTabBar({
 function SessionSidebar({
   projectId,
   onClose,
+  borderSide = "left",
 }: {
   projectId: string
   onClose: () => void
+  borderSide?: "left" | "right"
 }) {
   const {
     getProjectSessions,
@@ -122,7 +124,7 @@ function SessionSidebar({
     : sessions
 
   return (
-    <div className="w-56 shrink-0 border-l border-border-weak bg-surface-0 flex flex-col">
+    <div className={`w-56 shrink-0 ${borderSide === "left" ? "border-l" : "border-r"} border-border-weak bg-surface-0 flex flex-col`}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-weak shrink-0">
         <span className="text-xs text-text-strong font-sans font-medium">
@@ -391,6 +393,15 @@ export function ChatSidePanel({
         />
       )}
 
+      {/* Session sidebar — on the outer edge (left when chat is left, right when chat is right) */}
+      {sessionSidebarOpen && side === "left" && (
+        <SessionSidebar
+          projectId={projectId}
+          onClose={onToggleSessionSidebar}
+          borderSide="right"
+        />
+      )}
+
       {/* Chat panel */}
       <div
         className={`flex-1 min-w-0 ${borderClass} border-border-weak flex flex-col`}
@@ -430,11 +441,12 @@ export function ChatSidePanel({
         )}
       </div>
 
-      {/* Session sidebar (togglable, right of chat) */}
-      {sessionSidebarOpen && (
+      {/* Session sidebar — on the outer edge (right when chat is right) */}
+      {sessionSidebarOpen && side === "right" && (
         <SessionSidebar
           projectId={projectId}
           onClose={onToggleSessionSidebar}
+          borderSide="left"
         />
       )}
 
