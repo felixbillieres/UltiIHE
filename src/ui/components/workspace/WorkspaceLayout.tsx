@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import { type Project, useProjectStore } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
@@ -14,6 +14,9 @@ import { FilesSidePanel } from "./FilesSidePanel"
 import { CenterArea } from "./CenterArea"
 import { PopOutPortal } from "./PopOutPortal"
 import { PopOutChatView } from "../chat/PopOutChatView"
+import { CommandPaletteProvider } from "../../hooks/useCommandPalette"
+import { CommandPaletteDialog } from "../CommandPaletteDialog"
+import { useBuiltinCommands, type LayoutActions } from "../../hooks/useBuiltinCommands"
 
 // ─── Main component ──────────────────────────────────────────
 
@@ -140,71 +143,92 @@ export function WorkspaceLayout({ project }: Props) {
     />
   )
 
+  const layoutActions: LayoutActions = useMemo(() => ({
+    toggleFilesPanel,
+    toggleChatPanel,
+    toggleBottomPanel,
+    toggleSessionSidebar,
+    swapPanels,
+    openSettings: () => setShowSettings(true),
+  }), [toggleFilesPanel, toggleChatPanel, toggleBottomPanel, toggleSessionSidebar, swapPanels])
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Chat pop-out portal — lives at root so it persists when panel is closed */}
-      {chatPoppedOut && (
-        <PopOutPortal
-          windowName={`popout-chat-${project.id}`}
-          title="Chat — Exegol IHE"
-          width={Math.round(window.screen.width * 0.65)}
-          height={Math.round(window.screen.height * 0.8)}
-          onClose={handleReattachChat}
-        >
-          <PopOutChatView
-            projectId={project.id}
-            onReattach={handleReattachChat}
+    <CommandPaletteProvider>
+      <CommandPaletteBindings projectId={project.id} layout={layoutActions} />
+      <CommandPaletteDialog />
+
+      <div className="h-full flex flex-col">
+        {/* Chat pop-out portal — lives at root so it persists when panel is closed */}
+        {chatPoppedOut && (
+          <PopOutPortal
+            windowName={`popout-chat-${project.id}`}
+            title="Chat — Exegol IHE"
+            width={Math.round(window.screen.width * 0.65)}
+            height={Math.round(window.screen.height * 0.8)}
+            onClose={handleReattachChat}
+          >
+            <PopOutChatView
+              projectId={project.id}
+              onReattach={handleReattachChat}
+            />
+          </PopOutPortal>
+        )}
+
+        <div className="flex-1 flex overflow-hidden">
+          {/* Icon rail */}
+          <IconRail
+            project={project}
+            projects={projects}
+            onNavigateHome={() => navigate("/")}
+            onSwitchProject={(id) => {
+              setActiveProject(id)
+              navigate(`/project/${id}`)
+            }}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenContainers={() => setShowContainerManager(true)}
+            containerCount={project.containerIds.length}
+            filesPanelOpen={layout.filesPanelOpen}
+            chatPanelOpen={layout.chatPanelOpen}
+            bottomPanelOpen={layout.bottomPanelOpen}
+            swapped={layout.swapped}
+            onToggleFilesPanel={toggleFilesPanel}
+            onToggleChatPanel={toggleChatPanel}
+            onToggleBottomPanel={toggleBottomPanel}
+            onSwapPanels={swapPanels}
           />
-        </PopOutPortal>
-      )}
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Icon rail */}
-        <IconRail
-          project={project}
-          projects={projects}
-          onNavigateHome={() => navigate("/")}
-          onSwitchProject={(id) => {
-            setActiveProject(id)
-            navigate(`/project/${id}`)
-          }}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenContainers={() => setShowContainerManager(true)}
-          containerCount={project.containerIds.length}
-          filesPanelOpen={layout.filesPanelOpen}
-          chatPanelOpen={layout.chatPanelOpen}
-          bottomPanelOpen={layout.bottomPanelOpen}
-          swapped={layout.swapped}
-          onToggleFilesPanel={toggleFilesPanel}
-          onToggleChatPanel={toggleChatPanel}
-          onToggleBottomPanel={toggleBottomPanel}
-          onSwapPanels={swapPanels}
-        />
+          {/* Left side panel */}
+          {filesOnLeft ? filesPanel : chatPanel}
 
-        {/* Left side panel */}
-        {filesOnLeft ? filesPanel : chatPanel}
+          {/* Center: terminals + file editor + bottom panel */}
+          <CenterArea
+            send={send}
+            subscribe={subscribe}
+            connected={connected}
+            project={project}
+            showContainerManager={!hasContainers || showContainerManager}
+            onCloseContainerManager={() => setShowContainerManager(false)}
+            bottomPanelOpen={layout.bottomPanelOpen}
+            bottomPanelHeight={layout.bottomPanelHeight}
+            onCloseBottomPanel={toggleBottomPanel}
+            onResizeBottomPanel={(h) => setLayout((l) => ({ ...l, bottomPanelHeight: h }))}
+          />
 
-        {/* Center: terminals + file editor + bottom panel */}
-        <CenterArea
-          send={send}
-          subscribe={subscribe}
-          connected={connected}
-          project={project}
-          showContainerManager={!hasContainers || showContainerManager}
-          onCloseContainerManager={() => setShowContainerManager(false)}
-          bottomPanelOpen={layout.bottomPanelOpen}
-          bottomPanelHeight={layout.bottomPanelHeight}
-          onCloseBottomPanel={toggleBottomPanel}
-          onResizeBottomPanel={(h) => setLayout((l) => ({ ...l, bottomPanelHeight: h }))}
-        />
+          {/* Right side panel */}
+          {filesOnLeft ? chatPanel : filesPanel}
+        </div>
 
-        {/* Right side panel */}
-        {filesOnLeft ? chatPanel : filesPanel}
+        {showSettings && (
+          <SettingsDialog onClose={() => setShowSettings(false)} />
+        )}
       </div>
-
-      {showSettings && (
-        <SettingsDialog onClose={() => setShowSettings(false)} />
-      )}
-    </div>
+    </CommandPaletteProvider>
   )
+}
+
+// ─── Palette bindings (must be inside CommandPaletteProvider) ──
+
+function CommandPaletteBindings({ projectId, layout }: { projectId: string; layout: LayoutActions }) {
+  useBuiltinCommands(projectId, layout)
+  return null
 }

@@ -1,8 +1,10 @@
 import { type Project } from "../../stores/project"
+import { useCommandPalette } from "../../hooks/useCommandPalette"
 import {
   Settings as SettingsIcon,
   Plus,
   Box,
+  Command,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -47,6 +49,7 @@ export function IconRail({
   onToggleBottomPanel,
   onSwapPanels,
 }: IconRailProps) {
+  const { open: openCommandPalette } = useCommandPalette()
   return (
     <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center gap-2">
       {/* Exegol logo */}
@@ -161,6 +164,13 @@ export function IconRail({
               {containerCount}
             </span>
           )}
+        </button>
+        <button
+          onClick={openCommandPalette}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-text-weaker hover:bg-surface-2 hover:text-text-weak transition-colors shrink-0"
+          title="Command palette (Ctrl+Shift+P)"
+        >
+          <Command className="w-4 h-4" />
         </button>
         <button
           onClick={onOpenSettings}
