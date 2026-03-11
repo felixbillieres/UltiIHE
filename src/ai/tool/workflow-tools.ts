@@ -2,6 +2,11 @@ import { z } from "zod"
 import type { Tool } from "ai"
 import { questionQueue } from "./question-queue"
 
+/** Try to parse a JSON string, return the original value on failure */
+function tryParse(value: string): any {
+  try { return JSON.parse(value) } catch { return value }
+}
+
 /**
  * user_question — Ask the user a question and wait for their response.
  */
@@ -49,10 +54,41 @@ export function createBatchTool(
     inputSchema: z.object({
       calls: z
         .array(
-          z.object({
-            tool: z.string().describe("Tool name to call"),
-            args: z.record(z.any()).describe("Arguments for the tool"),
-          }),
+          z.preprocess(
+            // Normalize common field name mistakes from weaker models:
+            // "name"→"tool", "function"→"tool", "arguments"→"args", "parameters"→"args"
+            (val: any) => {
+              if (!val || typeof val !== "object" || Array.isArray(val)) return val
+              const obj = val as Record<string, any>
+              const result: Record<string, any> = {}
+              for (const [key, value] of Object.entries(obj)) {
+                switch (key) {
+                  case "name":
+                  case "function":
+                  case "function_name":
+                  case "tool_name":
+                  case "toolName":
+                    if (!("tool" in obj)) result.tool = value
+                    else result[key] = value
+                    break
+                  case "arguments":
+                  case "parameters":
+                  case "params":
+                  case "input":
+                    if (!("args" in obj)) result.args = typeof value === "string" ? tryParse(value) : value
+                    else result[key] = value
+                    break
+                  default:
+                    result[key] = value
+                }
+              }
+              return result
+            },
+            z.object({
+              tool: z.string().describe("Tool name to call"),
+              args: z.record(z.any()).describe("Arguments for the tool"),
+            }),
+          ),
         )
         .min(1)
         .max(25),
