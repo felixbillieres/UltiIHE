@@ -4,6 +4,7 @@ import { useFileStore } from "../../stores/files"
 import { TerminalArea } from "../terminal/TerminalArea"
 import { FileEditor } from "../files/FileEditor"
 import { ExegolManager } from "../exegol/ExegolManager"
+import { BottomPanel } from "./BottomPanel"
 
 interface CenterAreaProps {
   send: (data: any) => void
@@ -12,6 +13,10 @@ interface CenterAreaProps {
   project: Project
   showContainerManager: boolean
   onCloseContainerManager: () => void
+  bottomPanelOpen: boolean
+  bottomPanelHeight: number
+  onCloseBottomPanel: () => void
+  onResizeBottomPanel: (height: number) => void
 }
 
 export function CenterArea({
@@ -21,10 +26,15 @@ export function CenterArea({
   project,
   showContainerManager,
   onCloseContainerManager,
+  bottomPanelOpen,
+  bottomPanelHeight,
+  onCloseBottomPanel,
+  onResizeBottomPanel,
 }: CenterAreaProps) {
   const hasOpenFiles = useFileStore((s) => s.openFiles.length > 0)
   const [editorHeight, setEditorHeight] = useState(300)
-  const [dragging, setDragging] = useState(false)
+  const [editorDragging, setEditorDragging] = useState(false)
+  const [bottomDragging, setBottomDragging] = useState(false)
 
   if (showContainerManager && project.containerIds.length === 0) {
     return (
@@ -50,49 +60,87 @@ export function CenterArea({
         </div>
       )}
 
-      {hasOpenFiles ? (
+      {/* Top area: file editor + terminals */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {hasOpenFiles ? (
+          <>
+            <div className="shrink-0" style={{ height: editorHeight }}>
+              <FileEditor />
+            </div>
+            <div
+              className={`h-1 cursor-row-resize shrink-0 transition-colors ${
+                editorDragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
+              }`}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                setEditorDragging(true)
+                const startY = e.clientY
+                const startH = editorHeight
+                function onMove(ev: MouseEvent) {
+                  const delta = ev.clientY - startY
+                  setEditorHeight(Math.max(120, Math.min(startH + delta, 600)))
+                }
+                function onUp() {
+                  setEditorDragging(false)
+                  document.removeEventListener("mousemove", onMove)
+                  document.removeEventListener("mouseup", onUp)
+                }
+                document.addEventListener("mousemove", onMove)
+                document.addEventListener("mouseup", onUp)
+              }}
+            />
+            <div className="flex-1 min-h-0">
+              <TerminalArea
+                send={send}
+                subscribe={subscribe}
+                connected={connected}
+                project={project}
+              />
+            </div>
+          </>
+        ) : (
+          <TerminalArea
+            send={send}
+            subscribe={subscribe}
+            connected={connected}
+            project={project}
+          />
+        )}
+      </div>
+
+      {/* Bottom panel resize handle + panel */}
+      {bottomPanelOpen && (
         <>
-          <div className="shrink-0" style={{ height: editorHeight }}>
-            <FileEditor />
-          </div>
           <div
-            className={`h-1 cursor-row-resize shrink-0 transition-colors ${
-              dragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
+            className={`h-[3px] cursor-row-resize shrink-0 transition-colors ${
+              bottomDragging ? "bg-accent/40" : "bg-border-weak hover:bg-accent/20"
             }`}
             onMouseDown={(e) => {
               e.preventDefault()
-              setDragging(true)
+              setBottomDragging(true)
               const startY = e.clientY
-              const startH = editorHeight
+              const startH = bottomPanelHeight
               function onMove(ev: MouseEvent) {
-                const delta = ev.clientY - startY
-                setEditorHeight(Math.max(120, Math.min(startH + delta, 600)))
+                const delta = startY - ev.clientY
+                onResizeBottomPanel(Math.max(150, Math.min(startH + delta, 600)))
               }
               function onUp() {
-                setDragging(false)
+                setBottomDragging(false)
                 document.removeEventListener("mousemove", onMove)
                 document.removeEventListener("mouseup", onUp)
+                document.body.style.cursor = ""
+                document.body.style.userSelect = ""
               }
+              document.body.style.cursor = "row-resize"
+              document.body.style.userSelect = "none"
               document.addEventListener("mousemove", onMove)
               document.addEventListener("mouseup", onUp)
             }}
           />
-          <div className="flex-1 min-h-0">
-            <TerminalArea
-              send={send}
-              subscribe={subscribe}
-              connected={connected}
-              project={project}
-            />
+          <div className="shrink-0" style={{ height: bottomPanelHeight }}>
+            <BottomPanel project={project} onClose={onCloseBottomPanel} />
           </div>
         </>
-      ) : (
-        <TerminalArea
-          send={send}
-          subscribe={subscribe}
-          connected={connected}
-          project={project}
-        />
       )}
     </div>
   )

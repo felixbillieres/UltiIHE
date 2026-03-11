@@ -82,6 +82,8 @@ export function WorkspaceLayout({ project }: Props) {
     setLayout((l) => ({ ...l, chatPanelOpen: !l.chatPanelOpen }))
   const toggleSessionSidebar = () =>
     setLayout((l) => ({ ...l, sessionSidebarOpen: !l.sessionSidebarOpen }))
+  const toggleBottomPanel = () =>
+    setLayout((l) => ({ ...l, bottomPanelOpen: !l.bottomPanelOpen }))
   const swapPanels = () =>
     setLayout((l) => ({ ...l, swapped: !l.swapped }))
 
@@ -128,16 +130,18 @@ export function WorkspaceLayout({ project }: Props) {
           containerCount={project.containerIds.length}
           filesPanelOpen={layout.filesPanelOpen}
           chatPanelOpen={layout.chatPanelOpen}
+          bottomPanelOpen={layout.bottomPanelOpen}
           swapped={layout.swapped}
           onToggleFilesPanel={toggleFilesPanel}
           onToggleChatPanel={toggleChatPanel}
+          onToggleBottomPanel={toggleBottomPanel}
           onSwapPanels={swapPanels}
         />
 
         {/* Left side panel */}
         {filesOnLeft ? filesPanel : chatPanel}
 
-        {/* Center: terminals + file editor */}
+        {/* Center: terminals + file editor + bottom panel */}
         <CenterArea
           send={send}
           subscribe={subscribe}
@@ -145,6 +149,10 @@ export function WorkspaceLayout({ project }: Props) {
           project={project}
           showContainerManager={!hasContainers || showContainerManager}
           onCloseContainerManager={() => setShowContainerManager(false)}
+          bottomPanelOpen={layout.bottomPanelOpen}
+          bottomPanelHeight={layout.bottomPanelHeight}
+          onCloseBottomPanel={toggleBottomPanel}
+          onResizeBottomPanel={(h) => setLayout((l) => ({ ...l, bottomPanelHeight: h }))}
         />
 
         {/* Right side panel */}

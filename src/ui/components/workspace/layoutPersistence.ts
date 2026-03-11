@@ -7,6 +7,8 @@ export interface LayoutState {
   filesPanelWidth: number
   sessionSidebarOpen: boolean
   swapped: boolean // false = files left + chat right, true = chat left + files right
+  bottomPanelOpen: boolean
+  bottomPanelHeight: number
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -16,6 +18,8 @@ export const DEFAULT_LAYOUT: LayoutState = {
   filesPanelWidth: 260,
   sessionSidebarOpen: false,
   swapped: false,
+  bottomPanelOpen: false,
+  bottomPanelHeight: 280,
 }
 
 export function loadLayout(): LayoutState {

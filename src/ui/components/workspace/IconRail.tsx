@@ -7,6 +7,8 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  PanelBottomClose,
+  PanelBottomOpen,
   ArrowLeftRight,
 } from "lucide-react"
 
@@ -20,9 +22,11 @@ interface IconRailProps {
   containerCount: number
   filesPanelOpen: boolean
   chatPanelOpen: boolean
+  bottomPanelOpen: boolean
   swapped: boolean
   onToggleFilesPanel: () => void
   onToggleChatPanel: () => void
+  onToggleBottomPanel: () => void
   onSwapPanels: () => void
 }
 
@@ -36,9 +40,11 @@ export function IconRail({
   containerCount,
   filesPanelOpen,
   chatPanelOpen,
+  bottomPanelOpen,
   swapped,
   onToggleFilesPanel,
   onToggleChatPanel,
+  onToggleBottomPanel,
   onSwapPanels,
 }: IconRailProps) {
   return (
@@ -122,6 +128,22 @@ export function IconRail({
             <PanelRightClose className="w-3.5 h-3.5" />
           ) : (
             <PanelRightOpen className="w-3.5 h-3.5" />
+          )}
+        </button>
+
+        <button
+          onClick={onToggleBottomPanel}
+          className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${
+            bottomPanelOpen
+              ? "text-accent bg-accent/10 hover:bg-accent/15"
+              : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
+          }`}
+          title={bottomPanelOpen ? "Hide panel" : "Toggle panel"}
+        >
+          {bottomPanelOpen ? (
+            <PanelBottomClose className="w-3.5 h-3.5" />
+          ) : (
+            <PanelBottomOpen className="w-3.5 h-3.5" />
           )}
         </button>
 
