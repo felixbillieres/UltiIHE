@@ -109,11 +109,16 @@ localRoutes.post("/local/server/start", async (c) => {
     gpuLayers?: number
   }
 
+  // Check if model is currently downloading
+  if (isDownloading(modelId)) {
+    return c.json({ error: "Model is still downloading. Please wait for the download to complete." }, 409)
+  }
+
   // Find installed model
   const installed = listInstalledModels()
   const model = installed.find((m) => m.id === modelId)
   if (!model) {
-    return c.json({ error: "Model not installed" }, 404)
+    return c.json({ error: "Model not installed or download incomplete. Try downloading it again." }, 404)
   }
 
   try {

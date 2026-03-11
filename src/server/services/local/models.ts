@@ -440,21 +440,33 @@ export function listInstalledModels(): InstalledModel[] {
   ensureModelsDir()
   const files = readdirSync(MODELS_DIR).filter((f) => f.endsWith(".gguf"))
 
-  return files.map((file) => {
-    const filePath = join(MODELS_DIR, file)
-    const stats = statSync(filePath)
-    const fileSizeMB = Math.round(stats.size / (1024 * 1024))
+  return files
+    .filter((file) => {
+      // Skip files that are currently being downloaded
+      const catalogEntry = LOCAL_MODEL_CATALOG.find((m) => m.hfFile === file)
+      if (catalogEntry && isDownloading(catalogEntry.id)) return false
 
-    // Match to catalog
-    const catalogEntry = LOCAL_MODEL_CATALOG.find((m) => m.hfFile === file)
+      // Skip suspiciously small files (likely partial downloads that were interrupted)
+      const filePath = join(MODELS_DIR, file)
+      const stats = statSync(filePath)
+      const fileSizeMB = Math.round(stats.size / (1024 * 1024))
+      if (catalogEntry && fileSizeMB < catalogEntry.fileSizeMB * 0.9) return false
 
-    return {
-      id: catalogEntry?.id || file.replace(".gguf", ""),
-      filePath,
-      fileSizeMB,
-      catalogEntry,
-    }
-  })
+      return true
+    })
+    .map((file) => {
+      const filePath = join(MODELS_DIR, file)
+      const stats = statSync(filePath)
+      const fileSizeMB = Math.round(stats.size / (1024 * 1024))
+      const catalogEntry = LOCAL_MODEL_CATALOG.find((m) => m.hfFile === file)
+
+      return {
+        id: catalogEntry?.id || file.replace(".gguf", ""),
+        filePath,
+        fileSizeMB,
+        catalogEntry,
+      }
+    })
 }
 
 export function deleteModel(modelId: string): boolean {
