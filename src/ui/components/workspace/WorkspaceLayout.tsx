@@ -8,7 +8,6 @@ import { useToolApprovalStore } from "../../stores/toolApproval"
 import { SettingsDialog } from "../settings/SettingsDialog"
 import { type LayoutState, loadLayout, saveLayout } from "./layoutPersistence"
 import { IconRail } from "./IconRail"
-import { SessionPanel } from "./SessionPanel"
 import { ChatSidePanel } from "./ChatSidePanel"
 import { CenterArea } from "./CenterArea"
 
@@ -79,17 +78,10 @@ export function WorkspaceLayout({ project }: Props) {
 
   const hasContainers = project.containerIds.length > 0
 
-  // Panel toggle handlers
-  const toggleSessionPanel = () =>
-    setLayout((l) => ({ ...l, sessionPanelOpen: !l.sessionPanelOpen }))
   const toggleChatPanel = () =>
     setLayout((l) => ({ ...l, chatPanelOpen: !l.chatPanelOpen }))
-  const swapPanels = () =>
-    setLayout((l) => ({ ...l, swapped: !l.swapped }))
-
-  // Determine which panel is on which side based on swap state
-  const sessionOnLeft = !layout.swapped
-  const chatOnLeft = layout.swapped
+  const toggleSessionSidebar = () =>
+    setLayout((l) => ({ ...l, sessionSidebarOpen: !l.sessionSidebarOpen }))
 
   return (
     <div className="h-full flex flex-col">
@@ -106,34 +98,9 @@ export function WorkspaceLayout({ project }: Props) {
           onOpenSettings={() => setShowSettings(true)}
           onOpenContainers={() => setShowContainerManager(true)}
           containerCount={project.containerIds.length}
-          sessionPanelOpen={layout.sessionPanelOpen}
           chatPanelOpen={layout.chatPanelOpen}
-          swapped={layout.swapped}
-          onToggleSessionPanel={toggleSessionPanel}
           onToggleChatPanel={toggleChatPanel}
-          onSwapPanels={swapPanels}
         />
-
-        {/* Left side panel */}
-        {sessionOnLeft && layout.sessionPanelOpen && (
-          <SessionPanel
-            projectId={project.id}
-            side="left"
-            onClose={toggleSessionPanel}
-          />
-        )}
-        {chatOnLeft && layout.chatPanelOpen && (
-          <ChatSidePanel
-            rightTab={rightTab}
-            setRightTab={setRightTab}
-            projectId={project.id}
-            project={project}
-            width={layout.chatPanelWidth}
-            side="left"
-            onClose={toggleChatPanel}
-            onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
-          />
-        )}
 
         {/* Center: terminals + file editor */}
         <CenterArea
@@ -145,15 +112,8 @@ export function WorkspaceLayout({ project }: Props) {
           onCloseContainerManager={() => setShowContainerManager(false)}
         />
 
-        {/* Right side panel */}
-        {!sessionOnLeft && layout.sessionPanelOpen && (
-          <SessionPanel
-            projectId={project.id}
-            side="right"
-            onClose={toggleSessionPanel}
-          />
-        )}
-        {!chatOnLeft && layout.chatPanelOpen && (
+        {/* Chat panel (right side, with integrated session tabs + sidebar) */}
+        {layout.chatPanelOpen && (
           <ChatSidePanel
             rightTab={rightTab}
             setRightTab={setRightTab}
@@ -163,6 +123,8 @@ export function WorkspaceLayout({ project }: Props) {
             side="right"
             onClose={toggleChatPanel}
             onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
+            sessionSidebarOpen={layout.sessionSidebarOpen}
+            onToggleSessionSidebar={toggleSessionSidebar}
           />
         )}
       </div>

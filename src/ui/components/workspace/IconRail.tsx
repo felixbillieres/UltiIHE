@@ -3,11 +3,8 @@ import {
   Settings as SettingsIcon,
   Plus,
   Box,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  ArrowLeftRight,
 } from "lucide-react"
 
 interface IconRailProps {
@@ -18,12 +15,8 @@ interface IconRailProps {
   onOpenSettings: () => void
   onOpenContainers: () => void
   containerCount: number
-  sessionPanelOpen: boolean
   chatPanelOpen: boolean
-  swapped: boolean
-  onToggleSessionPanel: () => void
   onToggleChatPanel: () => void
-  onSwapPanels: () => void
 }
 
 export function IconRail({
@@ -34,12 +27,8 @@ export function IconRail({
   onOpenSettings,
   onOpenContainers,
   containerCount,
-  sessionPanelOpen,
   chatPanelOpen,
-  swapped,
-  onToggleSessionPanel,
   onToggleChatPanel,
-  onSwapPanels,
 }: IconRailProps) {
   return (
     <div className="w-12 shrink-0 bg-surface-0 border-r border-border-weak flex flex-col items-center gap-2">
@@ -80,35 +69,7 @@ export function IconRail({
 
       {/* Bottom actions */}
       <div className="shrink-0 flex flex-col items-center gap-1.5 py-3 border-t border-border-weak/50 w-full px-1.5">
-        {/* Panel toggles: session | swap | chat */}
-        <button
-          onClick={onToggleSessionPanel}
-          className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${
-            sessionPanelOpen
-              ? "text-accent bg-accent/10 hover:bg-accent/15"
-              : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
-          }`}
-          title={sessionPanelOpen ? "Hide sessions" : "Show sessions"}
-        >
-          {sessionPanelOpen ? (
-            <PanelLeftClose className="w-3.5 h-3.5" />
-          ) : (
-            <PanelLeftOpen className="w-3.5 h-3.5" />
-          )}
-        </button>
-
-        <button
-          onClick={onSwapPanels}
-          className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${
-            swapped
-              ? "text-accent bg-accent/10 hover:bg-accent/15"
-              : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
-          }`}
-          title="Swap panels"
-        >
-          <ArrowLeftRight className="w-3.5 h-3.5" />
-        </button>
-
+        {/* Chat panel toggle */}
         <button
           onClick={onToggleChatPanel}
           className={`w-9 h-7 rounded flex items-center justify-center transition-colors shrink-0 ${

@@ -1,19 +1,15 @@
 const LAYOUT_KEY = "ultiIHE-layout"
 
 export interface LayoutState {
-  sessionPanelOpen: boolean
   chatPanelOpen: boolean
-  swapped: boolean // false = session left + chat right, true = chat left + session right
-  sessionPanelWidth: number
   chatPanelWidth: number
+  sessionSidebarOpen: boolean // right-side session list (pushes chat left)
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
-  sessionPanelOpen: true,
   chatPanelOpen: true,
-  swapped: false,
-  sessionPanelWidth: 224,
-  chatPanelWidth: 400,
+  chatPanelWidth: 420,
+  sessionSidebarOpen: false,
 }
 
 export function loadLayout(): LayoutState {
