@@ -9,6 +9,7 @@ import { SettingsDialog } from "../settings/SettingsDialog"
 import { type LayoutState, loadLayout, saveLayout } from "./layoutPersistence"
 import { IconRail } from "./IconRail"
 import { ChatSidePanel } from "./ChatSidePanel"
+import { FilesSidePanel } from "./FilesSidePanel"
 import { CenterArea } from "./CenterArea"
 
 // ─── Main component ──────────────────────────────────────────
@@ -25,7 +26,6 @@ export function WorkspaceLayout({ project }: Props) {
 
   const [showSettings, setShowSettings] = useState(false)
   const [showContainerManager, setShowContainerManager] = useState(false)
-  const [rightTab, setRightTab] = useState<"chat" | "files">("chat")
 
   // Layout state
   const [layout, setLayoutRaw] = useState<LayoutState>(loadLayout)
@@ -51,7 +51,6 @@ export function WorkspaceLayout({ project }: Props) {
   // Subscribe to command + tool approval messages from server
   useEffect(() => {
     return subscribe((msg) => {
-      // Command approval (terminal_write)
       if (msg.type === "command:pending" && msg.data) {
         addPendingCommand({
           id: msg.data.commandId as string || msg.data.id as string,
@@ -64,7 +63,6 @@ export function WorkspaceLayout({ project }: Props) {
         const cmdId = msg.data.commandId as string || msg.data.id as string
         removePendingCommand(cmdId)
       }
-      // Tool approval (file_write, web_fetch, web_search, etc.)
       if (msg.type === "tool:pending") {
         addPendingTool({
           id: msg.id as string,
@@ -78,10 +76,40 @@ export function WorkspaceLayout({ project }: Props) {
 
   const hasContainers = project.containerIds.length > 0
 
+  const toggleFilesPanel = () =>
+    setLayout((l) => ({ ...l, filesPanelOpen: !l.filesPanelOpen }))
   const toggleChatPanel = () =>
     setLayout((l) => ({ ...l, chatPanelOpen: !l.chatPanelOpen }))
   const toggleSessionSidebar = () =>
     setLayout((l) => ({ ...l, sessionSidebarOpen: !l.sessionSidebarOpen }))
+  const swapPanels = () =>
+    setLayout((l) => ({ ...l, swapped: !l.swapped }))
+
+  // Determine which panel is on which side
+  const filesOnLeft = !layout.swapped
+  const chatOnLeft = layout.swapped
+
+  const filesPanel = layout.filesPanelOpen && (
+    <FilesSidePanel
+      width={layout.filesPanelWidth}
+      side={filesOnLeft ? "left" : "right"}
+      onClose={toggleFilesPanel}
+      onResize={(w) => setLayout((l) => ({ ...l, filesPanelWidth: w }))}
+    />
+  )
+
+  const chatPanel = layout.chatPanelOpen && (
+    <ChatSidePanel
+      projectId={project.id}
+      project={project}
+      width={layout.chatPanelWidth}
+      side={chatOnLeft ? "left" : "right"}
+      onClose={toggleChatPanel}
+      onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
+      sessionSidebarOpen={layout.sessionSidebarOpen}
+      onToggleSessionSidebar={toggleSessionSidebar}
+    />
+  )
 
   return (
     <div className="h-full flex flex-col">
@@ -98,9 +126,16 @@ export function WorkspaceLayout({ project }: Props) {
           onOpenSettings={() => setShowSettings(true)}
           onOpenContainers={() => setShowContainerManager(true)}
           containerCount={project.containerIds.length}
+          filesPanelOpen={layout.filesPanelOpen}
           chatPanelOpen={layout.chatPanelOpen}
+          swapped={layout.swapped}
+          onToggleFilesPanel={toggleFilesPanel}
           onToggleChatPanel={toggleChatPanel}
+          onSwapPanels={swapPanels}
         />
+
+        {/* Left side panel */}
+        {filesOnLeft ? filesPanel : chatPanel}
 
         {/* Center: terminals + file editor */}
         <CenterArea
@@ -112,21 +147,8 @@ export function WorkspaceLayout({ project }: Props) {
           onCloseContainerManager={() => setShowContainerManager(false)}
         />
 
-        {/* Chat panel (right side, with integrated session tabs + sidebar) */}
-        {layout.chatPanelOpen && (
-          <ChatSidePanel
-            rightTab={rightTab}
-            setRightTab={setRightTab}
-            projectId={project.id}
-            project={project}
-            width={layout.chatPanelWidth}
-            side="right"
-            onClose={toggleChatPanel}
-            onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
-            sessionSidebarOpen={layout.sessionSidebarOpen}
-            onToggleSessionSidebar={toggleSessionSidebar}
-          />
-        )}
+        {/* Right side panel */}
+        {filesOnLeft ? chatPanel : filesPanel}
       </div>
 
       {showSettings && (

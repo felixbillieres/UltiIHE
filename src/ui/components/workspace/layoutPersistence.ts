@@ -3,13 +3,19 @@ const LAYOUT_KEY = "ultiIHE-layout"
 export interface LayoutState {
   chatPanelOpen: boolean
   chatPanelWidth: number
-  sessionSidebarOpen: boolean // right-side session list (pushes chat left)
+  filesPanelOpen: boolean
+  filesPanelWidth: number
+  sessionSidebarOpen: boolean
+  swapped: boolean // false = files left + chat right, true = chat left + files right
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
   chatPanelOpen: true,
   chatPanelWidth: 420,
+  filesPanelOpen: true,
+  filesPanelWidth: 260,
   sessionSidebarOpen: false,
+  swapped: false,
 }
 
 export function loadLayout(): LayoutState {

@@ -2,17 +2,12 @@ import { useState, useCallback, useRef } from "react"
 import { type Project } from "../../stores/project"
 import { useSessionStore, type Session } from "../../stores/session"
 import { ChatPanel } from "../chat/ChatPanel"
-import { FileTree } from "../layout/FileTree"
 import { formatTimeAgo } from "./layoutPersistence"
 import {
-  Sparkles,
-  FolderTree,
   X,
   Plus,
   Clock,
-  MoreHorizontal,
   PanelRightClose,
-  PanelRightOpen,
   MessageSquare,
   Trash2,
   Search,
@@ -100,7 +95,7 @@ function SessionTabBar({
   )
 }
 
-// ─── Session Sidebar (toggleable, replaces old SessionPanel) ────
+// ─── Session Sidebar (toggleable) ───────────────────────────────
 
 function SessionSidebar({
   projectId,
@@ -208,7 +203,6 @@ function SidebarSessionRow({
   const inputRef = useRef<HTMLInputElement>(null)
 
   const timeAgo = formatTimeAgo(session.updatedAt)
-  const msgCount = session.messages?.length ?? 0
 
   const startEditing = () => {
     setEditName(session.title)
@@ -282,7 +276,6 @@ function PastChats({ projectId }: { projectId: string }) {
   const [expanded, setExpanded] = useState(false)
 
   const sessions = getProjectSessions(projectId)
-  // Show sessions that are NOT the active one, sorted by most recent
   const pastSessions = sessions
     .filter((s) => s.id !== activeSessionId)
     .slice(0, expanded ? 20 : 3)
@@ -331,75 +324,9 @@ function PastChats({ projectId }: { projectId: string }) {
   )
 }
 
-// ─── Content Tab Bar (Chat / Files) ─────────────────────────────
-
-function ContentTabBar({
-  rightTab,
-  setRightTab,
-  onClose,
-}: {
-  rightTab: "chat" | "files"
-  setRightTab: (tab: "chat" | "files") => void
-  onClose: () => void
-}) {
-  return (
-    <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0">
-      <PanelTab
-        active={rightTab === "chat"}
-        onClick={() => setRightTab("chat")}
-        icon={<Sparkles className="w-3.5 h-3.5" />}
-        label="Chat"
-      />
-      <PanelTab
-        active={rightTab === "files"}
-        onClick={() => setRightTab("files")}
-        icon={<FolderTree className="w-3.5 h-3.5" />}
-        label="Files"
-      />
-      <div className="ml-auto pr-1.5">
-        <button
-          onClick={onClose}
-          className="p-1 rounded hover:bg-surface-2 transition-colors"
-          title="Close panel"
-        >
-          <X className="w-3 h-3 text-text-weaker" />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function PanelTab({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  label: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-2 text-xs font-sans font-medium transition-colors ${
-        active
-          ? "text-text-strong border-b-2 border-accent"
-          : "text-text-weaker hover:text-text-weak border-b-2 border-transparent"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
-  )
-}
-
 // ─── Main ChatSidePanel ─────────────────────────────────────────
 
 interface ChatSidePanelProps {
-  rightTab: "chat" | "files"
-  setRightTab: (tab: "chat" | "files") => void
   projectId: string
   project: Project
   width: number
@@ -411,8 +338,6 @@ interface ChatSidePanelProps {
 }
 
 export function ChatSidePanel({
-  rightTab,
-  setRightTab,
   projectId,
   project,
   width,
@@ -451,8 +376,8 @@ export function ChatSidePanel({
     [width, side, onResize],
   )
 
-  // Total width includes session sidebar if open
   const totalWidth = sessionSidebarOpen ? width + 224 : width
+  const borderClass = side === "right" ? "border-l" : "border-r"
 
   return (
     <div className="flex shrink-0" style={{ width: totalWidth }}>
@@ -468,7 +393,7 @@ export function ChatSidePanel({
 
       {/* Chat panel */}
       <div
-        className="flex-1 min-w-0 border-l border-border-weak flex flex-col"
+        className={`flex-1 min-w-0 ${borderClass} border-border-weak flex flex-col`}
         style={{ width }}
       >
         {/* Session tabs header (hidden when sidebar open) */}
@@ -480,24 +405,27 @@ export function ChatSidePanel({
           />
         )}
 
-        {/* Content tab bar (Chat / Files) */}
-        <ContentTabBar
-          rightTab={rightTab}
-          setRightTab={setRightTab}
-          onClose={onClose}
-        />
-
-        {/* Content */}
-        <div className="flex-1 overflow-hidden">
-          {rightTab === "chat" ? (
-            <ChatPanel projectId={projectId} />
-          ) : (
-            <FileTree />
-          )}
+        {/* Chat header with close */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
+          <span className="text-xs text-text-strong font-sans font-medium">
+            Chat
+          </span>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-surface-2 transition-colors"
+            title="Close panel"
+          >
+            <X className="w-3 h-3 text-text-weaker" />
+          </button>
         </div>
 
-        {/* Past chats (only when session sidebar is closed and on chat tab) */}
-        {!sessionSidebarOpen && rightTab === "chat" && (
+        {/* Chat content */}
+        <div className="flex-1 overflow-hidden">
+          <ChatPanel projectId={projectId} />
+        </div>
+
+        {/* Past chats (only when session sidebar is closed) */}
+        {!sessionSidebarOpen && (
           <PastChats projectId={projectId} />
         )}
       </div>
