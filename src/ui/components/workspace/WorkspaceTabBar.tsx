@@ -12,14 +12,13 @@ import {
   Globe,
   X,
   Pin,
-  PinOff,
   Filter,
-  Plus,
   Loader2,
-  Save,
 } from "lucide-react"
 import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
 import { TOOL_ICONS } from "../terminal/terminalConstants"
+import { NewTerminalButton } from "../terminal/NewTerminalButton"
+import { WebToolsDropdown } from "../terminal/WebToolsDropdown"
 
 // ─── Tab type icons & colors ─────────────────────────────────
 
@@ -65,6 +64,11 @@ export function WorkspaceTabBar({
   const removeTab = useWorkspaceStore((s) => s.removeTab)
   const renameTab = useWorkspaceStore((s) => s.renameTab)
   const togglePin = useWorkspaceStore((s) => s.togglePin)
+
+  // Collect open tool tab IDs for WebToolsDropdown
+  const openToolTabIds = tabs
+    .filter((t) => t.type === "webtool" && t.toolId)
+    .map((t) => t.toolId!)
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
@@ -178,16 +182,17 @@ export function WorkspaceTabBar({
 
         {/* Add buttons */}
         <div className="shrink-0 flex items-center gap-0.5 px-1.5 py-1.5 border-l border-border-weak">
-          {/* New terminal */}
-          <button
-            onClick={() => onAddTerminal()}
-            disabled={!connected || containerIds.length === 0}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs text-text-weak hover:text-text-base hover:bg-surface-2 transition-colors disabled:opacity-30 font-sans"
-            title="New terminal"
-          >
-            <Plus className="w-3 h-3" />
-            <Terminal className="w-3 h-3" />
-          </button>
+          <NewTerminalButton
+            containerIds={containerIds}
+            connected={connected}
+            onAdd={onAddTerminal}
+            compact
+          />
+          <WebToolsDropdown
+            openToolTabs={openToolTabIds}
+            onLaunch={onLaunchTool}
+            onSettings={() => {}}
+          />
         </div>
       </div>
     </div>
