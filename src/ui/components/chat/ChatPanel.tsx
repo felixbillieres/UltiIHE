@@ -119,7 +119,9 @@ export function ChatPanel({ projectId }: Props) {
     if (!input.trim() && quotes.length === 0) return
 
     const provider = getActiveProvider()
-    if (!provider?.apiKey) {
+    // Local provider doesn't need an API key
+    const isLocal = activeProvider === "local"
+    if (!isLocal && !provider?.apiKey) {
       let sid = activeSessionId
       if (!sid) {
         const s = createSession(projectId)
@@ -129,7 +131,7 @@ export function ChatPanel({ projectId }: Props) {
         id: crypto.randomUUID(),
         role: "assistant",
         content:
-          "No API key configured. Go to Settings > Providers to connect a provider.",
+          "No API key configured. Go to Settings > Providers to connect a provider, or start a local model from Settings > Local AI.",
         createdAt: Date.now(),
       })
       return
@@ -201,7 +203,7 @@ export function ChatPanel({ projectId }: Props) {
           messages: apiMessages,
           providerId: activeProvider,
           modelId: activeModel,
-          apiKey: provider.apiKey,
+          apiKey: provider?.apiKey || "local",
           containerIds: project?.containerIds || [],
           activeTerminalId,
           mode: activeMode,

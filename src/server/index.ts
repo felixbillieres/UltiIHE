@@ -6,8 +6,10 @@ import { chatRoutes } from "./routes/chat"
 import { probeRoutes } from "./routes/probe"
 import { caidoRoutes } from "./routes/caido"
 import { webtoolRoutes } from "./routes/webtool"
+import { localRoutes } from "./routes/local"
 import { websocketHandlers } from "./ws"
 import { terminalManager } from "../terminal/manager"
+import { stopServer as stopLocalServer } from "./services/local/server"
 
 const app = new Hono()
 
@@ -18,6 +20,7 @@ app.route("/api", chatRoutes)
 app.route("/api", probeRoutes)
 app.route("/api", caidoRoutes)
 app.route("/api", webtoolRoutes)
+app.route("/api", localRoutes)
 
 app.get("/api/health", (c) => c.json({ status: "ok", uptime: process.uptime() }))
 
@@ -59,8 +62,9 @@ console.log(`[Exegol IHE] Server running on http://localhost:${server.port}`)
 console.log(`[Exegol IHE] WebSocket available at ws://localhost:${server.port}/ws`)
 
 // Graceful shutdown
-function shutdown() {
+async function shutdown() {
   console.log("\n[Exegol IHE] Shutting down...")
+  await stopLocalServer()
   terminalManager.closeAll()
   server.stop()
   process.exit(0)

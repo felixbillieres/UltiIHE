@@ -12,10 +12,11 @@ import {
 import { t, type TranslationKey } from "../../i18n/translations"
 import {
   X, Check, Palette, Keyboard, Bot, Plug, Globe, Monitor, Sun, Moon,
-  Brain, Eye, Wrench, Search, ChevronDown, RotateCcw, ExternalLink, Sparkles,
+  Brain, Eye, Wrench, Search, ChevronDown, RotateCcw, ExternalLink, Sparkles, Cpu,
 } from "lucide-react"
+import { LocalAISettings } from "./LocalAISettings"
 
-type Tab = "general" | "providers" | "models" | "keybinds"
+type Tab = "general" | "providers" | "models" | "local" | "keybinds"
 
 interface Props {
   onClose: () => void
@@ -43,12 +44,14 @@ export function SettingsDialog({ onClose }: Props) {
             <TabBtn active={tab === "general"} onClick={() => setTab("general")} icon={<Palette className="w-3.5 h-3.5" />} label={t(lang, "settings.tabs.general")} />
             <TabBtn active={tab === "providers"} onClick={() => setTab("providers")} icon={<Plug className="w-3.5 h-3.5" />} label={t(lang, "settings.tabs.providers")} />
             <TabBtn active={tab === "models"} onClick={() => setTab("models")} icon={<Bot className="w-3.5 h-3.5" />} label={t(lang, "settings.tabs.models")} />
+            <TabBtn active={tab === "local"} onClick={() => setTab("local")} icon={<Cpu className="w-3.5 h-3.5" />} label="Local AI" />
             <TabBtn active={tab === "keybinds"} onClick={() => setTab("keybinds")} icon={<Keyboard className="w-3.5 h-3.5" />} label={t(lang, "settings.tabs.keybinds")} />
           </div>
           <div className="flex-1 overflow-y-auto p-5">
             {tab === "general" && <GeneralSettings />}
             {tab === "providers" && <ProviderSettings />}
             {tab === "models" && <ModelSettings />}
+            {tab === "local" && <LocalAISettings />}
             {tab === "keybinds" && <KeybindSettings />}
           </div>
         </div>
@@ -334,11 +337,32 @@ function ModelSettings() {
   const connectedIds = new Set(providers.filter((p) => p.enabled).map((p) => p.id))
   const availableProviders = PROVIDER_CATALOG.filter((p) => connectedIds.has(p.id))
 
-  const filteredModels = availableProviders.flatMap((provider) =>
-    provider.models
-      .filter((m) => !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.id.toLowerCase().includes(search.toLowerCase()))
-      .map((m) => ({ ...m, provider })),
-  )
+  // Include local models if local provider is connected
+  const localProvider = providers.find((p) => p.id === "local" && p.enabled)
+  const localModels: { id: string; name: string; provider: ProviderInfo; contextWindow: number; maxOutput: number; reasoning: boolean; toolCalling: boolean; vision: boolean; costPer1kInput?: number; costPer1kOutput?: number }[] = []
+  if (localProvider) {
+    for (const modelId of localProvider.models) {
+      localModels.push({
+        id: modelId,
+        name: `${modelId} (local)`,
+        provider: { id: "local", name: "Local AI", type: "local", models: [] },
+        contextWindow: 32_768,
+        maxOutput: 4096,
+        reasoning: false,
+        toolCalling: true,
+        vision: false,
+      })
+    }
+  }
+
+  const filteredModels = [
+    ...localModels.filter((m) => !search || m.name.toLowerCase().includes(search.toLowerCase())),
+    ...availableProviders.flatMap((provider) =>
+      provider.models
+        .filter((m) => !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.id.toLowerCase().includes(search.toLowerCase()))
+        .map((m) => ({ ...m, provider })),
+    ),
+  ]
 
   return (
     <div className="space-y-5">

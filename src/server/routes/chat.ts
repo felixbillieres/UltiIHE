@@ -15,6 +15,8 @@ import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
 import { createAzure } from "@ai-sdk/azure"
 import { createCohere } from "@ai-sdk/cohere"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import { getServerStatus } from "../services/local/server"
 import { terminalManager } from "../../terminal/manager"
 import { allTools, readOnlyTools } from "../../ai/tool"
 
@@ -54,6 +56,16 @@ function createRegistry(providerId: string, apiKey: string, baseUrl?: string) {
         resourceName: baseUrl || process.env.AZURE_RESOURCE_NAME || "",
       }),
     cohere: () => createCohere({ apiKey }),
+    local: () => {
+      const status = getServerStatus()
+      if (!status.running || !status.baseUrl) {
+        throw new Error("Local AI server is not running. Start a model from Settings > Local AI.")
+      }
+      return createOpenAICompatible({
+        name: "local",
+        baseURL: `${status.baseUrl}/v1`,
+      })
+    },
   }
 
   const factory = providers[providerId]
@@ -338,8 +350,12 @@ chatRoutes.post("/chat", async (c) => {
     thinkingEffort?: ThinkingEffort
   }
 
-  if (!messages || !providerId || !modelId || !apiKey) {
+  if (!messages || !providerId || !modelId) {
     return c.json({ error: "Missing required fields" }, 400)
+  }
+  // Local provider doesn't need an API key
+  if (providerId !== "local" && !apiKey) {
+    return c.json({ error: "Missing API key" }, 400)
   }
 
   // Build terminal context from active terminal's ring buffer
