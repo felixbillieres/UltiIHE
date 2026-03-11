@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { useFileStore, type FileEntry } from "../../stores/files"
 import { useProjectStore } from "../../stores/project"
+import { useWorkspaceStore } from "../../stores/workspace"
 import {
   ChevronRight,
   Home,
@@ -169,7 +170,9 @@ interface FileManagerProps {
 }
 
 export function FileManager({ containerIds }: FileManagerProps) {
-  const { fetchDirectory, dirCache, loadingDirs, openFile } = useFileStore()
+  const fetchDirectory = useFileStore((s) => s.fetchDirectory)
+  const openFile = useFileStore((s) => s.openFile)
+  const dirCache = useFileStore((s) => s.dirCache)
 
   const [container, setContainer] = useState(containerIds[0] || "")
   const [currentPath, setCurrentPath] = useState("/workspace")
@@ -179,6 +182,7 @@ export function FileManager({ containerIds }: FileManagerProps) {
   const [sortDir, setSortDir] = useState<SortDir>("asc")
   const [history, setHistory] = useState<string[]>(["/workspace"])
   const [historyIdx, setHistoryIdx] = useState(0)
+  const [loading, setLoading] = useState(false)
 
   // Update container when project containers change
   useEffect(() => {
@@ -189,14 +193,22 @@ export function FileManager({ containerIds }: FileManagerProps) {
 
   // Fetch directory on path change
   useEffect(() => {
-    if (container) {
-      fetchDirectory(container, currentPath)
-    }
-  }, [container, currentPath, fetchDirectory])
+    if (!container) return
+    const key = `${container}:${currentPath}`
+    // Already cached
+    if (dirCache[key]) return
+
+    let cancelled = false
+    setLoading(true)
+    fetchDirectory(container, currentPath).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [container, currentPath, fetchDirectory, dirCache])
 
   const cacheKey = `${container}:${currentPath}`
   const entries = dirCache[cacheKey] || []
-  const isLoading = loadingDirs.has(cacheKey)
+  const isLoading = loading && entries.length === 0
 
   // Filter
   const filtered = search.trim()
@@ -234,11 +246,16 @@ export function FileManager({ containerIds }: FileManagerProps) {
     }
   }
 
+  const openFileTab = useWorkspaceStore((s) => s.openFileTab)
+
   const handleEntryClick = (entry: FileEntry) => {
     if (entry.type === "dir") {
       navigateTo(entry.path)
     } else {
+      // Open in file store (loads content) + create workspace tab
       openFile(container, entry.path)
+      const fileId = `${container}:${entry.path}`
+      openFileTab(fileId, entry.name, container)
     }
   }
 
@@ -267,7 +284,7 @@ export function FileManager({ containerIds }: FileManagerProps) {
   }
 
   return (
-    <div className="h-full flex bg-surface-0">
+    <div className="h-full min-h-0 flex bg-surface-0">
       {/* Sidebar shortcuts */}
       <div className="w-36 shrink-0 border-r border-border-weak flex flex-col py-1.5 overflow-y-auto">
         {/* Container selector */}
@@ -313,7 +330,7 @@ export function FileManager({ containerIds }: FileManagerProps) {
       </div>
 
       {/* Main area */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
         {/* Toolbar: navigation + breadcrumbs + search + view toggle */}
         <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border-weak shrink-0 bg-surface-1">
           {/* Nav buttons */}
@@ -398,7 +415,7 @@ export function FileManager({ containerIds }: FileManagerProps) {
 
         {/* Content */}
         {isLoading && sorted.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 min-h-0 flex items-center justify-center">
             <Loader2 className="w-5 h-5 text-text-weaker animate-spin" />
           </div>
         ) : sorted.length === 0 ? (
@@ -470,7 +487,7 @@ function ListView({
   onClick: (entry: FileEntry) => void
 }) {
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 min-h-0 overflow-y-auto">
       {/* Column headers */}
       <div className="sticky top-0 z-10 grid grid-cols-[1fr_80px_120px] gap-2 px-3 py-1 bg-surface-1 border-b border-border-weak">
         <SortHeader label="Name" sortKey={sortKey} thisKey="name" sortDir={sortDir} onSort={onSort} />
@@ -513,7 +530,7 @@ function GridView({
   onClick: (entry: FileEntry) => void
 }) {
   return (
-    <div className="flex-1 overflow-y-auto p-2">
+    <div className="flex-1 min-h-0 overflow-y-auto p-2">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-1">
         {entries.map((entry) => (
           <button

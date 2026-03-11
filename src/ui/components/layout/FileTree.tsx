@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useProjectStore } from "../../stores/project"
 import { useFileStore, type FileEntry } from "../../stores/files"
+import { useWorkspaceStore } from "../../stores/workspace"
 import {
   ChevronRight,
   ChevronDown,
@@ -331,6 +332,7 @@ function TreeFile({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const openFile = useFileStore((s) => s.openFile)
   const activeFileId = useFileStore((s) => s.activeFileId)
+  const openFileTab = useWorkspaceStore((s) => s.openFileTab)
   const isActive = activeFileId === `${container}:${entry.path}`
   const pl = depth * 12 + 4
 
@@ -359,7 +361,10 @@ function TreeFile({
         isActive ? "bg-accent/10 text-text-strong" : "hover:bg-surface-1 text-text-weak"
       }`}
       style={{ paddingLeft: `${pl}px` }}
-      onClick={() => openFile(container, entry.path)}
+      onClick={() => {
+        openFile(container, entry.path)
+        openFileTab(`${container}:${entry.path}`, entry.name, container)
+      }}
       draggable
       onDragStart={(e) => {
         const data: DragData = {
