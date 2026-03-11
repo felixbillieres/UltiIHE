@@ -13,12 +13,40 @@ export interface LocalServerStatus {
   port: number | null
   pid: number | null
   baseUrl: string | null
+  contextSize: number | null
 }
 
 let serverProcess: Subprocess | null = null
 let currentModelId: string | null = null
 let currentModelPath: string | null = null
 let currentPort: number | null = null
+let currentContextSize: number | null = null
+
+/**
+ * Kill any orphaned llama-server processes.
+ * This handles the case where bun --watch restarts the server
+ * but the child llama-server process keeps running.
+ */
+async function killOrphanedServers(): Promise<void> {
+  try {
+    if (process.platform === "win32") {
+      // Windows: taskkill by name
+      Bun.spawn(["taskkill", "/F", "/IM", "llama-server.exe"], {
+        stdout: "ignore", stderr: "ignore",
+      })
+    } else {
+      // Unix: pkill by name (SIGTERM, graceful)
+      const proc = Bun.spawn(["pkill", "-f", "llama-server"], {
+        stdout: "ignore", stderr: "ignore",
+      })
+      await proc.exited
+      // Brief wait for processes to die
+      await Bun.sleep(500)
+    }
+  } catch {
+    // pkill/taskkill might not exist or no processes found — that's fine
+  }
+}
 
 /**
  * Find an available port in the ephemeral range.
@@ -46,6 +74,10 @@ export async function startServer(opts: {
     await stopServer()
   }
 
+  // Kill any orphaned llama-server processes from previous hot-reloads.
+  // In dev mode, bun --watch resets module vars but doesn't kill child processes.
+  await killOrphanedServers()
+
   const binaryPath = getLlamaServerPath()
   if (!binaryPath) {
     throw new Error("llama-server binary not installed. Install it from Settings > Local AI.")
@@ -58,6 +90,11 @@ export async function startServer(opts: {
     "--port", String(port),
     "-c", String(opts.contextSize || 4096),
     "--alias", opts.modelId,
+    // Enable Jinja template rendering — required for tool/function calling.
+    // Without this, tools sent via OpenAI API are ignored by the model.
+    "--jinja",
+    // Use only 1 parallel slot to maximize context per request on CPU
+    "-np", "1",
   ]
 
   // GPU layers: -1 means offload all, 0 means CPU only
@@ -97,6 +134,7 @@ export async function startServer(opts: {
   currentModelId = opts.modelId
   currentModelPath = opts.modelPath
   currentPort = port
+  currentContextSize = opts.contextSize || 4096
 
   // Log server output — capture stderr too for error diagnosis
   const streamOutput = (stream: ReadableStream<Uint8Array> | null, label: string) => {
@@ -181,6 +219,7 @@ export async function stopServer(): Promise<void> {
   currentModelId = null
   currentModelPath = null
   currentPort = null
+  currentContextSize = null
 }
 
 /**
@@ -195,6 +234,7 @@ export function getServerStatus(): LocalServerStatus {
     currentModelId = null
     currentModelPath = null
     currentPort = null
+    currentContextSize = null
   }
 
   return {
@@ -204,5 +244,6 @@ export function getServerStatus(): LocalServerStatus {
     port: currentPort,
     pid: serverProcess?.pid ?? null,
     baseUrl: currentPort ? `http://127.0.0.1:${currentPort}` : null,
+    contextSize: currentContextSize,
   }
 }

@@ -30,6 +30,7 @@ import type {
 } from "./settingsTypes"
 import { AGENTS } from "./settingsTypes"
 import { PROVIDER_CATALOG, THEMES, DEFAULT_KEYBINDS } from "./settingsCatalogs"
+import { useProviderCatalog } from "./providerCatalog"
 
 // ---------------------------------------------------------------------------
 // Language detection helper
@@ -216,6 +217,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       getActiveModelInfo: () => {
         const state = get()
+        // Try dynamic catalog first (models.dev)
+        const dynamic = useProviderCatalog.getState().findModel(state.activeModel)
+        if (dynamic) return dynamic
+        // Fallback to static catalog
         for (const provider of PROVIDER_CATALOG) {
           const model = provider.models.find(
             (m) => m.id === state.activeModel,

@@ -1,10 +1,10 @@
 import { useState } from "react"
 import {
   useSettingsStore,
-  PROVIDER_CATALOG,
   type ProviderInfo,
   type ReasoningMode,
 } from "../../stores/settings"
+import { useProviderCatalog } from "../../stores/providerCatalog"
 import { useLocalAIStore } from "../../stores/localAI"
 import { t, type TranslationKey } from "../../i18n/translations"
 import { Check, Brain, Eye, Wrench, Search, Zap, DollarSign, Cpu, CheckCircle2 } from "lucide-react"
@@ -43,7 +43,8 @@ export function ModelSettings() {
   const installedLocal = catalog.filter((m) => m.installed)
 
   const connectedIds = new Set(providers.filter((p) => p.enabled).map((p) => p.id))
-  const availableProviders = PROVIDER_CATALOG.filter((p) => connectedIds.has(p.id))
+  const catalogProviders = useProviderCatalog((s) => s.providers)
+  const availableProviders = catalogProviders.filter((p) => connectedIds.has(p.id))
 
   // Build local models from installed catalog entries
   const localProvider: ProviderInfo = { id: "local", name: "Local AI", type: "local", models: [] }

@@ -33,7 +33,7 @@ export function extractStatusCode(err: unknown, message?: string): 400 | 401 | 4
   if (message) {
     if (message.includes("quota") || message.includes("rate limit") || message.includes("RESOURCE_EXHAUSTED")) return 429
     if (message.includes("credits") || message.includes("billing")) return 402
-    if (message.includes("decommissioned") || message.includes("not found") || message.includes("does not exist")) return 400
+    if (message.includes("decommissioned") || message.includes("not found") || message.includes("does not exist") || message.includes("hallucinated")) return 400
     if (message.includes("unauthorized") || message.includes("invalid.*key")) return 401
   }
   return 500

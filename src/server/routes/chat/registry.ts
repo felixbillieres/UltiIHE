@@ -51,7 +51,8 @@ export async function createRegistry(providerId: string, apiKey: string, modelId
     local: async () => {
       let status = getServerStatus()
 
-      // Auto-start: if server isn't running but we know which model the user wants, start it
+      // Auto-start: if server isn't running but we know which model the user wants, start it.
+      // The frontend also starts the server on model selection, so this is a fallback.
       if (!status.running && modelId) {
         const installed = listInstalledModels()
         const model = installed.find((m) => m.id === modelId)
@@ -62,8 +63,17 @@ export async function createRegistry(providerId: string, apiKey: string, modelId
         }
       }
 
+      // If still not running, wait briefly — the frontend might be starting it
+      if (!status.running) {
+        for (let i = 0; i < 20; i++) {
+          await Bun.sleep(500)
+          status = getServerStatus()
+          if (status.running) break
+        }
+      }
+
       if (!status.running || !status.baseUrl) {
-        throw new Error("Local AI server is not running. Install and select a local model to auto-start it.")
+        throw new Error("Local AI server is not running. Select a local model to start it.")
       }
       return createOpenAICompatible({
         name: "local",

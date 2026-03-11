@@ -7,6 +7,7 @@ import { probeRoutes } from "./routes/probe"
 import { caidoRoutes } from "./routes/caido"
 import { webtoolRoutes } from "./routes/webtool"
 import { localRoutes } from "./routes/local"
+import { providerRoutes } from "./routes/providers"
 import { websocketHandlers } from "./ws"
 import { terminalManager } from "../terminal/manager"
 import { stopServer as stopLocalServer } from "./services/local/server"
@@ -21,6 +22,7 @@ app.route("/api", probeRoutes)
 app.route("/api", caidoRoutes)
 app.route("/api", webtoolRoutes)
 app.route("/api", localRoutes)
+app.route("/api", providerRoutes)
 
 app.get("/api/health", (c) => c.json({ status: "ok", uptime: process.uptime() }))
 

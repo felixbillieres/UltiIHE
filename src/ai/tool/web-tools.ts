@@ -168,7 +168,7 @@ export const webSearchTool: Tool<
   inputSchema: z.object({
     query: z.string().describe("Search query"),
     numResults: z
-      .number()
+      .coerce.number()
       .int()
       .min(1)
       .max(20)

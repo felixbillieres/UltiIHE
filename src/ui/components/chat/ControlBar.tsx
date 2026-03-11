@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   useSettingsStore,
-  PROVIDER_CATALOG,
   AGENTS,
   type AgentId,
 } from "../../stores/settings"
+import { useProviderCatalog } from "../../stores/providerCatalog"
 import { useLocalAIStore } from "../../stores/localAI"
+import { useContextStore } from "../../stores/context"
 import {
   Brain,
   Eye,
@@ -14,6 +15,7 @@ import {
   ChevronDown,
   Cpu,
   Loader2,
+  Gauge,
 } from "lucide-react"
 
 function Separator() {
@@ -33,6 +35,90 @@ function agentColorBg(agent: AgentId): string {
     default:
       return "bg-text-weaker"
   }
+}
+
+// ── Context Indicator ─────────────────────────────────────────
+// Shows context usage as a compact bar with color coding.
+// Green < 50%, Yellow 50-80%, Red > 80%
+
+function ContextIndicator() {
+  const info = useContextStore((s) => s.info)
+  const [showTooltip, setShowTooltip] = useState(false)
+
+  if (!info) return null
+
+  const pct = info.percentUsed
+  const color =
+    pct >= 80 ? "bg-status-error" :
+    pct >= 50 ? "bg-status-warning" :
+    "bg-status-success"
+
+  const textColor =
+    pct >= 80 ? "text-status-error" :
+    pct >= 50 ? "text-status-warning" :
+    "text-text-weaker"
+
+  // Format token counts compactly: 1234 → "1.2k", 123456 → "123k"
+  const fmt = (n: number) =>
+    n >= 100_000 ? `${Math.round(n / 1000)}k`
+    : n >= 1_000 ? `${(n / 1000).toFixed(1)}k`
+    : String(n)
+
+  return (
+    <div
+      className="relative flex items-center gap-1.5 shrink-0"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {/* Compact bar */}
+      <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-2">
+        <Gauge className={`w-3 h-3 ${textColor}`} />
+        <div className="w-12 h-1.5 rounded-full bg-surface-0 overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${color}`}
+            style={{ width: `${Math.min(pct, 100)}%` }}
+          />
+        </div>
+        <span className={`text-[10px] font-mono ${textColor} tabular-nums`}>
+          {pct}%
+        </span>
+      </div>
+
+      {/* Tooltip */}
+      {showTooltip && (
+        <div className="absolute bottom-full right-0 mb-2 z-50 w-56 bg-surface-2 border border-border-base rounded-lg shadow-xl p-3 pointer-events-none">
+          <div className="text-[10px] font-sans text-text-weak space-y-1.5">
+            <div className="flex justify-between">
+              <span className="text-text-weaker">Context used</span>
+              <span className="font-mono text-text-base">{fmt(info.total)} / {fmt(info.limit)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-weaker">Free</span>
+              <span className="font-mono text-status-success">{fmt(info.free)}</span>
+            </div>
+            <div className="h-px bg-border-weak my-1" />
+            <div className="flex justify-between">
+              <span className="text-text-weaker">Prompt tier</span>
+              <span className={`font-mono ${
+                info.promptTier === "minimal" ? "text-status-warning" :
+                info.promptTier === "medium" ? "text-accent" :
+                "text-text-base"
+              }`}>{info.promptTier}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-weaker">Tools</span>
+              <span className="font-mono">{info.toolCount}</span>
+            </div>
+            {info.pruned && (
+              <div className="text-status-warning text-[9px] mt-1">
+                Old messages pruned to save context
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CapBadge({
@@ -78,7 +164,9 @@ export function ControlBar() {
     getActiveModelInfo,
   } = useSettingsStore()
 
-  const { server, serverStarting } = useLocalAIStore()
+  const server = useLocalAIStore((s) => s.server)
+  const serverStarting = useLocalAIStore((s) => s.serverStarting)
+  const serverError = useLocalAIStore((s) => s.serverError)
   const modelInfo = getActiveModelInfo()
   const agentInfo = AGENTS.find((a) => a.id === activeAgent)
 
@@ -89,8 +177,46 @@ export function ControlBar() {
   const localEntry = activeProvider === "local" ? localCatalog.find((m) => m.id === activeModel) : null
   const modelDisplayName = localEntry?.name || modelInfo?.name || activeModel.split("/").pop() || activeModel
 
-  // Show loading state for local model auto-start
-  const isLocalLoading = activeProvider === "local" && (serverStarting || (!server.running && !!activeModel))
+  // Loading: only when actively starting (serverStarting is set)
+  const isLocalStarting = activeProvider === "local" && !!serverStarting
+  // Ready: server running AND serving this model
+  const isLocalReady = activeProvider === "local" && server.running && server.modelId === activeModel
+
+  // Poll server status while starting so we know when it's ready
+  useEffect(() => {
+    if (!isLocalStarting) return
+    const interval = setInterval(() => {
+      useLocalAIStore.getState().fetchServerStatus()
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [isLocalStarting])
+
+  // Handle model selection: auto-start local models, stop when switching away
+  const handleModelSelect = async (providerId: string, modelId: string) => {
+    const wasLocal = activeProvider === "local"
+    const isNowLocal = providerId === "local"
+    const store = useLocalAIStore.getState()
+
+    // Switching away from local → stop server
+    if (wasLocal && !isNowLocal && server.running) {
+      store.stopServer()
+    }
+
+    // Switching to a different local model → stop old, start new
+    if (isNowLocal && (modelId !== activeModel || !server.running)) {
+      if (server.running) {
+        await store.stopServer()
+      }
+      // Start the new model immediately
+      store.startServer(modelId).catch(() => {
+        // Error is captured in store.serverError
+      })
+    }
+
+    setActiveProvider(providerId)
+    setActiveModel(modelId)
+    setShowModelPicker(false)
+  }
 
   return (
     <div className="px-3 pb-2 flex items-center gap-2 min-w-0">
@@ -117,12 +243,17 @@ export function ControlBar() {
           className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-2 transition-colors min-w-0 max-w-full"
           title={`Model: ${modelDisplayName}\nProvider: ${activeProvider}`}
         >
-          {isLocalLoading && <Loader2 className="w-3 h-3 text-accent animate-spin shrink-0" />}
-          {activeProvider === "local" && server.running && !isLocalLoading && (
-            <div className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse shrink-0" />
+          {isLocalStarting && <Loader2 className="w-3 h-3 text-accent animate-spin shrink-0" />}
+          {isLocalReady && !isLocalStarting && (
+            <div className="w-1.5 h-1.5 rounded-full bg-status-success shrink-0" />
+          )}
+          {activeProvider === "local" && serverError && !isLocalStarting && (
+            <div className="w-1.5 h-1.5 rounded-full bg-status-error shrink-0" />
           )}
           <span className="text-xs font-sans text-text-weak truncate">
-            {modelDisplayName}
+            {isLocalStarting
+              ? `Starting ${localEntry?.name || activeModel}...`
+              : modelDisplayName}
           </span>
           <ChevronDown className="w-3 h-3 text-text-weaker shrink-0" />
         </button>
@@ -131,11 +262,7 @@ export function ControlBar() {
           <ModelPicker
             currentProvider={activeProvider}
             currentModel={activeModel}
-            onSelect={(providerId, modelId) => {
-              setActiveProvider(providerId)
-              setActiveModel(modelId)
-              setShowModelPicker(false)
-            }}
+            onSelect={handleModelSelect}
             onClose={() => setShowModelPicker(false)}
           />
         )}
@@ -174,6 +301,11 @@ export function ControlBar() {
           />
         )}
       </div>
+
+      <Separator />
+
+      {/* Context indicator */}
+      <ContextIndicator />
     </div>
   )
 }
@@ -212,7 +344,8 @@ function ModelPicker({
     providers.filter((p) => p.apiKey).map((p) => p.id),
   )
 
-  const availableProviders = PROVIDER_CATALOG.filter((p) =>
+  const catalogProviders = useProviderCatalog((s) => s.providers)
+  const availableProviders = catalogProviders.filter((p) =>
     configuredProviderIds.has(p.id),
   )
 

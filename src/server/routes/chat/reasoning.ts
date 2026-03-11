@@ -30,6 +30,10 @@ export function getReasoningOptions(
 
   const budgetMap = { low: 8000, medium: 16000, high: 32000 } as const
 
+  // Provider-specific budget caps — some providers have lower maximums
+  // Gemini 2.5 Flash: max 24576 thinking tokens
+  const GOOGLE_MAX_THINKING = 24576
+
   switch (providerId) {
     case "anthropic":
       return {
@@ -47,7 +51,7 @@ export function getReasoningOptions(
       return {
         google: {
           thinkingConfig: {
-            thinkingBudget: budgetMap[effort],
+            thinkingBudget: Math.min(budgetMap[effort], GOOGLE_MAX_THINKING),
           },
         },
       }

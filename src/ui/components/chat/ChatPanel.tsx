@@ -7,6 +7,8 @@ import { useWebSocket } from "../../hooks/useWebSocket"
 import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
 import { useChatContextStore } from "../../stores/chatContext"
+import { useContextStore } from "../../stores/context"
+import { useLocalAIStore } from "../../stores/localAI"
 import { Send, Bot, Loader2, Square } from "lucide-react"
 import { toast } from "sonner"
 
@@ -226,6 +228,17 @@ export function ChatPanel({ projectId }: Props) {
           }
         } catch {}
         throw new Error(errorMsg)
+      }
+
+      // Read context metadata from response header
+      const contextHeader = res.headers.get("X-Context-Info")
+      if (contextHeader) {
+        useContextStore.getState().updateFromHeader(contextHeader)
+      }
+
+      // If local model was auto-started, refresh server status in the store
+      if (activeProvider === "local") {
+        useLocalAIStore.getState().fetchServerStatus()
       }
 
       const reader = res.body?.getReader()
