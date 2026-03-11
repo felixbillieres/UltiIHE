@@ -82,7 +82,7 @@ export function NewTerminalButton({
       )}
 
       {showDropdown && (
-        <div className="absolute top-full left-0 mt-1 z-50 min-w-[180px] bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans">
+        <div className="absolute bottom-full right-0 mb-1 z-50 min-w-[180px] bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans">
           {containerIds.map((name) => (
             <button
               key={name}

@@ -39,7 +39,7 @@ export function WebToolsDropdown({
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans">
+        <div className="absolute right-0 bottom-full mb-1 z-50 w-52 bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans">
           <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wider">
             Web Tools
           </div>
