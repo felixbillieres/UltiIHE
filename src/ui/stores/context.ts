@@ -26,6 +26,8 @@ export interface ContextInfo {
   toolCount: number
   /** Whether messages were pruned for this request */
   pruned: boolean
+  /** Whether the backend recommends compaction */
+  needsCompaction?: boolean
 }
 
 interface ContextStore {

@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from "react"
-import { useSessionStore, type Message } from "../../stores/session"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
+import { useSessionStore, type Message, type MessagePart, type ToolCallPart, type ReasoningPart } from "../../stores/session"
 import { useSettingsStore, type AgentId } from "../../stores/settings"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
@@ -9,7 +9,8 @@ import { useTerminalStore } from "../../stores/terminal"
 import { useChatContextStore } from "../../stores/chatContext"
 import { useContextStore } from "../../stores/context"
 import { useLocalAIStore } from "../../stores/localAI"
-import { Send, Bot, Loader2, Square } from "lucide-react"
+import { useAutoScroll } from "../../hooks/useAutoScroll"
+import { Send, Bot, Loader2, Square, ArrowDown } from "lucide-react"
 import { toast } from "sonner"
 
 import { useSlashCommands, useAtOptions, type SlashCommand, type AtOption } from "./chatCommands"
@@ -20,6 +21,42 @@ import { MessageBubble } from "./MessageBubble"
 import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
 import { FileApprovalBanner } from "./FileApprovalBanner"
 
+// ── SSE parser ────────────────────────────────────────────────
+
+interface SSEEvent {
+  event: string
+  data: any
+}
+
+class SSEParser {
+  private buffer = ""
+
+  feed(chunk: string): SSEEvent[] {
+    this.buffer += chunk
+    const events: SSEEvent[] = []
+    const parts = this.buffer.split("\n\n")
+    this.buffer = parts.pop() || ""
+
+    for (const part of parts) {
+      if (!part.trim()) continue
+      let event = ""
+      let data = ""
+      for (const line of part.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7)
+        else if (line.startsWith("data: ")) data = line.slice(6)
+      }
+      if (event && data) {
+        try {
+          events.push({ event, data: JSON.parse(data) })
+        } catch {}
+      }
+    }
+    return events
+  }
+}
+
+// ── Component ────────────────────────────────────────────────
+
 interface Props {
   projectId: string
 }
@@ -29,7 +66,9 @@ export function ChatPanel({ projectId }: Props) {
     activeSessionId,
     createSession,
     addMessage,
+    updateMessage,
     updateMessageContent,
+    renameSession,
     getActiveMessages,
     getActiveSession,
   } = useSessionStore()
@@ -64,7 +103,6 @@ export function ChatPanel({ projectId }: Props) {
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const streamingMsgIdRef = useRef<string | null>(null)
 
@@ -99,10 +137,14 @@ export function ChatPanel({ projectId }: Props) {
   const messages = getActiveMessages()
   const activeSession = getActiveSession()
 
-  // Auto-scroll
+  // Smart auto-scroll
+  const { containerRef, showScrollButton, scrollToBottom, onContentUpdate } =
+    useAutoScroll(streaming)
+
+  // Trigger scroll on message changes (for non-streaming updates)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages.length, messages[messages.length - 1]?.content])
+    onContentUpdate()
+  }, [messages.length, onContentUpdate])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -115,13 +157,83 @@ export function ChatPanel({ projectId }: Props) {
 
   const hasTerminals = terminals.length > 0
 
+  // ── Auto-title generation (fire-and-forget) ─────────────────
+
+  function generateTitle(sessionId: string, apiMessages: any[], provider: any) {
+    fetch("/api/title", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: apiMessages.slice(-4), // Last 4 messages for context
+        providerId: provider?.type === "custom" ? "custom" : activeProvider,
+        modelId: activeModel,
+        apiKey: provider?.apiKey || "local",
+        baseUrl: provider?.baseUrl,
+      }),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.title) {
+          renameSession(sessionId, data.title)
+        }
+      })
+      .catch(() => {}) // Silent failure — title is cosmetic
+  }
+
+  // ── Auto-compaction (fire-and-forget with toast) ───────────
+
+  function autoCompact(sessionId: string, provider: any) {
+    const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId)
+    if (!session || session.messages.length < 5) return
+
+    const messages = session.messages.map((m) => ({ role: m.role, content: m.content }))
+    toast("Compacting context...", { duration: 2000 })
+
+    fetch("/api/compact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages,
+        providerId: provider?.type === "custom" ? "custom" : activeProvider,
+        modelId: activeModel,
+        apiKey: provider?.apiKey || "local",
+        baseUrl: provider?.baseUrl,
+      }),
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.compacted) {
+          // Replace session messages with compacted version
+          const store = useSessionStore.getState()
+          const sess = store.sessions.find((s) => s.id === sessionId)
+          if (sess) {
+            const compactedMessages: Message[] = data.compacted.map((m: any, i: number) => ({
+              id: sess.messages[i]?.id || crypto.randomUUID(),
+              role: m.role,
+              content: m.content,
+              parts: [],
+              createdAt: sess.messages[i]?.createdAt || Date.now(),
+            }))
+            useSessionStore.setState((s) => ({
+              sessions: s.sessions.map((se) =>
+                se.id === sessionId ? { ...se, messages: compactedMessages } : se,
+              ),
+            }))
+            toast.success("Context compacted", { duration: 2000 })
+          }
+        }
+      })
+      .catch(() => toast.error("Compaction failed", { duration: 3000 }))
+  }
+
+  // ── Streaming with SSE parsing ──────────────────────────────
+
   async function handleSend() {
     if (streaming) return
     if (!hasTerminals) return
     if (!input.trim() && quotes.length === 0) return
 
     const provider = getActiveProvider()
-    // Local/custom providers don't need an API key
     const isLocal = activeProvider === "local"
     const skipKeyCheck = isLocal || provider?.type === "custom"
     if (!skipKeyCheck && !provider?.apiKey) {
@@ -135,6 +247,7 @@ export function ChatPanel({ projectId }: Props) {
         role: "assistant",
         content:
           "No API key configured. Go to Settings > Providers to connect a provider, or select a local model.",
+        parts: [],
         createdAt: Date.now(),
       })
       return
@@ -146,7 +259,7 @@ export function ChatPanel({ projectId }: Props) {
       sid = s.id
     }
 
-    // Build message content with context quotes (terminal + file)
+    // Build message content with context quotes
     const userText = input.trim()
     let messageContent = userText
     if (quotes.length > 0) {
@@ -156,7 +269,6 @@ export function ChatPanel({ projectId }: Props) {
           if (q.source === "terminal") {
             return `<terminal name="${q.terminalName}" lines="${q.lineCount}">${commentLine}\n${q.text}\n</terminal>`
           }
-          // File quote
           const lineInfo = q.startLine ? ` startLine="${q.startLine}"` : ""
           return `<file path="${q.filePath}" container="${q.container}" language="${q.language}" lines="${q.lineCount}"${lineInfo}>${commentLine}\n${q.text}\n</file>`
         })
@@ -171,6 +283,7 @@ export function ChatPanel({ projectId }: Props) {
       id: crypto.randomUUID(),
       role: "user",
       content: messageContent,
+      parts: [],
       createdAt: Date.now(),
     }
     addMessage(sid, userMessage)
@@ -189,6 +302,7 @@ export function ChatPanel({ projectId }: Props) {
       id: assistantId,
       role: "assistant",
       content: "",
+      parts: [],
       createdAt: Date.now(),
     })
     streamingMsgIdRef.current = assistantId
@@ -196,6 +310,37 @@ export function ChatPanel({ projectId }: Props) {
     setStreaming(true)
     const abort = new AbortController()
     abortRef.current = abort
+
+    // Local accumulator for parts during streaming
+    const parts: MessagePart[] = []
+    let fullText = ""
+    let rafPending = false
+
+    function flushToStore() {
+      if (!sid) return
+      updateMessage(sid, assistantId, {
+        content: fullText,
+        parts: [...parts],
+      })
+      onContentUpdate()
+      rafPending = false
+    }
+
+    function scheduleFlush() {
+      if (!rafPending) {
+        rafPending = true
+        requestAnimationFrame(flushToStore)
+      }
+    }
+
+    function getOrCreateTextPart(): number {
+      const last = parts[parts.length - 1]
+      if (last && last.type === "text") {
+        return parts.length - 1
+      }
+      parts.push({ type: "text", content: "" })
+      return parts.length - 1
+    }
 
     try {
       const res = await fetch("/api/chat", {
@@ -236,7 +381,7 @@ export function ChatPanel({ projectId }: Props) {
         useContextStore.getState().updateFromHeader(contextHeader)
       }
 
-      // If local model was auto-started, refresh server status in the store
+      // Refresh local model status if needed
       if (activeProvider === "local") {
         useLocalAIStore.getState().fetchServerStatus()
       }
@@ -245,37 +390,124 @@ export function ChatPanel({ projectId }: Props) {
       if (!reader) throw new Error("No response body")
 
       const decoder = new TextDecoder()
-      let fullContent = ""
+      const parser = new SSEParser()
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         const chunk = decoder.decode(value, { stream: true })
-        fullContent += chunk
-        updateMessageContent(sid!, assistantId, fullContent)
+        const events = parser.feed(chunk)
+
+        for (const evt of events) {
+          switch (evt.event) {
+            case "text-delta": {
+              // Close any open reasoning part when text starts
+              const prevR = parts[parts.length - 1]
+              if (prevR && prevR.type === "reasoning" && !(prevR as ReasoningPart).endTime) {
+                (prevR as ReasoningPart).endTime = Date.now()
+              }
+              const idx = getOrCreateTextPart()
+              const textPart = parts[idx] as { type: "text"; content: string }
+              textPart.content += evt.data.text
+              fullText += evt.data.text
+              scheduleFlush()
+              break
+            }
+            case "reasoning": {
+              // Accumulate reasoning into a single ReasoningPart
+              const lastPart = parts[parts.length - 1]
+              if (lastPart && lastPart.type === "reasoning") {
+                (lastPart as ReasoningPart).content += evt.data.text
+              } else {
+                parts.push({
+                  type: "reasoning",
+                  id: crypto.randomUUID(),
+                  content: evt.data.text,
+                  startTime: Date.now(),
+                } as ReasoningPart)
+              }
+              scheduleFlush()
+              break
+            }
+            case "tool-call": {
+              // Close any open reasoning part
+              const prevPart = parts[parts.length - 1]
+              if (prevPart && prevPart.type === "reasoning" && !(prevPart as ReasoningPart).endTime) {
+                (prevPart as ReasoningPart).endTime = Date.now()
+              }
+              const toolPart: ToolCallPart = {
+                type: "tool-call",
+                id: evt.data.id,
+                tool: evt.data.tool,
+                args: evt.data.args || {},
+                status: "running",
+                startTime: Date.now(),
+              }
+              parts.push(toolPart)
+              flushToStore()
+              break
+            }
+            case "tool-result": {
+              // Find matching tool-call part and update it
+              const toolIdx = parts.findIndex(
+                (p) => p.type === "tool-call" && p.id === evt.data.id,
+              )
+              if (toolIdx !== -1) {
+                const tp = parts[toolIdx] as ToolCallPart
+                tp.status = evt.data.isError ? "error" : "completed"
+                tp.output = evt.data.output
+                tp.isError = evt.data.isError
+                tp.endTime = Date.now()
+              }
+              flushToStore()
+              break
+            }
+            case "error": {
+              fullText += `\n\n⚠️ ${evt.data.message}`
+              const idx = getOrCreateTextPart()
+              const textPart = parts[idx] as { type: "text"; content: string }
+              textPart.content += `\n\n⚠️ ${evt.data.message}`
+              flushToStore()
+              break
+            }
+            case "done":
+              break
+          }
+        }
       }
 
-      if (!fullContent.trim()) {
-        updateMessageContent(
-          sid!,
-          assistantId,
-          "⚠️ **Error:** Empty response from model. The API call may have failed silently.",
-        )
+      // Final flush
+      flushToStore()
+
+      if (!fullText.trim() && parts.filter((p) => p.type === "tool-call").length === 0) {
+        updateMessage(sid!, assistantId, {
+          content: "⚠️ **Error:** Empty response from model. The API call may have failed silently.",
+          parts: [{ type: "text", content: "⚠️ **Error:** Empty response from model." }],
+        })
+      }
+
+      // ── Auto-title: generate LLM title after first exchange ──
+      const session = useSessionStore.getState().sessions.find((s) => s.id === sid)
+      const isFirstExchange = session && session.messages.filter((m) => m.role === "assistant" && m.content).length === 1
+      if (isFirstExchange && session.title === session.messages[0]?.content.slice(0, 50) + (session.messages[0]?.content.length > 50 ? "..." : "")) {
+        // Title is still the auto-generated truncation — generate a real one
+        generateTitle(sid!, apiMessages, provider)
+      }
+
+      // ── Auto-compact: trigger if backend flagged needsCompaction ──
+      const ctxInfo = useContextStore.getState().info as any
+      if (ctxInfo?.needsCompaction && sid) {
+        autoCompact(sid, provider)
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         const errMsg = (err as Error).message || "Unknown error"
-        const currentContent =
-          useSessionStore
-            .getState()
-            .sessions.find((s) => s.id === sid)
-            ?.messages.find((m) => m.id === assistantId)?.content || ""
         const errorDisplay = `\n\n⚠️ **Error:** ${errMsg}`
-        updateMessageContent(
-          sid!,
-          assistantId,
-          currentContent ? currentContent + errorDisplay : errorDisplay.trim(),
-        )
+        fullText += errorDisplay
+        const idx = getOrCreateTextPart()
+        const textPart = parts[idx] as { type: "text"; content: string }
+        textPart.content += errorDisplay
+        flushToStore()
       }
     } finally {
       setStreaming(false)
@@ -386,7 +618,10 @@ export function ChatPanel({ projectId }: Props) {
   return (
     <div className="h-full flex flex-col">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-4">
+      <div
+        ref={containerRef}
+        className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-4 relative"
+      >
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
             <Bot className="w-8 h-8 text-text-weaker mb-3" />
@@ -405,13 +640,26 @@ export function ChatPanel({ projectId }: Props) {
               isStreaming={
                 streaming &&
                 msg.id === streamingMsgIdRef.current &&
+                (!msg.parts || msg.parts.length === 0) &&
                 msg.content === ""
               }
             />
           ))
         )}
-        <div ref={messagesEndRef} />
       </div>
+
+      {/* Scroll to bottom button */}
+      {showScrollButton && (
+        <div className="absolute bottom-[180px] left-1/2 -translate-x-1/2 z-10">
+          <button
+            onClick={scrollToBottom}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-2 border border-border-weak text-text-weak hover:text-text-strong hover:bg-surface-3 transition-all shadow-lg text-xs font-sans"
+          >
+            <ArrowDown className="w-3 h-3" />
+            Scroll to bottom
+          </button>
+        </div>
+      )}
 
       {/* Approval banners */}
       {pendingCommands.map((cmd) => (
@@ -444,7 +692,7 @@ export function ChatPanel({ projectId }: Props) {
           }}
         />
       ))}
-      {/* File change approvals (Cursor-style with diffs) */}
+      {/* File change approvals */}
       {(() => {
         const FILE_TOOLS = new Set(["file_write", "file_edit", "file_delete", "file_create_dir"])
         const fileTools = pendingTools.filter((t) => FILE_TOOLS.has(t.toolName))

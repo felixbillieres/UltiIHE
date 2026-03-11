@@ -1,7 +1,8 @@
-import { useState, useEffect, memo } from "react"
+import { useState, useEffect, useCallback, memo } from "react"
 import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { ComponentProps } from "react"
+import { Copy, Check } from "lucide-react"
 
 // ── Shiki lazy loader ────────────────────────────────────────────
 // Load Shiki once, cache globally. Falls back to plain <code> if loading.
@@ -31,6 +32,33 @@ function getHighlighter() {
 
 // Pre-load highlighter on module import (non-blocking)
 getHighlighter().catch(() => {})
+
+// ── Copy button ─────────────────────────────────────────────────
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => {})
+  }, [text])
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2 right-2 p-1 rounded bg-surface-2/80 hover:bg-surface-2 border border-border-weak text-text-weaker hover:text-text-weak transition-all opacity-0 group-hover:opacity-100"
+      title="Copy code"
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-emerald-400" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+    </button>
+  )
+}
 
 // ── Highlighted code block ───────────────────────────────────────
 
@@ -70,20 +98,20 @@ const HighlightedCode = memo(function HighlightedCode({
     return () => { cancelled = true }
   }, [code, language])
 
-  if (html) {
-    return (
-      <div
-        className="my-2 rounded-lg border border-border-weak overflow-x-auto [&_pre]:!bg-[#0d1117] [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-relaxed [&_code]:!text-xs [&_code]:!font-mono"
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    )
-  }
-
-  // Fallback while loading
   return (
-    <pre className="my-2 p-3 rounded-lg bg-surface-1 border border-border-weak overflow-x-auto">
-      <code className="text-xs font-mono text-text-strong">{code}</code>
-    </pre>
+    <div className="group relative my-2 rounded-lg border border-border-weak overflow-x-auto">
+      <CopyButton text={code} />
+      {html ? (
+        <div
+          className="[&_pre]:!bg-[#0d1117] [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-relaxed [&_code]:!text-xs [&_code]:!font-mono"
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      ) : (
+        <pre className="p-3 bg-surface-1 overflow-x-auto">
+          <code className="text-xs font-mono text-text-strong">{code}</code>
+        </pre>
+      )}
+    </div>
   )
 })
 

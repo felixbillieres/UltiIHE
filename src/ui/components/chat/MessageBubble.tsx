@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { type Message } from "../../stores/session"
+import { type Message, type MessagePart, type ReasoningPart } from "../../stores/session"
 import {
   Bot,
   User,
@@ -8,8 +8,10 @@ import {
   Terminal,
   FileText,
   ChevronDown,
+  Brain,
 } from "lucide-react"
 import { MarkdownContent } from "./MarkdownContent"
+import { ToolCallCard } from "./ToolCallCard"
 
 // ── Context block types ──────────────────────────────────────────
 
@@ -152,6 +154,76 @@ function FileContextBlock({ block }: { block: FileBlock }) {
   )
 }
 
+// ── Reasoning block ──────────────────────────────────────────────
+
+function ReasoningBlock({ part }: { part: ReasoningPart }) {
+  const [expanded, setExpanded] = useState(false)
+  const isStreaming = !part.endTime
+  const duration = part.endTime ? `${((part.endTime - part.startTime) / 1000).toFixed(1)}s` : ""
+
+  // Extract first line as summary
+  const firstLine = part.content.split("\n")[0]?.slice(0, 80) || "Thinking..."
+
+  return (
+    <div className="my-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-purple-500/10 transition-colors text-left"
+      >
+        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 bg-purple-500/15">
+          {isStreaming ? (
+            <Loader2 className="w-3 h-3 text-purple-400 animate-spin" />
+          ) : (
+            <Brain className="w-3 h-3 text-purple-400" />
+          )}
+        </div>
+        <span className="text-[12px] font-medium text-purple-400 shrink-0">
+          {isStreaming ? "Thinking..." : "Thought"}
+        </span>
+        <span className="text-[11px] text-text-weaker truncate flex-1">
+          {!isStreaming && firstLine}
+        </span>
+        {duration && (
+          <span className="text-[10px] text-text-weaker shrink-0 tabular-nums">{duration}</span>
+        )}
+        <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+      </button>
+      {expanded && (
+        <div className="border-t border-purple-500/20 px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-[#0a0a0a]">
+          <div className="text-[11px] text-text-weak leading-relaxed whitespace-pre-wrap font-mono">
+            {part.content}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Parts renderer ───────────────────────────────────────────────
+
+function AssistantParts({ parts }: { parts: MessagePart[] }) {
+  return (
+    <div className="text-sm leading-relaxed font-sans text-text-base">
+      {parts.map((part, i) => {
+        if (part.type === "text") {
+          return part.content ? (
+            <div key={i} className="whitespace-pre-wrap break-words">
+              <MarkdownContent content={part.content} />
+            </div>
+          ) : null
+        }
+        if (part.type === "tool-call") {
+          return <ToolCallCard key={part.id || i} part={part} />
+        }
+        if (part.type === "reasoning") {
+          return <ReasoningBlock key={part.id || i} part={part} />
+        }
+        return null
+      })}
+    </div>
+  )
+}
+
 // ── Message bubble ───────────────────────────────────────────────
 
 export function MessageBubble({
@@ -163,6 +235,7 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user"
   const isError = !isUser && message.content.startsWith("⚠️")
+  const hasParts = !isUser && message.parts && message.parts.length > 0
 
   const parsed = isUser ? parseContextBlocks(message.content) : null
   const hasBlocks = parsed && parsed.blocks.length > 0
@@ -170,7 +243,7 @@ export function MessageBubble({
   return (
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : ""}`}>
       <div
-        className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${
+        className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-0.5 ${
           isUser
             ? "bg-accent/20"
             : isError
@@ -202,6 +275,8 @@ export function MessageBubble({
               </div>
             )}
           </div>
+        ) : hasParts ? (
+          <AssistantParts parts={message.parts} />
         ) : (
           <div
             className={`inline-block text-sm leading-relaxed whitespace-pre-wrap break-words font-sans ${

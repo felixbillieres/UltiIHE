@@ -1,12 +1,42 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 
-// ─── Types ────────────────────────────────────────────────────
+// ─── Part types ──────────────────────────────────────────────
+
+export interface TextPart {
+  type: "text"
+  content: string
+}
+
+export interface ToolCallPart {
+  type: "tool-call"
+  id: string
+  tool: string
+  args: Record<string, any>
+  status: "running" | "completed" | "error"
+  output?: string
+  isError?: boolean
+  startTime: number
+  endTime?: number
+}
+
+export interface ReasoningPart {
+  type: "reasoning"
+  id: string
+  content: string
+  startTime: number
+  endTime?: number
+}
+
+export type MessagePart = TextPart | ToolCallPart | ReasoningPart
+
+// ─── Message & Session ───────────────────────────────────────
 
 export interface Message {
   id: string
   role: "user" | "assistant"
   content: string
+  parts: MessagePart[]
   createdAt: number
 }
 
@@ -35,6 +65,7 @@ interface SessionStore {
   // Message management
   addMessage: (sessionId: string, message: Message) => void
   updateMessageContent: (sessionId: string, messageId: string, content: string) => void
+  updateMessage: (sessionId: string, messageId: string, updates: { content?: string; parts?: MessagePart[] }) => void
   getActiveMessages: () => Message[]
 
   // Convenience
@@ -123,6 +154,22 @@ export const useSessionStore = create<SessionStore>()(
         }))
       },
 
+      updateMessage: (sessionId, messageId, updates) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? {
+                  ...sess,
+                  messages: sess.messages.map((m) =>
+                    m.id === messageId ? { ...m, ...updates } : m,
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : sess,
+          ),
+        }))
+      },
+
       getActiveMessages: () => {
         const state = get()
         if (!state.activeSessionId) return []
@@ -149,13 +196,16 @@ export const useSessionStore = create<SessionStore>()(
         sessions: state.sessions.slice(0, 50),
         activeSessionId: state.activeSessionId,
       }),
-      // Migrate old sessions that lack `messages` array
+      // Migrate old sessions that lack `messages` or `parts`
       merge: (persisted, current) => {
         const p = persisted as any
         if (p?.sessions) {
           p.sessions = p.sessions.map((s: any) => ({
             ...s,
-            messages: s.messages ?? [],
+            messages: (s.messages ?? []).map((m: any) => ({
+              ...m,
+              parts: m.parts ?? [],
+            })),
           }))
         }
         return { ...current, ...p }

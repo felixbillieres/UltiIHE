@@ -15,3 +15,5 @@ export type { ContextBudget, PromptTier } from "./budget"
 export { buildAdaptivePrompt } from "./prompt"
 
 export { pruneMessages, truncateContent } from "./pruner"
+
+export { buildCompactionRequest, applyCompaction, estimateCompactionSavings } from "./compaction"
