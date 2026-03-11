@@ -5,6 +5,12 @@ export interface PendingToolCall {
   toolName: string
   description: string
   args: Record<string, unknown>
+  /** Unified diff string for file operations */
+  diff?: string
+  /** container:path key for file operations */
+  fileKey?: string
+  /** Whether this creates a new file */
+  isNewFile?: boolean
 }
 
 interface ToolApprovalStore {

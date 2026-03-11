@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, useCallback } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import "@xterm/xterm/css/xterm.css"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
-import { useChatContextStore } from "../../stores/chatContext"
 import { useTerminalStore } from "../../stores/terminal"
-import { Plus, Terminal as TerminalIcon } from "lucide-react"
+import { Plus } from "lucide-react"
+import { ProbeModal, type ProbeContext } from "../probe/ProbeModal"
+import { ProbeHistory } from "../probe/ProbeHistory"
 
 interface Props {
   serverId: string
@@ -16,7 +17,6 @@ interface Props {
 interface SelectionAnchor {
   text: string
   lineCount: number
-  // Position relative to the terminal container
   x: number
   y: number
 }
@@ -24,42 +24,19 @@ interface SelectionAnchor {
 export function TerminalView({ serverId, send, subscribe }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
 
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null)
-  const [commenting, setCommenting] = useState(false)
-  const [comment, setComment] = useState("")
-  const commentInputRef = useRef<HTMLTextAreaElement>(null)
+  const [probeOpen, setProbeOpen] = useState(false)
+  const probeOpenRef = useRef(false)
 
-  const addQuote = useChatContextStore((s) => s.addQuote)
+  useEffect(() => {
+    probeOpenRef.current = probeOpen
+  }, [probeOpen])
+
   const terminals = useTerminalStore((s) => s.terminals)
   const terminalName =
     terminals.find((t) => t.id === serverId)?.name || serverId
-
-  const handleComment = useCallback(() => {
-    if (!anchor) return
-    addQuote({
-      terminalId: serverId,
-      terminalName,
-      text: anchor.text,
-      lineCount: anchor.lineCount,
-      comment: comment.trim() || undefined,
-    })
-    termRef.current?.clearSelection()
-    setAnchor(null)
-    setCommenting(false)
-    setComment("")
-  }, [anchor, comment, serverId, terminalName, addQuote])
-
-  const handleCancel = useCallback(() => {
-    setCommenting(false)
-    setComment("")
-  }, [])
-
-  const openCommentBox = useCallback(() => {
-    setCommenting(true)
-    setComment("")
-    setTimeout(() => commentInputRef.current?.focus(), 0)
-  }, [])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -123,7 +100,6 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     // Track mouseup on the terminal to get selection position
     const el = containerRef.current
     const handleMouseUp = (e: MouseEvent) => {
-      // Small delay to let xterm finalize the selection
       requestAnimationFrame(() => {
         const selectedText = term.getSelection()
         if (selectedText && selectedText.trim().length > 0) {
@@ -132,14 +108,13 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
           setAnchor({
             text: selectedText,
             lineCount: lines.length,
-            // Position relative to container, near mouse
             x: Math.min(e.clientX - rect.left, rect.width - 240),
             y: e.clientY - rect.top + 4,
           })
         } else {
-          setAnchor(null)
-          setCommenting(false)
-          setComment("")
+          if (!probeOpenRef.current) {
+            setAnchor(null)
+          }
         }
       })
     }
@@ -149,8 +124,7 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     const selectionDisposable = term.onSelectionChange(() => {
       const sel = term.getSelection()
       if (!sel || sel.trim().length === 0) {
-        // Don't clear if comment box is open
-        if (!commentInputRef.current) {
+        if (!probeOpenRef.current) {
           setAnchor(null)
         }
       }
@@ -197,97 +171,81 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     }
   }, [serverId, send, subscribe])
 
+  const openProbe = () => {
+    setProbeOpen(true)
+  }
+
+  const closeProbe = () => {
+    setProbeOpen(false)
+    setAnchor(null)
+    termRef.current?.clearSelection()
+  }
+
+  // Build probe context
+  const probeCtx: ProbeContext | null = anchor
+    ? {
+        source: "terminal",
+        sourceId: serverId,
+        sourceName: terminalName,
+        pageKey: `terminal:${serverId}`,
+        selection: {
+          text: anchor.text,
+          lineCount: anchor.lineCount,
+        },
+        quoteData: {
+          source: "terminal",
+          terminalId: serverId,
+          terminalName,
+          text: anchor.text,
+          lineCount: anchor.lineCount,
+        },
+      }
+    : null
+
+  const cw = wrapperRef.current?.offsetWidth || containerRef.current?.offsetWidth || 400
+  const ch = wrapperRef.current?.offsetHeight || containerRef.current?.parentElement?.offsetHeight || 400
+
   return (
-    <div className="relative w-full h-full">
+    <div ref={wrapperRef} className="relative w-full h-full overflow-hidden">
       <div
         ref={containerRef}
         className="w-full h-full"
         style={{ backgroundColor: "#101010" }}
       />
 
-      {/* Floating "+" button near selection */}
-      {anchor && !commenting && (
-        <button
-          onClick={openCommentBox}
-          className="absolute z-20 w-6 h-6 rounded-full bg-accent hover:bg-accent-hover text-white flex items-center justify-center shadow-lg transition-all hover:scale-110"
-          style={{ left: anchor.x, top: anchor.y }}
-          title="Comment on selection"
-        >
-          <Plus className="w-3.5 h-3.5" />
-        </button>
+      {/* Floating "+" button — clamped to container */}
+      {anchor && !probeOpen && (() => {
+        const btnTop = Math.max(4, Math.min(anchor.y, ch - 32))
+        return (
+          <button
+            onClick={openProbe}
+            className="absolute z-20 w-6 h-6 rounded-full bg-accent hover:bg-accent-hover text-white flex items-center justify-center shadow-lg transition-all hover:scale-110"
+            style={{ left: anchor.x, top: btnTop }}
+            title="Probe selection"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        )
+      })()}
+
+      {/* Probe modal */}
+      {anchor && probeOpen && probeCtx && (
+        <ProbeModal
+          ctx={probeCtx}
+          x={anchor.x}
+          y={anchor.y}
+          containerWidth={cw}
+          containerHeight={ch}
+          onClose={closeProbe}
+        />
       )}
 
-      {/* Inline comment popover */}
-      {anchor && commenting && (
-        <div
-          className="absolute z-20 w-[340px] bg-surface-2 border border-border-base rounded-xl shadow-2xl overflow-hidden"
-          style={{
-            left: Math.max(8, Math.min(anchor.x - 60, (containerRef.current?.offsetWidth || 400) - 352)),
-            top: anchor.y,
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="px-3.5 pt-3 pb-1.5 flex items-center gap-2">
-            <div className="w-5 h-5 rounded-md bg-cyan-400/15 flex items-center justify-center">
-              <TerminalIcon className="w-3 h-3 text-cyan-400" />
-            </div>
-            <span className="text-[11px] text-text-weak font-sans">
-              Commenting on{" "}
-              <span className="text-text-base font-medium">
-                {anchor.lineCount === 1 ? "1 line" : `${anchor.lineCount} lines`}
-              </span>
-              {" from "}
-              <span className="text-cyan-400 font-medium">{terminalName}</span>
-            </span>
-          </div>
-
-          {/* Preview snippet */}
-          <div className="mx-3.5 mb-2 rounded-lg bg-[#101010] border border-border-weak/50 overflow-hidden">
-            <pre className="px-3 py-2 text-[11px] font-mono text-text-weak/80 leading-relaxed max-h-[80px] overflow-y-auto scrollbar-none">
-              {anchor.text.length > 300
-                ? anchor.text.slice(0, 300) + "…"
-                : anchor.text}
-            </pre>
-          </div>
-
-          {/* Comment input */}
-          <div className="px-3.5 pb-3">
-            <textarea
-              ref={commentInputRef}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  handleComment()
-                }
-                if (e.key === "Escape") handleCancel()
-              }}
-              placeholder="Add a comment about this selection..."
-              rows={2}
-              className="w-full text-xs bg-surface-0 border border-border-base rounded-lg px-3 py-2 text-text-base placeholder-text-weaker resize-none focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 font-sans transition-colors"
-            />
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-2 px-3.5 py-2.5 bg-surface-1/50 border-t border-border-weak">
-            <button
-              onClick={handleCancel}
-              className="text-xs text-text-weak hover:text-text-base transition-colors font-sans px-3 py-1.5 rounded-lg hover:bg-surface-2"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleComment}
-              className="text-xs text-white bg-accent hover:bg-accent-hover transition-colors font-sans font-medium px-4 py-1.5 rounded-lg shadow-sm"
-            >
-              Comment
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Probe history button */}
+      <ProbeHistory
+        pageKey={`terminal:${serverId}`}
+        containerWidth={cw}
+        containerHeight={ch}
+      />
     </div>
   )
 }

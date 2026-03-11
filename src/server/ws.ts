@@ -85,6 +85,25 @@ const toolRejectSchema = z.object({
   }),
 })
 
+const toolApproveAllSchema = z.object({
+  type: z.literal("tool:approve-all"),
+  data: z.object({
+    allowAlways: z.boolean().optional(),
+  }),
+})
+
+const toolRejectAllSchema = z.object({
+  type: z.literal("tool:reject-all"),
+  data: z.object({}),
+})
+
+const toolSetModeSchema = z.object({
+  type: z.literal("tool:set-mode"),
+  data: z.object({
+    mode: z.enum(["ask", "auto-run"]),
+  }),
+})
+
 const clientMessageSchema = z.discriminatedUnion("type", [
   terminalCreateSchema,
   terminalInputSchema,
@@ -96,6 +115,9 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   questionAnswerSchema,
   toolApproveSchema,
   toolRejectSchema,
+  toolApproveAllSchema,
+  toolRejectAllSchema,
+  toolSetModeSchema,
 ])
 
 type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -183,6 +205,16 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
       break
     case "tool:reject":
       toolApprovalQueue.reject(msg.data.id)
+      break
+    case "tool:approve-all":
+      toolApprovalQueue.approveAll(msg.data.allowAlways || false)
+      break
+    case "tool:reject-all":
+      toolApprovalQueue.rejectAll()
+      break
+    case "tool:set-mode":
+      toolApprovalQueue.setMode(msg.data.mode)
+      console.log(`[Tool] Approval mode set to: ${msg.data.mode}`)
       break
   }
 }

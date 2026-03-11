@@ -2,6 +2,7 @@ import { create } from "zustand"
 
 export interface TerminalQuote {
   id: string
+  source: "terminal"
   terminalId: string
   terminalName: string
   text: string
@@ -10,9 +11,25 @@ export interface TerminalQuote {
   createdAt: number
 }
 
+export interface FileQuote {
+  id: string
+  source: "file"
+  container: string
+  filePath: string
+  fileName: string
+  language: string
+  text: string
+  lineCount: number
+  startLine?: number
+  comment?: string
+  createdAt: number
+}
+
+export type Quote = TerminalQuote | FileQuote
+
 interface ChatContextStore {
-  quotes: TerminalQuote[]
-  addQuote: (quote: Omit<TerminalQuote, "id" | "createdAt">) => void
+  quotes: Quote[]
+  addQuote: (quote: Omit<TerminalQuote, "id" | "createdAt"> | Omit<FileQuote, "id" | "createdAt">) => void
   removeQuote: (id: string) => void
   clearQuotes: () => void
 }
@@ -24,7 +41,7 @@ export const useChatContextStore = create<ChatContextStore>()((set) => ({
     set((state) => ({
       quotes: [
         ...state.quotes,
-        { ...quote, id: crypto.randomUUID(), createdAt: Date.now() },
+        { ...quote, id: crypto.randomUUID(), createdAt: Date.now() } as Quote,
       ],
     })),
 

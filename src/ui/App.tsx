@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom"
 import { StartPanel } from "./components/start/StartPanel"
 import { Workspace } from "./components/workspace/Workspace"
 import { useSettingsStore, THEMES } from "./stores/settings"
+import { ToastProvider } from "./components/toast/ToastProvider"
 
 /** Apply theme CSS variables to :root whenever the active theme changes. */
 function useThemeApplier() {
@@ -26,6 +27,7 @@ export function App() {
         <Route path="/" element={<StartPanel />} />
         <Route path="/project/:projectId" element={<Workspace />} />
       </Routes>
+      <ToastProvider />
     </div>
   )
 }

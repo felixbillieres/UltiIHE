@@ -1,13 +1,13 @@
 import { useState } from "react"
-import { type TerminalQuote } from "../../stores/chatContext"
-import { ChevronDown, Terminal, X } from "lucide-react"
+import { type Quote } from "../../stores/chatContext"
+import { ChevronDown, Terminal, FileText, X } from "lucide-react"
 
 export function ContextQuotes({
   quotes,
   onRemove,
   onClear,
 }: {
-  quotes: TerminalQuote[]
+  quotes: Quote[]
   onRemove: (id: string) => void
   onClear: () => void
 }) {
@@ -32,14 +32,31 @@ function ContextQuoteItem({
   quote: q,
   onRemove,
 }: {
-  quote: TerminalQuote
+  quote: Quote
   onRemove: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
+  const isTerminal = q.source === "terminal"
+  const icon = isTerminal ? (
+    <Terminal className="w-3 h-3 text-cyan-400 shrink-0" />
+  ) : (
+    <FileText className="w-3 h-3 text-blue-400 shrink-0" />
+  )
+
+  const label = isTerminal
+    ? q.terminalName
+    : q.fileName
+
+  const sublabel = isTerminal
+    ? undefined
+    : `${q.container}:${q.filePath}${q.startLine ? `:${q.startLine}` : ""}`
+
+  const lineLabel = q.lineCount === 1 ? "1 line" : `${q.lineCount} lines`
+
   return (
     <div className="rounded-lg border border-border-weak bg-surface-1 overflow-hidden">
-      {/* Header — always visible, clickable to expand */}
+      {/* Header */}
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left hover:bg-surface-2 transition-colors group"
@@ -49,12 +66,17 @@ function ContextQuoteItem({
             expanded ? "" : "-rotate-90"
           }`}
         />
-        <Terminal className="w-3 h-3 text-cyan-400 shrink-0" />
+        {icon}
         <span className="text-[11px] text-text-weak font-sans truncate">
-          {q.terminalName}
+          {label}
         </span>
+        {!isTerminal && q.startLine && (
+          <span className="text-[10px] text-text-weaker font-mono shrink-0">
+            L{q.startLine}
+          </span>
+        )}
         <span className="text-[10px] text-text-weaker font-sans shrink-0">
-          {q.lineCount === 1 ? "1 line" : `${q.lineCount} lines`}
+          {lineLabel}
         </span>
         {q.comment && (
           <span className="text-[10px] text-accent font-sans truncate ml-auto mr-1">
@@ -75,6 +97,11 @@ function ContextQuoteItem({
       {/* Expandable snippet */}
       {expanded && (
         <div className="border-t border-border-weak">
+          {sublabel && (
+            <div className="px-2.5 py-1 text-[10px] text-text-weaker font-mono bg-surface-0/50 border-b border-border-weak truncate">
+              {sublabel}
+            </div>
+          )}
           {q.comment && (
             <div className="px-2.5 py-1.5 text-[11px] text-accent font-sans bg-accent/5 border-b border-border-weak">
               {q.comment}

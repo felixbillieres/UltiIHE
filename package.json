@@ -35,6 +35,7 @@
     "ai": "^6.0.116",
     "bun-pty": "^0.4.8",
     "clsx": "^2.1.1",
+    "fuzzysort": "^3.1.0",
     "hono": "^4.7.0",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
@@ -42,6 +43,8 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.1.0",
     "remark-gfm": "^4.0.1",
+    "shiki": "^4.0.2",
+    "sonner": "^2.0.7",
     "turndown": "^7.2.2",
     "zod": "^3.24.0",
     "zustand": "^5.0.3"

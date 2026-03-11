@@ -8,6 +8,7 @@ import { useProjectStore } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
 import { useChatContextStore } from "../../stores/chatContext"
 import { Send, Bot, Loader2, Square } from "lucide-react"
+import { toast } from "sonner"
 
 import { useSlashCommands, useAtOptions, type SlashCommand, type AtOption } from "./chatCommands"
 import { ControlBar } from "./ControlBar"
@@ -15,6 +16,7 @@ import { ContextQuotes } from "./ContextQuotes"
 import { CommandPopover } from "./CommandPopover"
 import { MessageBubble } from "./MessageBubble"
 import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
+import { FileApprovalBanner } from "./FileApprovalBanner"
 
 interface Props {
   projectId: string
@@ -139,16 +141,19 @@ export function ChatPanel({ projectId }: Props) {
       sid = s.id
     }
 
-    // Build message content with terminal context
+    // Build message content with context quotes (terminal + file)
     const userText = input.trim()
     let messageContent = userText
     if (quotes.length > 0) {
       const contextBlock = quotes
         .map((q) => {
-          const commentLine = q.comment
-            ? `\nUser comment: ${q.comment}`
-            : ""
-          return `<terminal name="${q.terminalName}" lines="${q.lineCount}">${commentLine}\n${q.text}\n</terminal>`
+          const commentLine = q.comment ? `\nUser comment: ${q.comment}` : ""
+          if (q.source === "terminal") {
+            return `<terminal name="${q.terminalName}" lines="${q.lineCount}">${commentLine}\n${q.text}\n</terminal>`
+          }
+          // File quote
+          const lineInfo = q.startLine ? ` startLine="${q.startLine}"` : ""
+          return `<file path="${q.filePath}" container="${q.container}" language="${q.language}" lines="${q.lineCount}"${lineInfo}>${commentLine}\n${q.text}\n</file>`
         })
         .join("\n\n")
       messageContent = userText
@@ -422,25 +427,64 @@ export function ChatPanel({ projectId }: Props) {
           }}
         />
       ))}
-      {pendingTools.map((tool) => (
-        <ToolPermissionBanner
-          key={`tool-${tool.id}`}
-          tool={tool}
-          queueSize={pendingTools.length}
-          onAllowOnce={() => {
-            wsSend({ type: "tool:approve", data: { id: tool.id } })
-            removePendingTool(tool.id)
-          }}
-          onAllowAlways={() => {
-            wsSend({ type: "tool:approve", data: { id: tool.id, allowAlways: true } })
-            removePendingTool(tool.id)
-          }}
-          onDeny={() => {
-            wsSend({ type: "tool:reject", data: { id: tool.id } })
-            removePendingTool(tool.id)
-          }}
-        />
-      ))}
+      {/* File change approvals (Cursor-style with diffs) */}
+      {(() => {
+        const FILE_TOOLS = new Set(["file_write", "file_edit", "file_delete", "file_create_dir"])
+        const fileTools = pendingTools.filter((t) => FILE_TOOLS.has(t.toolName))
+        const otherTools = pendingTools.filter((t) => !FILE_TOOLS.has(t.toolName))
+        return (
+          <>
+            <FileApprovalBanner
+              tools={fileTools}
+              onApprove={(id) => {
+                const t = fileTools.find((f) => f.id === id)
+                wsSend({ type: "tool:approve", data: { id } })
+                removePendingTool(id)
+                toast.success(`Accepted: ${(t?.args.filePath || t?.args.targetPath || t?.args.dirPath || "") as string}`)
+              }}
+              onApproveAlways={(id) => {
+                wsSend({ type: "tool:approve", data: { id, allowAlways: true } })
+                removePendingTool(id)
+              }}
+              onDeny={(id) => {
+                const t = fileTools.find((f) => f.id === id)
+                wsSend({ type: "tool:reject", data: { id } })
+                removePendingTool(id)
+                toast.error(`Denied: ${(t?.args.filePath || t?.args.targetPath || t?.args.dirPath || "") as string}`)
+              }}
+              onApproveAll={() => {
+                wsSend({ type: "tool:approve-all", data: { allowAlways: false } })
+                for (const t of fileTools) removePendingTool(t.id)
+                toast.success(`Accepted all ${fileTools.length} file changes`)
+              }}
+              onDenyAll={() => {
+                wsSend({ type: "tool:reject-all", data: {} })
+                for (const t of fileTools) removePendingTool(t.id)
+                toast.error(`Denied all ${fileTools.length} file changes`)
+              }}
+            />
+            {otherTools.map((tool) => (
+              <ToolPermissionBanner
+                key={`tool-${tool.id}`}
+                tool={tool}
+                queueSize={otherTools.length}
+                onAllowOnce={() => {
+                  wsSend({ type: "tool:approve", data: { id: tool.id } })
+                  removePendingTool(tool.id)
+                }}
+                onAllowAlways={() => {
+                  wsSend({ type: "tool:approve", data: { id: tool.id, allowAlways: true } })
+                  removePendingTool(tool.id)
+                }}
+                onDeny={() => {
+                  wsSend({ type: "tool:reject", data: { id: tool.id } })
+                  removePendingTool(tool.id)
+                }}
+              />
+            ))}
+          </>
+        )
+      })()}
 
       {/* Input area */}
       <div className="shrink-0 border-t border-border-weak">

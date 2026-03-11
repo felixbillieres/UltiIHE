@@ -69,6 +69,9 @@ export function WorkspaceLayout({ project }: Props) {
           toolName: msg.toolName as string,
           description: msg.description as string,
           args: (msg.args as Record<string, unknown>) || {},
+          diff: (msg.diff as string) || undefined,
+          fileKey: (msg.fileKey as string) || undefined,
+          isNewFile: (msg.isNewFile as boolean) || undefined,
         })
       }
     })

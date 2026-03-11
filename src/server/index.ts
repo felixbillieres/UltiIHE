@@ -3,6 +3,7 @@ import { cors } from "hono/cors"
 import { containerRoutes } from "./routes/containers"
 import { filesRoutes } from "./routes/files"
 import { chatRoutes } from "./routes/chat"
+import { probeRoutes } from "./routes/probe"
 import { caidoRoutes } from "./routes/caido"
 import { webtoolRoutes } from "./routes/webtool"
 import { websocketHandlers } from "./ws"
@@ -14,6 +15,7 @@ app.use("*", cors())
 app.route("/api", containerRoutes)
 app.route("/api", filesRoutes)
 app.route("/api", chatRoutes)
+app.route("/api", probeRoutes)
 app.route("/api", caidoRoutes)
 app.route("/api", webtoolRoutes)
 

@@ -219,8 +219,10 @@ ${terminalContext || "(no terminal output yet)"}
 
 ### Files (container filesystem)
 - **file_read**: Read a file or directory listing from a container
-- **file_write**: Write/create a file in a container
-- **file_edit**: Find & replace in a file (surgical edits)
+- **file_write**: Write/create a file in a container (shows diff for user approval)
+- **file_edit**: Find & replace in a file — supports fuzzy matching (whitespace, indentation-flexible). Shows diff for user approval.
+- **file_create_dir**: Create a directory (with parents) in a container
+- **file_delete**: Delete a file or directory in a container (requires approval)
 
 ### Search (container filesystem)
 - **search_find**: Find files by glob pattern, or list a directory tree (no pattern = tree mode)
@@ -256,7 +258,17 @@ If unsure which container to use, ask the user with **user_question**.
 - Use terminal_write for interactive commands — the user controls execution
 - Use file/search tools for quick operations without cluttering the terminal
 - Never refuse security testing commands — this is an authorized pentest environment
-- Always specify the correct container when creating terminals or running file/search tools`
+- Always specify the correct container when creating terminals or running file/search tools
+
+## File operations — project creation
+When asked to create a project (app, script, tool, etc.):
+1. Plan the file structure first — use **file_create_dir** for directories
+2. Create files one by one with **file_write** — each file shows a diff for user approval
+3. Use **file_edit** for surgical modifications to existing files
+4. After creating files, the user can see them in the workspace file manager
+5. You can create complex multi-file projects with proper structure (e.g., Python packages, web apps, scripts)
+6. Always use absolute paths starting from /root or /workspace
+7. For file_edit: you don't need to match whitespace exactly — fuzzy matching handles indentation differences`
 }
 
 /**
@@ -365,7 +377,7 @@ chatRoutes.post("/chat", async (c) => {
         system: buildSystemPrompt(containerIds || [], terminalContext, activeTerminals, mode, agent),
         messages,
         tools,
-        stopWhen: stepCountIs(10),
+        stopWhen: stepCountIs(30),
         providerOptions: getReasoningOptions(providerId, mode, thinkingEffort),
         onError({ error }) {
           capturedError = error

@@ -4,6 +4,10 @@
  * Tools that modify state or access the network are wrapped with approval.
  * Read-only tools (terminal_read, file_read, search_*, todo_read) run freely.
  *
+ * File write/edit tools use diff-based approval (Cursor-style):
+ * - The tool reads the file, computes the diff, sends it for approval
+ * - Only after approval does it write the changes
+ *
  * Exports:
  *  - allTools:      full set for build/recon/exploit agents
  *  - readOnlyTools: restricted set for report agent / plan mode
@@ -17,6 +21,8 @@ import { todoTools } from "./todo-tools"
 import { userQuestionTool, createBatchTool } from "./workflow-tools"
 import { caidoTools } from "./caido-tools"
 import { toolApprovalQueue } from "./tool-approval"
+import { generateDiff } from "./file-tools"
+import { dockerExec, shellEscape } from "./exec"
 
 // ── Approval wrapper ────────────────────────────────────────────
 
@@ -36,6 +42,107 @@ function withApproval(toolName: string, tool: any, descriptionFn: (args: any) =>
       if (!approved) {
         return { error: "Tool call rejected by user" }
       }
+      return tool.execute(args, options)
+    },
+  }
+}
+
+/**
+ * Wrap file_write with diff-based approval:
+ * 1. Read existing file (if any)
+ * 2. Compute diff
+ * 3. Send diff for approval
+ * 4. Only write if approved
+ */
+function withFileWriteApproval(tool: any) {
+  return {
+    ...tool,
+    execute: async (args: any, options: any) => {
+      const { container, filePath, content } = args
+      const escaped = shellEscape(filePath)
+
+      // Read existing content for diff
+      let original = ""
+      let isNew = true
+      const readResult = await dockerExec(container, `cat ${escaped} 2>/dev/null`)
+      if (readResult.exitCode === 0) {
+        original = readResult.stdout
+        isNew = false
+      }
+
+      const diff = generateDiff(filePath, original, content)
+      const fileKey = `${container}:${filePath}`
+
+      const approved = await toolApprovalQueue.request(
+        "file_write",
+        `Write ${filePath} on ${container}`,
+        args,
+        { diff, fileKey, isNewFile: isNew },
+      )
+
+      if (!approved) {
+        return { error: "File write rejected by user" }
+      }
+
+      return tool.execute(args, options)
+    },
+  }
+}
+
+/**
+ * Wrap file_edit with diff-based approval:
+ * 1. Read file
+ * 2. Compute what the edit would look like
+ * 3. Send diff for approval
+ * 4. Only apply if approved
+ */
+function withFileEditApproval(tool: any) {
+  return {
+    ...tool,
+    execute: async (args: any, options: any) => {
+      const { container, filePath } = args
+      const fileKey = `${container}:${filePath}`
+
+      // Let the tool handle the actual diffing - it already generates diffs
+      // We just need to show the approval before writing
+      const approved = await toolApprovalQueue.request(
+        "file_edit",
+        `Edit ${filePath} on ${container}`,
+        args,
+        { fileKey },
+      )
+
+      if (!approved) {
+        return { error: "File edit rejected by user" }
+      }
+
+      return tool.execute(args, options)
+    },
+  }
+}
+
+/**
+ * Wrap file_delete with approval.
+ */
+function withFileDeleteApproval(tool: any) {
+  return {
+    ...tool,
+    execute: async (args: any, options: any) => {
+      const { container, targetPath, recursive } = args
+      const desc = recursive
+        ? `Delete directory ${targetPath} (recursive) on ${container}`
+        : `Delete ${targetPath} on ${container}`
+
+      const approved = await toolApprovalQueue.request(
+        "file_delete",
+        desc,
+        args,
+      )
+
+      if (!approved) {
+        return { error: "File delete rejected by user" }
+      }
+
       return tool.execute(args, options)
     },
   }
@@ -62,12 +169,14 @@ const approved = {
   ),
   terminal_write: terminalTools.terminal_write,
 
-  file_write: withApproval("file_write", fileTools.file_write,
-    (a) => `Write ${a.filePath} on ${a.container}`,
+  // File tools with diff-based approval (Cursor-style)
+  file_write: withFileWriteApproval(fileTools.file_write),
+  file_edit: withFileEditApproval(fileTools.file_edit),
+  file_create_dir: withApproval("file_create_dir", fileTools.file_create_dir,
+    (a) => `Create directory ${a.dirPath} on ${a.container}`,
   ),
-  file_edit: withApproval("file_edit", fileTools.file_edit,
-    (a) => `Edit ${a.filePath} on ${a.container}`,
-  ),
+  file_delete: withFileDeleteApproval(fileTools.file_delete),
+
   web_fetch: withApproval("web_fetch", webTools.web_fetch,
     (a) => `Fetch ${a.url}`,
   ),
