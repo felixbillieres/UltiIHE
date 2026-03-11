@@ -66,6 +66,19 @@ function createRegistry(providerId: string, apiKey: string, baseUrl?: string) {
         baseURL: `${status.baseUrl}/v1`,
       })
     },
+    custom: () => {
+      if (!baseUrl) {
+        throw new Error("Custom provider requires a base URL. Configure it in Settings > Local AI > Custom Endpoints.")
+      }
+      // Normalize: ensure /v1 suffix for OpenAI-compatible APIs
+      const url = baseUrl.replace(/\/+$/, "")
+      const finalUrl = url.endsWith("/v1") ? url : `${url}/v1`
+      return createOpenAICompatible({
+        name: "custom",
+        baseURL: finalUrl,
+        headers: apiKey && apiKey !== "none" ? { Authorization: `Bearer ${apiKey}` } : {},
+      })
+    },
   }
 
   const factory = providers[providerId]
@@ -353,8 +366,8 @@ chatRoutes.post("/chat", async (c) => {
   if (!messages || !providerId || !modelId) {
     return c.json({ error: "Missing required fields" }, 400)
   }
-  // Local provider doesn't need an API key
-  if (providerId !== "local" && !apiKey) {
+  // Local/custom providers don't necessarily need an API key
+  if (providerId !== "local" && providerId !== "custom" && !apiKey) {
     return c.json({ error: "Missing API key" }, 400)
   }
 

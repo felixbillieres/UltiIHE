@@ -120,8 +120,8 @@ export function ChatPanel({ projectId }: Props) {
 
     const provider = getActiveProvider()
     // Local provider doesn't need an API key
-    const isLocal = activeProvider === "local"
-    if (!isLocal && !provider?.apiKey) {
+    const skipKeyCheck = activeProvider === "local" || provider?.type === "custom"
+    if (!skipKeyCheck && !provider?.apiKey) {
       let sid = activeSessionId
       if (!sid) {
         const s = createSession(projectId)
@@ -201,9 +201,10 @@ export function ChatPanel({ projectId }: Props) {
         signal: abort.signal,
         body: JSON.stringify({
           messages: apiMessages,
-          providerId: activeProvider,
+          providerId: provider?.type === "custom" ? "custom" : activeProvider,
           modelId: activeModel,
           apiKey: provider?.apiKey || "local",
+          baseUrl: provider?.baseUrl,
           containerIds: project?.containerIds || [],
           activeTerminalId,
           mode: activeMode,
