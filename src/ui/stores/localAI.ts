@@ -96,6 +96,8 @@ interface LocalAIStore {
   binaryProgress: BinaryInstallProgress | null
   loading: boolean
   binaryInstalling: boolean
+  serverStarting: string | null  // modelId being started, prevents double-click
+  serverError: string | null     // last server error
 
   // Actions
   fetchHardware: () => Promise<void>
@@ -109,6 +111,7 @@ interface LocalAIStore {
   deleteModel: (modelId: string) => Promise<void>
   startServer: (modelId: string, opts?: { contextSize?: number; gpuLayers?: number }) => Promise<void>
   stopServer: () => Promise<void>
+  clearServerError: () => void
 }
 
 export const useLocalAIStore = create<LocalAIStore>()((set, get) => ({
@@ -121,6 +124,8 @@ export const useLocalAIStore = create<LocalAIStore>()((set, get) => ({
   binaryProgress: null,
   loading: false,
   binaryInstalling: false,
+  serverStarting: null,
+  serverError: null,
 
   fetchHardware: async () => {
     try {
@@ -279,20 +284,34 @@ export const useLocalAIStore = create<LocalAIStore>()((set, get) => ({
   },
 
   startServer: async (modelId, opts) => {
-    const res = await fetch("/api/local/server/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ modelId, ...opts }),
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || "Failed to start server")
+    // Prevent double-click
+    if (get().serverStarting) return
+    set({ serverStarting: modelId, serverError: null })
+
+    try {
+      const res = await fetch("/api/local/server/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelId, ...opts }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to start server")
+      }
+      await get().fetchServerStatus()
+    } catch (err) {
+      set({ serverError: (err as Error).message })
+      throw err
+    } finally {
+      set({ serverStarting: null })
     }
-    await get().fetchServerStatus()
   },
 
   stopServer: async () => {
     await fetch("/api/local/server/stop", { method: "POST" })
+    set({ serverError: null })
     await get().fetchServerStatus()
   },
+
+  clearServerError: () => set({ serverError: null }),
 }))

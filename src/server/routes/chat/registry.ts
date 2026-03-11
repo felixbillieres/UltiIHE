@@ -15,13 +15,14 @@ import { createAzure } from "@ai-sdk/azure"
 import { createCohere } from "@ai-sdk/cohere"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import { getServerStatus } from "../../services/local/server"
+import { getServerStatus, startServer } from "../../services/local/server"
+import { listInstalledModels } from "../../services/local/models"
 
 /**
  * Create a provider registry scoped to the current request.
  * Each provider is lazy-initialized with the API key from the request body.
  */
-export function createRegistry(providerId: string, apiKey: string, baseUrl?: string) {
+export async function createRegistry(providerId: string, apiKey: string, modelId?: string, baseUrl?: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const providers: Record<string, () => any> = {
     anthropic: () => createAnthropic({ apiKey }),
@@ -47,10 +48,22 @@ export function createRegistry(providerId: string, apiKey: string, baseUrl?: str
         resourceName: baseUrl || process.env.AZURE_RESOURCE_NAME || "",
       }),
     cohere: () => createCohere({ apiKey }),
-    local: () => {
-      const status = getServerStatus()
+    local: async () => {
+      let status = getServerStatus()
+
+      // Auto-start: if server isn't running but we know which model the user wants, start it
+      if (!status.running && modelId) {
+        const installed = listInstalledModels()
+        const model = installed.find((m) => m.id === modelId)
+        if (model) {
+          console.log(`[Local AI] Auto-starting server for model: ${modelId}`)
+          await startServer({ modelId, modelPath: model.filePath })
+          status = getServerStatus()
+        }
+      }
+
       if (!status.running || !status.baseUrl) {
-        throw new Error("Local AI server is not running. Start a model from Settings > Local AI.")
+        throw new Error("Local AI server is not running. Install and select a local model to auto-start it.")
       }
       return createOpenAICompatible({
         name: "local",
@@ -79,7 +92,8 @@ export function createRegistry(providerId: string, apiKey: string, baseUrl?: str
 
   // Build registry entries: only register the requested provider
   // This avoids needing API keys for unused providers
+  const provider = await factory()
   return createProviderRegistry({
-    [providerId]: factory(),
+    [providerId]: provider,
   })
 }

@@ -5,14 +5,30 @@ import {
   type ProviderInfo,
   type ReasoningMode,
 } from "../../stores/settings"
+import { useLocalAIStore } from "../../stores/localAI"
 import { t, type TranslationKey } from "../../i18n/translations"
-import { Check, Brain, Eye, Wrench, Search } from "lucide-react"
+import { Check, Brain, Eye, Wrench, Search, Zap, DollarSign, Cpu, CheckCircle2 } from "lucide-react"
 import { Section } from "./SettingsSection"
 
 export const MODE_COLORS: Record<ReasoningMode, string> = {
   build: "text-status-success",
   plan: "text-accent",
   deep: "text-status-warning",
+}
+
+type ModelEntry = {
+  id: string
+  name: string
+  provider: ProviderInfo
+  contextWindow: number
+  maxOutput: number
+  reasoning: boolean
+  toolCalling: boolean
+  vision: boolean
+  costPer1kInput?: number
+  costPer1kOutput?: number
+  isLocal?: boolean
+  isLocalRunning?: boolean
 }
 
 export function ModelSettings() {
@@ -22,28 +38,29 @@ export function ModelSettings() {
   } = useSettingsStore()
   const [search, setSearch] = useState("")
 
+  // Local AI state — show installed models even if server isn't running
+  const { catalog, server } = useLocalAIStore()
+  const installedLocal = catalog.filter((m) => m.installed)
+
   const connectedIds = new Set(providers.filter((p) => p.enabled).map((p) => p.id))
   const availableProviders = PROVIDER_CATALOG.filter((p) => connectedIds.has(p.id))
 
-  // Include local models if local provider is connected
-  const localProvider = providers.find((p) => p.id === "local" && p.enabled)
-  const localModels: { id: string; name: string; provider: ProviderInfo; contextWindow: number; maxOutput: number; reasoning: boolean; toolCalling: boolean; vision: boolean; costPer1kInput?: number; costPer1kOutput?: number }[] = []
-  if (localProvider) {
-    for (const modelId of localProvider.models) {
-      localModels.push({
-        id: modelId,
-        name: `${modelId} (local)`,
-        provider: { id: "local", name: "Local AI", type: "local", models: [] },
-        contextWindow: 32_768,
-        maxOutput: 4096,
-        reasoning: false,
-        toolCalling: true,
-        vision: false,
-      })
-    }
-  }
+  // Build local models from installed catalog entries
+  const localProvider: ProviderInfo = { id: "local", name: "Local AI", type: "local", models: [] }
+  const localModels: ModelEntry[] = installedLocal.map((m) => ({
+    id: m.id,
+    name: m.name,
+    provider: localProvider,
+    contextWindow: m.contextWindow,
+    maxOutput: 4096,
+    reasoning: m.reasoning,
+    toolCalling: m.toolCalling,
+    vision: false,
+    isLocal: true,
+    isLocalRunning: server.running && server.modelId === m.id,
+  }))
 
-  const filteredModels = [
+  const filteredModels: ModelEntry[] = [
     ...localModels.filter((m) => !search || m.name.toLowerCase().includes(search.toLowerCase())),
     ...availableProviders.flatMap((provider) =>
       provider.models
@@ -51,6 +68,14 @@ export function ModelSettings() {
         .map((m) => ({ ...m, provider })),
     ),
   ]
+
+  // Group by provider for display
+  const grouped = new Map<string, { provider: ProviderInfo; models: ModelEntry[] }>()
+  for (const model of filteredModels) {
+    const key = model.provider.id
+    if (!grouped.has(key)) grouped.set(key, { provider: model.provider, models: [] })
+    grouped.get(key)!.models.push(model)
+  }
 
   return (
     <div className="space-y-5">
@@ -91,68 +116,124 @@ export function ModelSettings() {
       </div>
 
       {/* No providers connected */}
-      {availableProviders.length === 0 && (
+      {availableProviders.length === 0 && localModels.length === 0 && (
         <p className="text-xs text-text-weaker text-center py-4 font-sans">
           Connect a provider first in the Providers tab.
         </p>
       )}
 
-      {/* Model list */}
-      <div className="space-y-1">
-        {filteredModels.map(({ provider, ...model }) => (
-          <button
-            key={`${provider.id}:${model.id}`}
-            onClick={() => {
-              setActiveProvider(provider.id)
-              setActiveModel(model.id)
-            }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors ${
-              activeModel === model.id && activeProvider === provider.id
-                ? "bg-accent/8 border border-accent/30"
-                : "bg-surface-0 border border-border-weak hover:border-border-base"
-            }`}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-strong font-sans font-medium truncate">{model.name}</span>
-                <span className="text-[10px] text-text-weaker font-sans shrink-0">{provider.name}</span>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] text-text-weaker font-mono">
-                  {model.contextWindow >= 1_000_000
-                    ? `${(model.contextWindow / 1_000_000).toFixed(0)}M`
-                    : `${(model.contextWindow / 1_000).toFixed(0)}k`}
-                </span>
-                {model.reasoning && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-status-warning font-sans">
-                    <Brain className="w-2.5 h-2.5" />
-                    {t(lang, "settings.models.reasoning")}
-                  </span>
-                )}
-                {model.vision && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-accent font-sans">
-                    <Eye className="w-2.5 h-2.5" />
-                    {t(lang, "settings.models.vision")}
-                  </span>
-                )}
-                {model.toolCalling && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-status-success font-sans">
-                    <Wrench className="w-2.5 h-2.5" />
-                  </span>
-                )}
-                {model.costPer1kInput != null && (
-                  <span className="text-[10px] text-text-weaker font-mono">
-                    ${model.costPer1kInput}/{model.costPer1kOutput}
-                  </span>
-                )}
-              </div>
-            </div>
-            {activeModel === model.id && activeProvider === provider.id && (
-              <Check className="w-3.5 h-3.5 text-accent shrink-0" />
+      {/* Model cards grouped by provider */}
+      {Array.from(grouped.entries()).map(([providerId, { provider, models }]) => (
+        <div key={providerId}>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <h3 className="text-[10px] text-text-weaker font-sans font-medium uppercase tracking-wider">
+              {provider.name}
+            </h3>
+            {providerId === "local" && (
+              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-accent/10 text-accent text-[9px] font-sans font-medium">
+                <Cpu className="w-2.5 h-2.5" />
+                On-device
+              </span>
             )}
-          </button>
-        ))}
-      </div>
+          </div>
+          <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+            {models.map(({ provider: prov, ...model }) => {
+              const isActive = activeModel === model.id && activeProvider === prov.id
+              const isLocalRunning = model.isLocalRunning
+              const isLocal = model.isLocal
+              // Local models can only be selected if the server is running with this model
+              const canSelect = !isLocal || isLocalRunning
+
+              return (
+                <button
+                  key={`${prov.id}:${model.id}`}
+                  onClick={() => {
+                    if (!canSelect) return
+                    setActiveProvider(prov.id)
+                    setActiveModel(model.id)
+                  }}
+                  className={`relative flex flex-col p-3 rounded-xl text-left transition-all ${
+                    isActive
+                      ? "bg-accent/8 border border-accent/30 shadow-sm ring-1 ring-accent/10"
+                      : isLocal && !isLocalRunning
+                        ? "bg-surface-0/50 border border-border-weak opacity-60"
+                        : "bg-surface-0 border border-border-weak hover:border-border-base hover:shadow-sm"
+                  } ${!canSelect ? "cursor-default" : ""}`}
+                >
+                  {/* Status badges */}
+                  <div className="absolute top-2 right-2 flex items-center gap-1">
+                    {isLocalRunning && (
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-status-success/12 text-status-success text-[9px] font-sans font-medium">
+                        <div className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
+                        Running
+                      </span>
+                    )}
+                    {isLocal && !isLocalRunning && (
+                      <span className="text-[9px] text-text-weaker font-sans italic">Not running</span>
+                    )}
+                    {isActive && !isLocal && (
+                      <Check className="w-3.5 h-3.5 text-accent" />
+                    )}
+                    {isActive && isLocalRunning && (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-accent" />
+                    )}
+                  </div>
+
+                  <h4 className="text-xs text-text-strong font-sans font-semibold mb-1 pr-20 truncate">
+                    {model.name}
+                  </h4>
+
+                  {/* Context & output */}
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] text-text-weaker font-mono">
+                      {model.contextWindow >= 1_000_000
+                        ? `${(model.contextWindow / 1_000_000).toFixed(0)}M ctx`
+                        : `${(model.contextWindow / 1_000).toFixed(0)}k ctx`}
+                    </span>
+                    {isLocal && (
+                      <span className="text-[10px] text-text-weaker font-sans">Free</span>
+                    )}
+                  </div>
+
+                  {/* Capability badges */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-auto">
+                    {model.reasoning && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-status-warning/10 text-status-warning text-[9px] font-sans">
+                        <Brain className="w-2.5 h-2.5" />
+                        Reasoning
+                      </span>
+                    )}
+                    {model.vision && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-accent/10 text-accent text-[9px] font-sans">
+                        <Eye className="w-2.5 h-2.5" />
+                        Vision
+                      </span>
+                    )}
+                    {model.toolCalling && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-status-success/10 text-status-success text-[9px] font-sans">
+                        <Wrench className="w-2.5 h-2.5" />
+                        Tools
+                      </span>
+                    )}
+                    {model.costPer1kInput != null && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-surface-2 text-text-weaker text-[9px] font-mono">
+                        <DollarSign className="w-2.5 h-2.5" />
+                        {model.costPer1kInput}/{model.costPer1kOutput}
+                      </span>
+                    )}
+                    {isLocal && !model.reasoning && !model.costPer1kInput && (
+                      <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-accent/10 text-accent text-[9px] font-sans">
+                        <Cpu className="w-2.5 h-2.5" />
+                        Local
+                      </span>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

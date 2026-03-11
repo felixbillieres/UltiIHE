@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Trash2, Play, Globe, Plus } from "lucide-react"
+import { Trash2, Play, Globe, Plus, Server } from "lucide-react"
 import { useSettingsStore } from "../../../stores/settings"
 import { Section } from "./Section"
 
@@ -45,35 +45,38 @@ export function CustomEndpoints() {
         Connect to any OpenAI-compatible API — homelab server, Mac Mini cluster, Ollama, vLLM, text-generation-webui, etc.
       </p>
 
-      {/* Existing custom endpoints */}
+      {/* Existing custom endpoints as cards */}
       {customProviders.length > 0 && (
-        <div className="space-y-1 mb-3">
+        <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 mb-3">
           {customProviders.map((cp) => (
             <div
               key={cp.id}
-              className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-surface-0 border border-border-weak"
+              className="flex flex-col p-3 rounded-xl bg-surface-0 border border-border-weak hover:border-border-base hover:shadow-sm transition-all"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <Globe className="w-3.5 h-3.5 text-accent shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-xs text-text-base font-sans font-medium truncate">{cp.name}</div>
-                  <div className="text-[10px] text-text-weaker font-mono truncate">{cp.baseUrl}</div>
-                  <div className="text-[10px] text-text-weaker font-sans">
-                    Model: <span className="font-mono">{cp.models[0]}</span>
-                  </div>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-lg bg-accent/10 flex items-center justify-center">
+                  <Server className="w-3.5 h-3.5 text-accent" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-text-strong font-sans font-semibold truncate">{cp.name}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="text-[10px] text-text-weaker font-mono truncate mb-1">{cp.baseUrl}</div>
+              <div className="text-[10px] text-text-weaker font-sans mb-3">
+                Model: <span className="font-mono">{cp.models[0]}</span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-auto">
                 <button
                   onClick={() => handleUse(cp)}
-                  className="flex items-center gap-1 px-2 py-1 text-[10px] bg-accent/15 text-accent rounded-md hover:bg-accent/25 transition-colors font-sans font-medium"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-[10px] bg-accent/15 text-accent rounded-lg hover:bg-accent/25 transition-colors font-sans font-medium"
                 >
                   <Play className="w-2.5 h-2.5" />
                   Use
                 </button>
+                <div className="flex-1" />
                 <button
                   onClick={() => removeProvider(cp.id)}
-                  className="p-1 rounded hover:bg-surface-2 transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
                   title="Remove endpoint"
                 >
                   <Trash2 className="w-3 h-3 text-text-weaker hover:text-status-error" />
@@ -86,7 +89,7 @@ export function CustomEndpoints() {
 
       {/* Add form */}
       {adding ? (
-        <div className="space-y-2 p-3 rounded-lg bg-surface-0 border border-border-weak">
+        <div className="space-y-2 p-4 rounded-xl bg-surface-0 border border-accent/20 shadow-sm">
           <div>
             <label className="text-[10px] text-text-weaker font-sans uppercase tracking-wide block mb-1">Name</label>
             <input
@@ -94,7 +97,7 @@ export function CustomEndpoints() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My homelab server"
-              className="w-full px-2 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-md text-text-base font-sans placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
+              className="w-full px-2.5 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-lg text-text-base font-sans placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -104,7 +107,7 @@ export function CustomEndpoints() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="http://192.168.1.100:8080"
-              className="w-full px-2 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-md text-text-base font-mono placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
+              className="w-full px-2.5 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-lg text-text-base font-mono placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -114,7 +117,7 @@ export function CustomEndpoints() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="llama3.1:8b or any model ID"
-              className="w-full px-2 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-md text-text-base font-mono placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
+              className="w-full px-2.5 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-lg text-text-base font-mono placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
             />
           </div>
           <div>
@@ -126,21 +129,21 @@ export function CustomEndpoints() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-... (leave empty if not required)"
-              className="w-full px-2 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-md text-text-base font-mono placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
+              className="w-full px-2.5 py-1.5 text-xs bg-surface-1 border border-border-weak rounded-lg text-text-base font-mono placeholder:text-text-weaker/50 focus:outline-none focus:border-accent"
             />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleAdd}
               disabled={!name.trim() || !url.trim() || !model.trim()}
-              className="flex items-center gap-1 px-3 py-1.5 text-[10px] bg-accent text-white rounded-md hover:bg-accent-hover transition-colors font-sans font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+              className="flex items-center gap-1 px-3 py-1.5 text-[10px] bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors font-sans font-medium disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus className="w-3 h-3" />
               Add Endpoint
             </button>
             <button
               onClick={() => setAdding(false)}
-              className="flex items-center gap-1 px-3 py-1.5 text-[10px] bg-surface-2 text-text-base rounded-md hover:bg-surface-3 transition-colors font-sans"
+              className="flex items-center gap-1 px-3 py-1.5 text-[10px] bg-surface-2 text-text-base rounded-lg hover:bg-surface-3 transition-colors font-sans"
             >
               Cancel
             </button>
@@ -149,7 +152,7 @@ export function CustomEndpoints() {
       ) : (
         <button
           onClick={() => setAdding(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-[10px] bg-surface-0 border border-border-weak border-dashed text-text-weak rounded-lg hover:border-accent hover:text-accent transition-colors font-sans w-full justify-center"
+          className="flex items-center gap-1.5 px-3 py-2.5 text-[10px] bg-surface-0 border border-border-weak border-dashed text-text-weak rounded-xl hover:border-accent hover:text-accent transition-colors font-sans w-full justify-center"
         >
           <Plus className="w-3 h-3" />
           Add Custom Endpoint

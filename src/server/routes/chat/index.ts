@@ -64,7 +64,7 @@ chatRoutes.post("/chat", async (c) => {
   const activeTerminals = terminalManager.listTerminals()
 
   try {
-    const registry = createRegistry(providerId, apiKey, baseUrl)
+    const registry = await createRegistry(providerId, apiKey, modelId, baseUrl)
     const model = registry.languageModel(`${providerId}:${modelId}`)
 
     // Report agent and plan mode get read-only tools; others get everything

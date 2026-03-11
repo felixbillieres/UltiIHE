@@ -5,12 +5,15 @@ import {
   AGENTS,
   type AgentId,
 } from "../../stores/settings"
+import { useLocalAIStore } from "../../stores/localAI"
 import {
   Brain,
   Eye,
   Wrench,
   Zap,
   ChevronDown,
+  Cpu,
+  Loader2,
 } from "lucide-react"
 
 function Separator() {
@@ -75,12 +78,19 @@ export function ControlBar() {
     getActiveModelInfo,
   } = useSettingsStore()
 
+  const { server, serverStarting } = useLocalAIStore()
   const modelInfo = getActiveModelInfo()
   const agentInfo = AGENTS.find((a) => a.id === activeAgent)
 
   const [showModelPicker, setShowModelPicker] = useState(false)
 
-  const modelDisplayName = modelInfo?.name || activeModel.split("/").pop() || activeModel
+  // For local models, show the catalog name
+  const localCatalog = useLocalAIStore((s) => s.catalog)
+  const localEntry = activeProvider === "local" ? localCatalog.find((m) => m.id === activeModel) : null
+  const modelDisplayName = localEntry?.name || modelInfo?.name || activeModel.split("/").pop() || activeModel
+
+  // Show loading state for local model auto-start
+  const isLocalLoading = activeProvider === "local" && (serverStarting || (!server.running && !!activeModel))
 
   return (
     <div className="px-3 pb-2 flex items-center gap-2 min-w-0">
@@ -107,6 +117,10 @@ export function ControlBar() {
           className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-2 transition-colors min-w-0 max-w-full"
           title={`Model: ${modelDisplayName}\nProvider: ${activeProvider}`}
         >
+          {isLocalLoading && <Loader2 className="w-3 h-3 text-accent animate-spin shrink-0" />}
+          {activeProvider === "local" && server.running && !isLocalLoading && (
+            <div className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse shrink-0" />
+          )}
           <span className="text-xs font-sans text-text-weak truncate">
             {modelDisplayName}
           </span>
@@ -129,7 +143,7 @@ export function ControlBar() {
 
       {/* Capabilities badges */}
       <div className="flex items-center gap-1 shrink-0">
-        {modelInfo?.reasoning && (
+        {(modelInfo?.reasoning || localEntry?.reasoning) && (
           <CapBadge
             icon={<Brain className="w-3 h-3" />}
             label={thinkingEffort !== "off" ? thinkingEffort : "think"}
@@ -145,10 +159,17 @@ export function ControlBar() {
             active
           />
         )}
-        {modelInfo?.toolCalling && (
+        {(modelInfo?.toolCalling || localEntry?.toolCalling) && (
           <CapBadge
             icon={<Wrench className="w-3 h-3" />}
             label="tools"
+            active
+          />
+        )}
+        {activeProvider === "local" && (
+          <CapBadge
+            icon={<Cpu className="w-3 h-3" />}
+            label="local"
             active
           />
         )}
@@ -169,7 +190,13 @@ function ModelPicker({
   onClose: () => void
 }) {
   const providers = useSettingsStore((s) => s.providers)
+  const { catalog, server, fetchModels } = useLocalAIStore()
   const ref = useRef<HTMLDivElement>(null)
+
+  // Fetch local model catalog when picker opens
+  useEffect(() => {
+    fetchModels()
+  }, [fetchModels])
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
@@ -189,14 +216,19 @@ function ModelPicker({
     configuredProviderIds.has(p.id),
   )
 
-  if (availableProviders.length === 0) {
+  // Installed local models
+  const installedLocal = catalog.filter((m) => m.installed)
+
+  const hasAnything = availableProviders.length > 0 || installedLocal.length > 0
+
+  if (!hasAnything) {
     return (
       <div
         ref={ref}
         className="absolute bottom-full left-0 mb-1 z-50 w-64 bg-surface-2 border border-border-base rounded-lg shadow-xl p-3"
       >
         <p className="text-xs text-text-weaker font-sans">
-          No providers configured. Go to Settings to add an API key.
+          No providers configured. Go to Settings to add an API key, or install a local model.
         </p>
       </div>
     )
@@ -205,8 +237,74 @@ function ModelPicker({
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 mb-1 z-50 w-72 max-h-[300px] overflow-y-auto bg-surface-2 border border-border-base rounded-lg shadow-xl py-1"
+      className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-[400px] overflow-y-auto bg-surface-2 border border-border-base rounded-xl shadow-xl py-1"
     >
+      {/* Local models — shown first if any are installed */}
+      {installedLocal.length > 0 && (
+        <div>
+          <div className="px-3 py-1.5 flex items-center gap-1.5">
+            <Cpu className="w-3 h-3 text-accent" />
+            <span className="text-[10px] text-accent uppercase tracking-wide font-sans font-semibold">
+              Local Models
+            </span>
+            <span className="text-[9px] text-text-weaker font-sans">Free</span>
+          </div>
+          {installedLocal.map((model) => {
+            const isSelected = currentProvider === "local" && currentModel === model.id
+            const isRunning = server.running && server.modelId === model.id
+            return (
+              <button
+                key={model.id}
+                onClick={() => onSelect("local", model.id)}
+                className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors ${
+                  isSelected
+                    ? "bg-accent/10 text-accent"
+                    : "text-text-base hover:bg-surface-3"
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-sans font-medium truncate">{model.name}</span>
+                    <span className="text-[10px] text-text-weaker font-mono">{model.quantization}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-text-weaker font-mono">
+                      {model.contextWindow >= 128_000 ? "128k" : `${(model.contextWindow / 1024).toFixed(0)}k`} ctx
+                    </span>
+                    <span className="text-[10px] text-text-weaker font-sans">
+                      {(model.fileSizeMB / 1024).toFixed(1)} GB
+                    </span>
+                    {model.reasoning && (
+                      <span className="text-[10px] text-purple-400">reasoning</span>
+                    )}
+                    {model.tags.slice(0, 2).map((tag) => (
+                      <span key={tag} className="text-[10px] text-text-weaker">{tag}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  {isRunning && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-status-success/12 text-status-success text-[9px] font-sans">
+                      <div className="w-1.5 h-1.5 rounded-full bg-status-success animate-pulse" />
+                      Live
+                    </span>
+                  )}
+                  {!isRunning && isSelected && (
+                    <span className="text-[9px] text-accent font-sans">Will auto-start</span>
+                  )}
+                  {isSelected && <Zap className="w-3 h-3 text-accent" />}
+                </div>
+              </button>
+            )
+          })}
+          {/* Separator between local and cloud */}
+          {availableProviders.length > 0 && (
+            <div className="mx-3 my-1 border-t border-border-weak" />
+          )}
+        </div>
+      )}
+
+      {/* Cloud providers */}
       {availableProviders.map((provider) => (
         <div key={provider.id}>
           <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wide font-sans font-medium">

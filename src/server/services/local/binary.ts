@@ -85,12 +85,75 @@ export interface BinaryStatus {
 
 export function getBinaryStatus(): BinaryStatus {
   const path = getLlamaServerPath()
+
+  // Auto-repair: ensure shared libraries are alongside the binary
+  if (path) {
+    repairSharedLibraries()
+  }
+
   return {
     installed: path !== null,
     version: path ? LLAMA_CPP_VERSION : null,
     path,
     expectedVersion: LLAMA_CPP_VERSION,
   }
+}
+
+/**
+ * Ensure shared libraries from archive subdirectories are available to llama-server.
+ * - Linux: copies .so files + creates versioned symlinks (libmtmd.so.0.0.8272 → libmtmd.so.0)
+ * - macOS: copies .dylib files
+ * - Windows: copies .dll files (DLLs are resolved from the exe's directory automatically)
+ * All done with pure Node/Bun APIs — no shell commands — portable across all OSes.
+ */
+function repairSharedLibraries() {
+  try {
+    const { readdirSync, statSync: statSyncLocal, copyFileSync, symlinkSync } = require("fs") as typeof import("fs")
+    const { join: joinPath } = require("path") as typeof import("path")
+
+    const ext = process.platform === "darwin" ? ".dylib"
+      : process.platform === "win32" ? ".dll"
+      : ".so"
+
+    // Walk one level of subdirectories in BIN_DIR
+    const entries = readdirSync(BIN_DIR)
+    for (const entry of entries) {
+      const subDir = joinPath(BIN_DIR, entry)
+      try {
+        if (!statSyncLocal(subDir).isDirectory()) continue
+      } catch { continue }
+
+      const files = readdirSync(subDir)
+      for (const file of files) {
+        if (!file.includes(ext)) continue
+
+        const src = joinPath(subDir, file)
+        const dest = joinPath(BIN_DIR, file)
+        if (!existsSync(dest)) {
+          try { copyFileSync(src, dest) } catch {}
+        }
+
+        // Linux: create versioned symlinks (libfoo.so.0.0.1234 → libfoo.so.0 → libfoo.so)
+        if (process.platform !== "win32" && file.includes(".so.")) {
+          const parts = file.split(".so.")
+          const baseName = parts[0] + ".so"
+          const versionParts = parts[1]?.split(".") || []
+
+          if (versionParts.length > 1) {
+            const majorLink = joinPath(BIN_DIR, `${baseName}.${versionParts[0]}`)
+            if (!existsSync(majorLink)) {
+              try { symlinkSync(file, majorLink) } catch {}
+            }
+          }
+
+          const baseLink = joinPath(BIN_DIR, baseName)
+          if (!existsSync(baseLink)) {
+            try { symlinkSync(file, baseLink) } catch {}
+          }
+        }
+      }
+    }
+  } catch {}
 }
 
 /**
@@ -172,18 +235,32 @@ export async function* downloadBinary(
     // Find the binary — it's usually in a subdirectory like build/bin/ or bin/
     const binaryPath = join(BIN_DIR, binaryName)
     if (!existsSync(binaryPath)) {
-      const { execSync } = await import("child_process")
-      try {
-        const found = execSync(
-          `find "${BIN_DIR}" -name "${binaryName}" -type f 2>/dev/null`,
-          { encoding: "utf-8" },
-        ).trim().split("\n")[0]
-        if (found && existsSync(found)) {
-          const { renameSync } = await import("fs")
-          renameSync(found, binaryPath)
-        }
-      } catch {}
+      // Walk subdirectories to find the binary (portable, no shell commands)
+      const { readdirSync: readDirLocal, statSync: statLocal, renameSync } = await import("fs")
+      const findBinary = (dir: string): string | null => {
+        try {
+          for (const entry of readDirLocal(dir)) {
+            const full = join(dir, entry)
+            try {
+              const st = statLocal(full)
+              if (st.isFile() && entry === binaryName) return full
+              if (st.isDirectory()) {
+                const found = findBinary(full)
+                if (found) return found
+              }
+            } catch {}
+          }
+        } catch {}
+        return null
+      }
+      const found = findBinary(BIN_DIR)
+      if (found) {
+        renameSync(found, binaryPath)
+      }
     }
+
+    // Copy shared libraries + create symlinks (portable, no shell commands)
+    repairSharedLibraries()
 
     // Make executable on Unix
     if (platform !== "win32" && existsSync(binaryPath)) {

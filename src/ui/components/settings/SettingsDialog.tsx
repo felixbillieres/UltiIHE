@@ -21,7 +21,7 @@ export function SettingsDialog({ onClose }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-2xl mx-4 bg-surface-1 border border-border-base rounded-xl shadow-2xl max-h-[80vh] flex flex-col">
+      <div className="relative w-full max-w-5xl mx-4 bg-surface-1 border border-border-base rounded-xl shadow-2xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-weak shrink-0">
           <h2 className="text-sm font-medium text-text-strong font-sans">
             {t(lang, "settings.title")}

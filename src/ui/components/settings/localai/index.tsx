@@ -3,10 +3,10 @@
  * Hardware detection, binary install, model catalog with filters, server control, custom endpoints.
  */
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { useLocalAIStore } from "../../../stores/localAI"
 import { useSettingsStore } from "../../../stores/settings"
-import { Loader2, AlertTriangle } from "lucide-react"
+import { Loader2, AlertTriangle, X } from "lucide-react"
 import { HardwareSection } from "./HardwareSection"
 import { BinarySection } from "./BinarySection"
 import { ServerSection } from "./ServerSection"
@@ -22,6 +22,8 @@ export function LocalAISettings() {
     downloads,
     loading,
     binaryInstalling,
+    serverStarting,
+    serverError,
     fetchAll,
     installBinary,
     downloadModel,
@@ -29,13 +31,12 @@ export function LocalAISettings() {
     deleteModel,
     startServer,
     stopServer,
+    clearServerError,
   } = useLocalAIStore()
 
   const { addProvider, updateProvider, providers, setActiveProvider, setActiveModel } = useSettingsStore()
 
   const binaryProgress = useLocalAIStore((s) => s.binaryProgress)
-  const [startingModel, setStartingModel] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAll()
@@ -64,16 +65,13 @@ export function LocalAISettings() {
   }, [server.running, server.modelId])
 
   const handleStartServer = async (modelId: string) => {
-    setStartingModel(modelId)
-    setError(null)
+    clearServerError()
     try {
       await startServer(modelId)
       setActiveProvider("local")
       setActiveModel(modelId)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setStartingModel(null)
+    } catch {
+      // Error is already in store
     }
   }
 
@@ -110,16 +108,22 @@ export function LocalAISettings() {
       {binary?.installed && (
         <ServerSection
           server={server}
-          startingModel={startingModel}
+          startingModel={serverStarting}
           onStop={handleStopServer}
         />
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-status-error/10 border border-status-error/20">
-          <AlertTriangle className="w-3.5 h-3.5 text-status-error shrink-0" />
-          <span className="text-xs text-status-error font-sans">{error}</span>
+      {/* Server error */}
+      {serverError && (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-status-error/10 border border-status-error/20">
+          <AlertTriangle className="w-4 h-4 text-status-error shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-status-error font-sans font-medium mb-0.5">Server failed to start</p>
+            <p className="text-[10px] text-status-error/80 font-sans">{serverError}</p>
+          </div>
+          <button onClick={clearServerError} className="p-0.5 rounded hover:bg-status-error/10 transition-colors shrink-0">
+            <X className="w-3 h-3 text-status-error" />
+          </button>
         </div>
       )}
 
@@ -129,7 +133,7 @@ export function LocalAISettings() {
           catalog={catalog}
           downloads={downloads}
           server={server}
-          startingModel={startingModel}
+          startingModel={serverStarting}
           onDownload={downloadModel}
           onCancel={cancelDownload}
           onDelete={deleteModel}
