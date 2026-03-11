@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 import { useNavigate } from "react-router-dom"
 import { type Project, useProjectStore } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
+import { usePopOutStore } from "../../stores/popout"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
@@ -11,6 +12,8 @@ import { IconRail } from "./IconRail"
 import { ChatSidePanel } from "./ChatSidePanel"
 import { FilesSidePanel } from "./FilesSidePanel"
 import { CenterArea } from "./CenterArea"
+import { PopOutPortal } from "./PopOutPortal"
+import { PopOutChatView } from "../chat/PopOutChatView"
 
 // ─── Main component ──────────────────────────────────────────
 
@@ -26,6 +29,26 @@ export function WorkspaceLayout({ project }: Props) {
 
   const [showSettings, setShowSettings] = useState(false)
   const [showContainerManager, setShowContainerManager] = useState(false)
+  const [chatPoppedOut, setChatPoppedOut] = useState(false)
+
+  const handlePopOutChat = () => {
+    setChatPoppedOut(true)
+    usePopOutStore.getState().popOut({
+      tabId: `chat-${project.id}`,
+      type: "chat",
+      windowRef: null,
+      title: "Chat",
+    })
+    // Close the main chat panel to free up space
+    setLayout((l) => ({ ...l, chatPanelOpen: false }))
+  }
+
+  const handleReattachChat = () => {
+    setChatPoppedOut(false)
+    usePopOutStore.getState().reattach(`chat-${project.id}`)
+    // Re-open the chat panel
+    setLayout((l) => ({ ...l, chatPanelOpen: true }))
+  }
 
   // Layout state
   const [layout, setLayoutRaw] = useState<LayoutState>(loadLayout)
@@ -113,11 +136,28 @@ export function WorkspaceLayout({ project }: Props) {
       onResize={(w) => setLayout((l) => ({ ...l, chatPanelWidth: w }))}
       sessionSidebarOpen={layout.sessionSidebarOpen}
       onToggleSessionSidebar={toggleSessionSidebar}
+      onPopOut={handlePopOutChat}
     />
   )
 
   return (
     <div className="h-full flex flex-col">
+      {/* Chat pop-out portal — lives at root so it persists when panel is closed */}
+      {chatPoppedOut && (
+        <PopOutPortal
+          windowName={`popout-chat-${project.id}`}
+          title="Chat — Exegol IHE"
+          width={Math.round(window.screen.width * 0.65)}
+          height={Math.round(window.screen.height * 0.8)}
+          onClose={handleReattachChat}
+        >
+          <PopOutChatView
+            projectId={project.id}
+            onReattach={handleReattachChat}
+          />
+        </PopOutPortal>
+      )}
+
       <div className="flex-1 flex overflow-hidden">
         {/* Icon rail */}
         <IconRail

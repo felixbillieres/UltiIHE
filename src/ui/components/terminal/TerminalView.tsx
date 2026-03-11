@@ -75,13 +75,34 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     term.open(containerRef.current)
     termRef.current = term
 
-    requestAnimationFrame(() => {
-      try {
-        fitAddon.fit()
-      } catch {
-        /* not visible yet */
-      }
-    })
+    // Fit after layout settles — retry with increasing delays for pop-out windows
+    // where the container dimensions may not be final on the first frame
+    const fitDelays = [0, 50, 150, 400]
+    const fitTimers: ReturnType<typeof setTimeout>[] = []
+    for (const delay of fitDelays) {
+      const timer = setTimeout(() => {
+        requestAnimationFrame(() => {
+          try {
+            fitAddon.fit()
+          } catch {
+            /* not visible yet */
+          }
+        })
+      }, delay)
+      fitTimers.push(timer)
+    }
+
+    // Fetch existing terminal output buffer (needed when remounting, e.g. pop-out)
+    fetch(`/api/terminals/${serverId}/output`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.output && termRef.current) {
+          termRef.current.write(data.output)
+        }
+      })
+      .catch(() => {
+        /* terminal may not have buffer yet */
+      })
 
     const dataDisposable = term.onData((data) => {
       send({
@@ -141,6 +162,21 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     })
     resizeObserver.observe(el)
 
+    // Also listen on the ownerDocument's window for resize events —
+    // this handles pop-out windows where the ResizeObserver on the
+    // container element may not fire when the popup is maximized/restored.
+    const ownerWindow = el.ownerDocument.defaultView || window
+    const handleWindowResize = () => {
+      requestAnimationFrame(() => {
+        try {
+          fitAddon.fit()
+        } catch {
+          /* ignore */
+        }
+      })
+    }
+    ownerWindow.addEventListener("resize", handleWindowResize)
+
     let alive = true
     const unsubscribe = subscribe((msg: WSMessage) => {
       if (!alive || !termRef.current) return
@@ -160,7 +196,9 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
 
     return () => {
       alive = false
+      for (const t of fitTimers) clearTimeout(t)
       el.removeEventListener("mouseup", handleMouseUp)
+      ownerWindow.removeEventListener("resize", handleWindowResize)
       resizeObserver.disconnect()
       dataDisposable.dispose()
       resizeDisposable.dispose()

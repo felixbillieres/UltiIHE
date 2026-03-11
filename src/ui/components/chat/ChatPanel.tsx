@@ -369,7 +369,7 @@ export function ChatPanel({ projectId }: Props) {
   return (
     <div className="h-full flex flex-col">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
             <Bot className="w-8 h-8 text-text-weaker mb-3" />

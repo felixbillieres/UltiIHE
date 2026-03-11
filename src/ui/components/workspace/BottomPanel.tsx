@@ -21,7 +21,7 @@ export function BottomPanel({ project, onClose }: BottomPanelProps) {
   const [activeTab, setActiveTab] = useState<BottomTab>("files")
 
   return (
-    <div className="h-full flex flex-col bg-surface-0">
+    <div className="flex-1 min-h-0 flex flex-col bg-surface-0">
       {/* Tab bar */}
       <div className="flex items-center border-b border-border-weak shrink-0 bg-surface-1">
         <TabButton

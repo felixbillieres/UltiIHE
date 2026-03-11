@@ -12,6 +12,7 @@ import {
   Trash2,
   Search,
   ChevronDown,
+  ExternalLink,
 } from "lucide-react"
 
 // ─── Session Tab Bar (Cursor-style) ─────────────────────────────
@@ -337,6 +338,7 @@ interface ChatSidePanelProps {
   onResize: (width: number) => void
   sessionSidebarOpen: boolean
   onToggleSessionSidebar: () => void
+  onPopOut?: () => void
 }
 
 export function ChatSidePanel({
@@ -348,6 +350,7 @@ export function ChatSidePanel({
   onResize,
   sessionSidebarOpen,
   onToggleSessionSidebar,
+  onPopOut,
 }: ChatSidePanelProps) {
   const [dragging, setDragging] = useState(false)
 
@@ -416,18 +419,29 @@ export function ChatSidePanel({
           />
         )}
 
-        {/* Chat header with close */}
+        {/* Chat header with close + pop-out */}
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
           <span className="text-xs text-text-strong font-sans font-medium">
             Chat
           </span>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-surface-2 transition-colors"
-            title="Close panel"
-          >
-            <X className="w-3 h-3 text-text-weaker" />
-          </button>
+          <div className="flex items-center gap-0.5">
+            {onPopOut && (
+              <button
+                onClick={onPopOut}
+                className="p-1 rounded hover:bg-surface-2 transition-colors"
+                title="Pop out to separate window"
+              >
+                <ExternalLink className="w-3 h-3 text-text-weaker" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-surface-2 transition-colors"
+              title="Close panel"
+            >
+              <X className="w-3 h-3 text-text-weaker" />
+            </button>
+          </div>
         </div>
 
         {/* Chat content */}

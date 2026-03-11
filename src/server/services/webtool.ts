@@ -24,9 +24,14 @@ export const TOOL_DEFS: WebToolDef[] = [
     id: "caido",
     name: "Caido",
     port: 8080,
-    setupCommands: [],
-    daemonCommand: "caido --listen 0.0.0.0:8080",
+    setupCommands: [
+      // Install caido-cli if not present (images < 3.1.9 don't have it)
+      "command -v caido-cli > /dev/null || { echo 'Installing caido-cli...'; curl -sL $(curl -sL https://caido.download/releases/latest | python3 -c \"import sys,json; links=json.load(sys.stdin)['links']; print([l['link'] for l in links if l['kind']=='cli' and l['platform']=='linux-x86_64'][0])\") | tar xz -C /usr/local/bin/ && chmod +x /usr/local/bin/caido-cli; }",
+    ],
+    daemonCommand: "caido-cli --listen 0.0.0.0:8080 --no-open",
+    stopCommands: ["pkill -f caido-cli"],
     healthCheckPath: "/",
+    execTimeoutMs: 120000, // download can be slow
   },
   {
     id: "bloodhound",

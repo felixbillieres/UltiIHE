@@ -4,12 +4,15 @@ import { useWorkspaceStore } from "../../stores/workspace"
 import { useFileStore } from "../../stores/files"
 import { useTerminalStore } from "../../stores/terminal"
 import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
+import { usePopOutStore } from "../../stores/popout"
 import { TerminalView } from "../terminal/TerminalView"
 import { ExegolManager } from "../exegol/ExegolManager"
 import { BottomPanel } from "./BottomPanel"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { FileEditorPane } from "../files/FileEditorPane"
-import { Terminal, FileText, Globe, Loader2, X } from "lucide-react"
+import { PopOutPortal } from "./PopOutPortal"
+import { PopOutGhost } from "./PopOutGhost"
+import { Terminal, FileText, Globe, Loader2, X, ExternalLink } from "lucide-react"
 
 // ─── Tool iframe renderer ───────────────────────────────────
 
@@ -61,6 +64,44 @@ function ToolPanel({ toolId, visible }: { toolId: string; visible: boolean }) {
           <Loader2 className="w-6 h-6 text-text-weaker animate-spin" />
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Pop-out content wrapper (header + re-attach) ───────────
+
+function PopOutContentWrapper({
+  title,
+  onReattach,
+  children,
+}: {
+  title: string
+  onReattach: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <div className="h-screen flex flex-col bg-surface-0">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
+        <div className="flex items-center gap-2">
+          <img
+            src="/exegol-symbol-white.svg"
+            alt=""
+            className="w-4 h-4 opacity-60"
+          />
+          <span className="text-xs text-text-strong font-sans font-medium truncate max-w-[300px]">
+            {title}
+          </span>
+        </div>
+        <button
+          onClick={onReattach}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs text-text-weak hover:text-text-base hover:bg-surface-2 transition-colors font-sans"
+          title="Re-attach to main window"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          Re-attach
+        </button>
+      </div>
+      <div className="flex-1 min-h-0 relative">{children}</div>
     </div>
   )
 }
@@ -117,6 +158,9 @@ export function CenterArea({
   const tabs = useWorkspaceStore((s) => s.tabs)
   const activeTabId = useWorkspaceStore((s) => s.activeTabId)
   const activeTab = tabs.find((t) => t.id === activeTabId)
+
+  const popOuts = usePopOutStore((s) => s.popOuts)
+  const reattach = usePopOutStore((s) => s.reattach)
 
   const addTerminal = useTerminalStore((s) => s.addTerminal)
   const openTerminalTab = useWorkspaceStore((s) => s.openTerminalTab)
@@ -237,15 +281,28 @@ export function CenterArea({
     )
   }
 
+  // Collect popped-out tab IDs for quick lookup
+  const poppedOutTabIds = new Set(popOuts.map((p) => p.tabId))
+
+  // Check if the active tab is popped out
+  const activeTabPoppedOut = activeTab ? poppedOutTabIds.has(activeTab.id) : false
+
   // Collect all unique tool IDs that have tabs (for keeping iframes mounted)
+  // Exclude popped-out tabs from main window rendering
   const toolTabIds = tabs
-    .filter((t) => t.type === "webtool" && t.toolId)
+    .filter((t) => t.type === "webtool" && t.toolId && !poppedOutTabIds.has(t.id))
     .map((t) => t.toolId!)
 
   // Collect all unique terminal IDs that have tabs (for keeping terminals mounted)
+  // Exclude popped-out tabs from main window rendering
   const terminalTabIds = tabs
-    .filter((t) => t.type === "terminal" && t.terminalId)
+    .filter((t) => t.type === "terminal" && t.terminalId && !poppedOutTabIds.has(t.id))
     .map((t) => t.terminalId!)
+
+  // Popped-out terminal tabs (render in portals)
+  const poppedOutTerminals = popOuts.filter((p) => p.type === "terminal" && p.terminalId)
+  const poppedOutTools = popOuts.filter((p) => p.type === "tool" && p.toolId)
+  const poppedOutFiles = popOuts.filter((p) => p.type === "file" && p.fileId)
 
   return (
     <div className="flex-1 min-w-0 flex flex-col relative">
@@ -259,6 +316,50 @@ export function CenterArea({
           />
         </div>
       )}
+
+      {/* Pop-out portals — rendered outside main layout */}
+      {poppedOutTerminals.map((p) => (
+        <PopOutPortal
+          key={p.tabId}
+          windowName={`popout-${p.tabId}`}
+          title={p.title}
+          width={900}
+          height={600}
+          onClose={() => reattach(p.tabId)}
+        >
+          <PopOutContentWrapper title={p.title} onReattach={() => reattach(p.tabId)}>
+            <TerminalView serverId={p.terminalId!} send={send} subscribe={subscribe} />
+          </PopOutContentWrapper>
+        </PopOutPortal>
+      ))}
+      {poppedOutTools.map((p) => (
+        <PopOutPortal
+          key={p.tabId}
+          windowName={`popout-${p.tabId}`}
+          title={p.title}
+          width={1000}
+          height={700}
+          onClose={() => reattach(p.tabId)}
+        >
+          <PopOutContentWrapper title={p.title} onReattach={() => reattach(p.tabId)}>
+            <ToolPanel toolId={p.toolId!} visible={true} />
+          </PopOutContentWrapper>
+        </PopOutPortal>
+      ))}
+      {poppedOutFiles.map((p) => (
+        <PopOutPortal
+          key={p.tabId}
+          windowName={`popout-${p.tabId}`}
+          title={p.title}
+          width={900}
+          height={700}
+          onClose={() => reattach(p.tabId)}
+        >
+          <PopOutContentWrapper title={p.title} onReattach={() => reattach(p.tabId)}>
+            <FileEditorPane fileId={p.fileId!} />
+          </PopOutContentWrapper>
+        </PopOutPortal>
+      ))}
 
       {/* Top: workspace tab bar + content */}
       <div className="flex-1 min-h-0 flex flex-col">
@@ -274,14 +375,19 @@ export function CenterArea({
           className="flex-1 min-h-0 overflow-hidden relative"
           style={{ backgroundColor: "#101010" }}
         >
-          {/* Terminal views — kept mounted for persistence */}
+          {/* Ghost placeholder for popped-out active tab */}
+          {activeTabPoppedOut && activeTab && (
+            <PopOutGhost tabId={activeTab.id} title={activeTab.title} />
+          )}
+
+          {/* Terminal views — kept mounted for persistence (excluding popped out) */}
           {terminalTabIds.map((tid) => (
             <div
               key={tid}
               className="absolute inset-0"
               style={{
                 visibility:
-                  activeTab?.type === "terminal" && activeTab.terminalId === tid
+                  activeTab?.type === "terminal" && activeTab.terminalId === tid && !activeTabPoppedOut
                     ? "visible"
                     : "hidden",
               }}
@@ -290,19 +396,19 @@ export function CenterArea({
             </div>
           ))}
 
-          {/* Tool iframes — kept mounted for persistence */}
+          {/* Tool iframes — kept mounted for persistence (excluding popped out) */}
           {toolTabIds.map((toolId) => (
             <ToolPanel
               key={toolId}
               toolId={toolId}
               visible={
-                activeTab?.type === "webtool" && activeTab.toolId === toolId
+                activeTab?.type === "webtool" && activeTab.toolId === toolId && !activeTabPoppedOut
               }
             />
           ))}
 
-          {/* File editor — rendered for active file tab */}
-          {activeTab?.type === "file" && activeTab.fileId && (
+          {/* File editor — rendered for active file tab (excluding popped out) */}
+          {activeTab?.type === "file" && activeTab.fileId && !activeTabPoppedOut && (
             <div className="absolute inset-0 bg-surface-0">
               <FileEditorPane fileId={activeTab.fileId} />
             </div>

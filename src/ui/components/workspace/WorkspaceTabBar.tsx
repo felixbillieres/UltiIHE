@@ -14,7 +14,9 @@ import {
   Pin,
   Filter,
   Loader2,
+  ExternalLink,
 } from "lucide-react"
+import { usePopOutStore } from "../../stores/popout"
 import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
 import { TOOL_ICONS } from "../terminal/terminalConstants"
 import { NewTerminalButton } from "../terminal/NewTerminalButton"
@@ -165,6 +167,18 @@ export function WorkspaceTabBar({
                 }
               }}
               onClose={() => removeTab(tab.id)}
+              onPopOut={() => {
+                usePopOutStore.getState().popOut({
+                  tabId: tab.id,
+                  type: tab.type === "webtool" ? "tool" : tab.type,
+                  windowRef: null,
+                  title: tab.title,
+                  terminalId: tab.terminalId,
+                  fileId: tab.fileId,
+                  toolId: tab.toolId,
+                  container: tab.container,
+                })
+              }}
               onDoubleClick={() => handleDoubleClick(tab.id, tab.title)}
               onEditChange={setEditingName}
               onEditCommit={commitRename}
@@ -210,6 +224,7 @@ function TabItem({
   containerIds,
   onClick,
   onClose,
+  onPopOut,
   onDoubleClick,
   onEditChange,
   onEditCommit,
@@ -224,12 +239,14 @@ function TabItem({
   containerIds: string[]
   onClick: () => void
   onClose: () => void
+  onPopOut: () => void
   onDoubleClick: () => void
   onEditChange: (name: string) => void
   onEditCommit: () => void
   onEditCancel: () => void
   onTogglePin: () => void
 }) {
+  const isPoppedOut = usePopOutStore((s) => s.isPopedOut(tab.id))
   const fileDirty = useFileStore(
     (s) => tab.type === "file" && tab.fileId
       ? s.openFiles.find((f) => f.id === tab.fileId)?.isDirty || false
@@ -308,6 +325,25 @@ function TabItem({
         )}
       </div>
 
+      {/* Pop-out button */}
+      {!isPoppedOut && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onPopOut()
+          }}
+          className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-0.5"
+          title="Pop out to separate window"
+        >
+          <ExternalLink className="w-2.5 h-2.5" />
+        </button>
+      )}
+      {/* Re-attach indicator */}
+      {isPoppedOut && (
+        <span className="text-[8px] text-accent font-sans shrink-0 ml-0.5">
+          ↗
+        </span>
+      )}
       {/* Close button */}
       <button
         onClick={(e) => {
