@@ -72,7 +72,8 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
     setCloseConfirm(null)
     setOpenToolTabs((prev) => prev.filter((t) => t !== id))
     setActiveToolTab((prev) => (prev === id ? null : prev))
-    stopToolService(id)
+    const info = Object.values(useWebToolsStore.getState().runningTools).find((r) => r.toolId === id)
+    stopToolService(id, info?.container || "")
   }, [stopToolService])
 
   const terminalCountRef = useRef(0)
@@ -149,7 +150,7 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
       >
         {isReady && (
           <iframe
-            src={getProxyUrl(toolId)}
+            src={getProxyUrl(toolId, runningTools[toolId]?.container || "")}
             className="w-full h-full border-0"
             title={WEB_TOOLS.find((t) => t.id === toolId)?.name || ""}
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"

@@ -3,7 +3,7 @@ import { type Project } from "../../stores/project"
 import { useWorkspaceStore } from "../../stores/workspace"
 import { useFileStore } from "../../stores/files"
 import { useTerminalStore } from "../../stores/terminal"
-import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
+import { useWebToolsStore, WEB_TOOLS, toolKey } from "../../stores/webtools"
 import { usePopOutStore } from "../../stores/popout"
 import { TerminalView } from "../terminal/TerminalView"
 import { ExegolManager } from "../exegol/ExegolManager"
@@ -13,12 +13,37 @@ import { FileEditorPane } from "../files/FileEditorPane"
 import { PopOutPortal } from "./PopOutPortal"
 import { PopOutGhost } from "./PopOutGhost"
 import { Terminal, FileText, Globe, Loader2, X, ExternalLink } from "lucide-react"
+import { ContainerPickerModal } from "../terminal/WebToolModals"
 
-// ─── Tool iframe renderer ───────────────────────────────────
+// ─── Tool panel renderer ────────────────────────────────────
 
-function ToolPanel({ toolId, visible }: { toolId: string; visible: boolean }) {
-  const toolInfo = useWebToolsStore((s) => s.runningTools[toolId])
+function ToolPanel({ toolId, container, visible }: { toolId: string; container: string; visible: boolean }) {
+  const storeKey = toolKey(toolId, container)
+  const toolInfo = useWebToolsStore((s) => s.runningTools[storeKey])
   const getProxyUrl = useWebToolsStore((s) => s.getProxyUrl)
+  const toolDef = WEB_TOOLS.find((t) => t.id === toolId)
+
+  // Poll backend status to detect auto-stopped tools (e.g. process exited)
+  useEffect(() => {
+    if (!toolInfo || toolInfo.status !== "ready") return
+    const interval = setInterval(async () => {
+      try {
+        const resp = await fetch(`http://localhost:3001/api/webtools/${toolId}/status?container=${encodeURIComponent(container)}`)
+        const data = await resp.json()
+        if (!data.running) {
+          // Tool was auto-stopped by backend — clear store + close tab
+          useWebToolsStore.setState((s) => {
+            const { [storeKey]: _, ...rest } = s.runningTools
+            return { runningTools: rest }
+          })
+          const ws = useWorkspaceStore.getState()
+          const tab = ws.tabs.find((t) => t.type === "webtool" && t.toolId === toolId && t.container === container)
+          if (tab) ws.removeTab(tab.id)
+        }
+      } catch { /* ignore */ }
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [toolId, container, storeKey, toolInfo?.status])
 
   return (
     <div
@@ -27,9 +52,9 @@ function ToolPanel({ toolId, visible }: { toolId: string; visible: boolean }) {
     >
       {toolInfo?.status === "ready" && (
         <iframe
-          src={getProxyUrl(toolId)}
+          src={getProxyUrl(toolId, container)}
           className="w-full h-full border-0"
-          title={WEB_TOOLS.find((t) => t.id === toolId)?.name || ""}
+          title={toolDef?.name || ""}
           sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals"
         />
       )}
@@ -38,7 +63,7 @@ function ToolPanel({ toolId, visible }: { toolId: string; visible: boolean }) {
           <div className="text-center">
             <Loader2 className="w-8 h-8 text-accent animate-spin mx-auto mb-3" />
             <p className="text-sm text-text-weak font-sans">
-              Starting {WEB_TOOLS.find((t) => t.id === toolId)?.name}...
+              Starting {toolDef?.name}...
             </p>
             <p className="text-xs text-text-weaker font-sans mt-1">
               Launching in {toolInfo.container}
@@ -51,7 +76,7 @@ function ToolPanel({ toolId, visible }: { toolId: string; visible: boolean }) {
           <div className="text-center max-w-md">
             <X className="w-8 h-8 text-red-400 mx-auto mb-3" />
             <p className="text-sm text-text-weak font-sans mb-2">
-              Failed to start {WEB_TOOLS.find((t) => t.id === toolId)?.name}
+              Failed to start {toolDef?.name}
             </p>
             <p className="text-xs text-red-400/80 font-mono bg-surface-2 rounded px-3 py-2">
               {toolInfo.error || "Unknown error"}
@@ -178,6 +203,7 @@ export function CenterArea({
   const stopTool = useWebToolsStore((s) => s.stopTool)
 
   const [bottomDragging, setBottomDragging] = useState(false)
+  const [pendingToolId, setPendingToolId] = useState<string | null>(null)
   const terminalCountRef = useRef(0)
 
   const hasContainers = project.containerIds.length > 0
@@ -233,8 +259,8 @@ export function CenterArea({
           if (tab.type === "file" && tab.fileId) {
             useFileStore.getState().closeFile(tab.fileId)
           }
-          if (tab.type === "webtool" && tab.toolId) {
-            stopTool(tab.toolId)
+          if (tab.type === "webtool" && tab.toolId && tab.container) {
+            stopTool(tab.toolId, tab.container)
           }
         }
       }
@@ -256,24 +282,35 @@ export function CenterArea({
     [hasContainers, connected, send, project.containerIds],
   )
 
-  const handleLaunchTool = useCallback(
-    async (toolId: string) => {
-      // If tool already has a tab, just activate it
-      const existingTab = useWorkspaceStore
-        .getState()
-        .tabs.find((t) => t.type === "webtool" && t.toolId === toolId)
+  const doLaunchTool = useCallback(
+    async (toolId: string, container: string) => {
+      // If already has a tab for this tool+container, just activate it
+      const existingTab = useWorkspaceStore.getState().tabs.find(
+        (t) => t.type === "webtool" && t.toolId === toolId && t.container === container,
+      )
       if (existingTab) {
         useWorkspaceStore.getState().setActiveTab(existingTab.id)
         return
       }
-      // For now, use first container
-      const container = project.containerIds[0]
-      if (!container) return
       const tool = WEB_TOOLS.find((t) => t.id === toolId)
       openToolTab(toolId, tool?.name || toolId, container)
       await launchTool(toolId, container)
     },
-    [project.containerIds, openToolTab, launchTool],
+    [openToolTab, launchTool],
+  )
+
+  const handleLaunchTool = useCallback(
+    async (toolId: string) => {
+      if (!project.containerIds.length) return
+      // Multiple containers → always show picker (user can pick any container, even one already running)
+      if (project.containerIds.length > 1) {
+        setPendingToolId(toolId)
+        return
+      }
+      // Single container
+      await doLaunchTool(toolId, project.containerIds[0])
+    },
+    [project.containerIds, doLaunchTool],
   )
 
   // Container manager overlay
@@ -295,11 +332,11 @@ export function CenterArea({
   // Check if the active tab is popped out
   const activeTabPoppedOut = activeTab ? poppedOutTabIds.has(activeTab.id) : false
 
-  // Collect all unique tool IDs that have tabs (for keeping iframes mounted)
+  // Collect all tool tabs (toolId + container) for keeping iframes mounted
   // Exclude popped-out tabs from main window rendering
-  const toolTabIds = tabs
-    .filter((t) => t.type === "webtool" && t.toolId && !poppedOutTabIds.has(t.id))
-    .map((t) => t.toolId!)
+  const toolTabs = tabs
+    .filter((t) => t.type === "webtool" && t.toolId && t.container && !poppedOutTabIds.has(t.id))
+    .map((t) => ({ toolId: t.toolId!, container: t.container!, tabId: t.id }))
 
   // Collect all unique terminal IDs that have tabs (for keeping terminals mounted)
   // Exclude popped-out tabs from main window rendering
@@ -350,7 +387,7 @@ export function CenterArea({
           onClose={() => reattach(p.tabId)}
         >
           <PopOutContentWrapper title={p.title} onReattach={() => reattach(p.tabId)}>
-            <ToolPanel toolId={p.toolId!} visible={true} />
+            <ToolPanel toolId={p.toolId!} container={p.container || ""} visible={true} />
           </PopOutContentWrapper>
         </PopOutPortal>
       ))}
@@ -405,12 +442,13 @@ export function CenterArea({
           ))}
 
           {/* Tool iframes — kept mounted for persistence (excluding popped out) */}
-          {toolTabIds.map((toolId) => (
+          {toolTabs.map((tt) => (
             <ToolPanel
-              key={toolId}
-              toolId={toolId}
+              key={tt.tabId}
+              toolId={tt.toolId}
+              container={tt.container}
               visible={
-                activeTab?.type === "webtool" && activeTab.toolId === toolId && !activeTabPoppedOut
+                activeTab?.type === "webtool" && activeTab.toolId === tt.toolId && activeTab.container === tt.container && !activeTabPoppedOut
               }
             />
           ))}
@@ -467,6 +505,19 @@ export function CenterArea({
             <BottomPanel project={project} onClose={onCloseBottomPanel} />
           </div>
         </>
+      )}
+
+      {/* Container picker for web tools */}
+      {pendingToolId && (
+        <ContainerPickerModal
+          toolId={pendingToolId}
+          containerIds={project.containerIds}
+          onPick={async (toolId, container) => {
+            setPendingToolId(null)
+            await doLaunchTool(toolId, container)
+          }}
+          onCancel={() => setPendingToolId(null)}
+        />
       )}
     </div>
   )

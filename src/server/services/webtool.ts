@@ -10,39 +10,58 @@ import { spawn, execSync } from "child_process"
 export interface WebToolDef {
   id: string
   name: string
-  port: number
-  setupCommands: string[] // shell commands to run (wait for completion) before daemon
-  daemonCommand: string // the main service command, launched with docker exec -d
-  healthCheckPath: string // path to GET for readiness check
-  stopCommands?: string[] // optional cleanup on stop
-  startTimeoutMs?: number // max time for health check (default 30s)
-  execTimeoutMs?: number // max time per setup command (default 15s)
+  basePort: number // base port — each instance gets basePort + instanceIndex
+  /** Commands can use {{PORT}}, {{DISPLAY}}, {{VNC_PORT}} placeholders */
+  setupCommands: string[]
+  daemonCommand: string
+  stopCommands?: string[]
+  healthCheckPath?: string
+  startTimeoutMs?: number
+  execTimeoutMs?: number
+  watchProcess?: string
 }
 
 export const TOOL_DEFS: WebToolDef[] = [
   {
+    id: "desktop",
+    name: "Desktop (noVNC)",
+    basePort: 6080,
+    setupCommands: [
+      // Kill any stale websockify on our port
+      "ps aux | grep '[w]ebsockify.*{{PORT}}' | awk '{print $2}' | xargs -r kill 2>/dev/null; true",
+      // Start VNC server on allocated display (avoid conflicts with Exegol's own displays)
+      "vncserver -list 2>/dev/null | grep -q ':{{DISPLAY}}' || vncserver :{{DISPLAY}} -geometry 1920x1080 -depth 24 -localhost no -SecurityTypes None --I-KNOW-THIS-IS-INSECURE 2>/dev/null || true",
+      // Wait for VNC to be ready
+      "for i in $(seq 1 15); do ss -tlnp 2>/dev/null | grep -q ':{{VNC_PORT}} ' && break; sleep 1; done",
+    ],
+    daemonCommand: "websockify --web /usr/share/novnc 0.0.0.0:{{PORT}} localhost:{{VNC_PORT}}",
+    stopCommands: [
+      "ps aux | grep '[w]ebsockify.*{{PORT}}' | awk '{print $2}' | xargs -r kill; true",
+      "vncserver -kill :{{DISPLAY}} 2>/dev/null; true",
+    ],
+    healthCheckPath: "/vnc.html",
+    startTimeoutMs: 25000,
+    execTimeoutMs: 20000,
+  },
+  {
     id: "caido",
     name: "Caido",
-    port: 8080,
+    basePort: 8080,
     setupCommands: [
-      // Install caido-cli if not present (images < 3.1.9 don't have it)
       "command -v caido-cli > /dev/null || { echo 'Installing caido-cli...'; curl -sL $(curl -sL https://caido.download/releases/latest | python3 -c \"import sys,json; links=json.load(sys.stdin)['links']; print([l['link'] for l in links if l['kind']=='cli' and l['platform']=='linux-x86_64'][0])\") | tar xz -C /usr/local/bin/ && chmod +x /usr/local/bin/caido-cli; }",
     ],
-    daemonCommand: "caido-cli --listen 0.0.0.0:8080 --no-open",
-    stopCommands: ["pkill -f caido-cli"],
+    daemonCommand: "caido-cli --listen 0.0.0.0:{{PORT}} --no-open",
+    stopCommands: ["ps aux | grep '[c]aido-cli.*{{PORT}}' | awk '{print $2}' | xargs -r kill; true"],
     healthCheckPath: "/",
-    execTimeoutMs: 120000, // download can be slow
+    execTimeoutMs: 120000,
   },
   {
     id: "bloodhound",
     name: "BloodHound",
-    port: 1030,
+    basePort: 1030,
     setupCommands: [
-      // 1. Start PostgreSQL if not running
       "pg_isready -q || service postgresql start",
-      // 2. Start neo4j if not running (needs JAVA_HOME)
       "neo4j status | grep -q 'is running' || JAVA_HOME=/usr/lib/jvm/java-11-openjdk neo4j start",
-      // 3. Wait for neo4j bolt port (7687) to be ready
       "for i in $(seq 1 30); do lsof -Pi :7687 -sTCP:LISTEN -t > /dev/null 2>&1 && break; sleep 2; done",
     ],
     daemonCommand: "/opt/tools/BloodHound-CE/bloodhound -configfile /opt/tools/BloodHound-CE/bloodhound.config.json",
@@ -52,10 +71,46 @@ export const TOOL_DEFS: WebToolDef[] = [
       "service postgresql stop",
     ],
     healthCheckPath: "/ui/login",
-    startTimeoutMs: 60000, // postgres + neo4j + BH startup
-    execTimeoutMs: 75000, // neo4j wait loop can take up to 60s
+    startTimeoutMs: 60000,
+    execTimeoutMs: 75000,
   },
 ]
+
+// ── Template substitution ────────────────────────────────────
+
+/** Track allocated in-container ports: key -> port */
+const allocatedToolPorts = new Map<string, number>()
+
+/**
+ * Allocate a unique in-container port for a tool instance.
+ * Desktop instance 0 → 6080, instance 1 → 6081, etc.
+ */
+function allocateToolPort(key: string, basePort: number): number {
+  const existing = allocatedToolPorts.get(key)
+  if (existing) return existing
+  const usedPorts = new Set(allocatedToolPorts.values())
+  let port = basePort
+  while (usedPorts.has(port)) port++
+  allocatedToolPorts.set(key, port)
+  return port
+}
+
+function freeToolPort(key: string) {
+  allocatedToolPorts.delete(key)
+}
+
+interface TemplateVars {
+  PORT: number
+  DISPLAY: number
+  VNC_PORT: number
+}
+
+function resolveTemplate(template: string, vars: TemplateVars): string {
+  return template
+    .replace(/\{\{PORT\}\}/g, String(vars.PORT))
+    .replace(/\{\{DISPLAY\}\}/g, String(vars.DISPLAY))
+    .replace(/\{\{VNC_PORT\}\}/g, String(vars.VNC_PORT))
+}
 
 // ── Running tool state ───────────────────────────────────────
 
@@ -71,16 +126,29 @@ export interface RunningTool {
   startedAt: number
 }
 
-// In-memory map: toolId -> RunningTool
-const runningTools = new Map<string, RunningTool>()
-// Proxy servers: toolId -> Bun.Server
-const proxyServers = new Map<string, ReturnType<typeof Bun.serve>>()
+/** Composite key: "toolId:container" */
+function toolKey(toolId: string, container: string) {
+  return `${toolId}:${container}`
+}
 
-// Proxy ports start at 13100, one per tool
+// In-memory map: "toolId:container" -> RunningTool
+const runningTools = new Map<string, RunningTool>()
+// Proxy servers: "toolId:container" -> Bun.Server
+const proxyServers = new Map<string, ReturnType<typeof Bun.serve>>()
+// Process watchers: "toolId:container" -> timer
+const processWatchers = new Map<string, ReturnType<typeof setInterval>>()
+
+// Dynamic proxy port allocation — each tool:container combo gets a unique port
 const PROXY_PORT_BASE = 13100
-const toolProxyPorts: Record<string, number> = {
-  caido: 13100,
-  bloodhound: 13101,
+let nextProxyPort = PROXY_PORT_BASE
+const allocatedPorts = new Map<string, number>() // key -> port
+
+function allocateProxyPort(key: string): number {
+  const existing = allocatedPorts.get(key)
+  if (existing) return existing
+  const port = nextProxyPort++
+  allocatedPorts.set(key, port)
+  return port
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -202,8 +270,15 @@ export function getToolDef(toolId: string): WebToolDef | undefined {
   return TOOL_DEFS.find((t) => t.id === toolId)
 }
 
-export function getRunningTool(toolId: string): RunningTool | undefined {
-  return runningTools.get(toolId)
+export function getRunningTool(toolId: string, container?: string): RunningTool | undefined {
+  if (container) {
+    return runningTools.get(toolKey(toolId, container))
+  }
+  // Legacy: find any running instance of this tool
+  for (const tool of runningTools.values()) {
+    if (tool.toolId === toolId) return tool
+  }
+  return undefined
 }
 
 export function getAllRunningTools(): RunningTool[] {
@@ -217,41 +292,53 @@ export async function launchTool(
   const def = getToolDef(toolId)
   if (!def) throw new Error(`Unknown tool: ${toolId}`)
 
-  // If already running, return existing
-  const existing = runningTools.get(toolId)
+  const key = toolKey(toolId, container)
+
+  // If already running in this container, return existing
+  const existing = runningTools.get(key)
   if (existing && existing.status === "ready") return existing
 
   // Get reachable address (localhost for host-network, container IP for bridged)
   const addr = getContainerAddress(container)
   if (!addr) throw new Error(`Cannot get address for container ${container}`)
 
-  const proxyPort = toolProxyPorts[toolId] || (PROXY_PORT_BASE + Object.keys(toolProxyPorts).length)
+  const proxyPort = allocateProxyPort(key)
+
+  // Allocate a unique in-container port for this instance
+  const toolPort = allocateToolPort(key, def.basePort)
+  // For desktop: display = port offset from base + 3 (start at :3 to avoid Exegol's :0/:1/:2)
+  const displayNum = 3 + (toolPort - def.basePort)
+  const vncPort = 5900 + displayNum
+
+  const vars: TemplateVars = { PORT: toolPort, DISPLAY: displayNum, VNC_PORT: vncPort }
 
   const tool: RunningTool = {
     toolId,
     container,
     containerIp: addr.ip,
-    port: def.port,
+    port: toolPort,
     proxyPort,
     hostNetwork: addr.hostNetwork,
     status: "starting",
     startedAt: Date.now(),
   }
-  runningTools.set(toolId, tool)
+  runningTools.set(key, tool)
 
   // Run setup commands sequentially (these complete before returning)
   const execTimeout = def.execTimeoutMs || 15000
   for (const cmd of def.setupCommands) {
-    const result = await dockerExec(container, cmd, execTimeout)
+    const resolved = resolveTemplate(cmd, vars)
+    const result = await dockerExec(container, resolved, execTimeout)
     if (!result.ok) {
       tool.status = "error"
-      tool.error = `Failed to run: ${cmd}\n${result.output}`
+      tool.error = `Failed to run: ${resolved}\n${result.output}`
       return tool
     }
   }
 
   // Launch the daemon command in detached mode (survives docker exec exit)
-  const daemonResult = await dockerExecDetached(container, def.daemonCommand)
+  const daemonResolved = resolveTemplate(def.daemonCommand, vars)
+  const daemonResult = await dockerExecDetached(container, daemonResolved)
   if (!daemonResult.ok) {
     tool.status = "error"
     tool.error = `Failed to start daemon: ${daemonResult.output}`
@@ -260,11 +347,13 @@ export async function launchTool(
 
   // Wait for health check
   const startTimeout = def.startTimeoutMs || 30000
-  const ready = await waitForReady(addr.ip, def.port, def.healthCheckPath, startTimeout)
+  const ready = await waitForReady(addr.ip, toolPort, def.healthCheckPath!, startTimeout)
   if (ready) {
     tool.status = "ready"
-    // Start a dedicated proxy server for this tool
-    startProxyServer(toolId, addr.ip, def.port, proxyPort)
+    startProxyServer(key, addr.ip, toolPort, proxyPort)
+    if (def.watchProcess) {
+      startProcessWatcher(key, toolId, container, def.watchProcess)
+    }
   } else {
     tool.status = "error"
     tool.error = `Service did not become ready within ${Math.round(startTimeout / 1000)}s`
@@ -273,30 +362,89 @@ export async function launchTool(
   return tool
 }
 
-export async function stopTool(toolId: string): Promise<void> {
-  // Stop proxy server
-  stopProxyServer(toolId)
+/**
+ * Poll for a process inside the container. When it exits, auto-stop the tool.
+ */
+function startProcessWatcher(key: string, toolId: string, container: string, processName: string) {
+  stopProcessWatcher(key)
+  // Initial delay: give the process time to start before polling
+  const startDelay = setTimeout(() => {
+    const interval = setInterval(async () => {
+      const result = await dockerExec(container, `pgrep -x ${processName}`, 3000)
+      if (!result.ok || !result.output.trim()) {
+        console.log(`[WebTool] ${processName} exited in ${container}, auto-stopping ${toolId}`)
+        clearInterval(interval)
+        processWatchers.delete(key)
+        await stopTool(toolId, container)
+      }
+    }, 5000)
+    processWatchers.set(key, interval)
+  }, 10000) // wait 10s before first check
+  // Store timeout so it can be cancelled on stop
+  processWatchers.set(key, startDelay as any)
+}
 
-  const tool = runningTools.get(toolId)
+function stopProcessWatcher(key: string) {
+  const timer = processWatchers.get(key)
+  if (timer) {
+    clearInterval(timer)
+    processWatchers.delete(key)
+  }
+}
+
+export async function stopTool(toolId: string, container?: string): Promise<void> {
+  // If no container, find the first running instance
+  if (!container) {
+    for (const tool of runningTools.values()) {
+      if (tool.toolId === toolId) {
+        container = tool.container
+        break
+      }
+    }
+    if (!container) return
+  }
+
+  const key = toolKey(toolId, container)
+
+  // Stop process watcher
+  stopProcessWatcher(key)
+  // Stop proxy server
+  stopProxyServer(key)
+
+  const tool = runningTools.get(key)
   if (!tool) return
 
   const def = getToolDef(toolId)
   if (def?.stopCommands) {
+    // Reconstruct template vars from the running tool's port
+    const displayNum = 3 + (tool.port - def.basePort)
+    const vars: TemplateVars = { PORT: tool.port, DISPLAY: displayNum, VNC_PORT: 5900 + displayNum }
     for (const cmd of def.stopCommands) {
-      await dockerExec(tool.container, cmd, 5000)
+      const resolved = resolveTemplate(cmd, vars)
+      await dockerExec(tool.container, resolved, 5000)
     }
   }
 
-  runningTools.delete(toolId)
+  runningTools.delete(key)
+  freeToolPort(key)
 }
 
 /**
  * Get the internal proxy target URL for a running tool.
  */
-export function getProxyTarget(toolId: string): string | null {
-  const tool = runningTools.get(toolId)
-  if (!tool || tool.status !== "ready") return null
-  return `http://${tool.containerIp}:${tool.port}`
+export function getProxyTarget(toolId: string, container?: string): string | null {
+  if (container) {
+    const tool = runningTools.get(toolKey(toolId, container))
+    if (!tool || tool.status !== "ready") return null
+    return `http://${tool.containerIp}:${tool.port}`
+  }
+  // Legacy: find any running instance
+  for (const tool of runningTools.values()) {
+    if (tool.toolId === toolId && tool.status === "ready") {
+      return `http://${tool.containerIp}:${tool.port}`
+    }
+  }
+  return null
 }
 
 // ── Per-tool proxy servers ───────────────────────────────────
@@ -306,17 +454,29 @@ export function getProxyTarget(toolId: string): string | null {
  * stripping X-Frame-Options and CSP headers for iframe embedding.
  * Each tool gets its own port (e.g. 13100, 13101) so there are no
  * path-prefix issues with absolute URLs in the proxied app.
+ *
+ * Also supports WebSocket upgrade for tools that need it (e.g. noVNC/websockify).
  */
-function startProxyServer(toolId: string, targetIp: string, targetPort: number, proxyPort: number) {
+function startProxyServer(key: string, targetIp: string, targetPort: number, proxyPort: number) {
   // Stop existing proxy if any
-  stopProxyServer(toolId)
+  stopProxyServer(key)
 
   const targetBase = `http://${targetIp}:${targetPort}`
+  const wsTarget = `ws://${targetIp}:${targetPort}`
 
-  const server = Bun.serve({
+  const server = Bun.serve<{ targetWsUrl: string }>({
     port: proxyPort,
-    async fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url)
+
+      // WebSocket upgrade — needed for noVNC/websockify
+      if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        const targetWsUrl = `${wsTarget}${url.pathname}${url.search}`
+        const ok = server.upgrade(req, { data: { targetWsUrl } })
+        if (ok) return undefined as any
+        return new Response("WebSocket upgrade failed", { status: 500 })
+      }
+
       const targetUrl = `${targetBase}${url.pathname}${url.search}`
 
       try {
@@ -354,17 +514,74 @@ function startProxyServer(toolId: string, targetIp: string, targetPort: number, 
         return new Response(`Proxy error: ${(e as Error).message}`, { status: 502 })
       }
     },
+    websocket: {
+      // Bridge: client <-> upstream WebSocket (for noVNC)
+      async open(ws) {
+        const { targetWsUrl } = ws.data
+        // Queue messages until upstream is connected
+        const pendingQueue: (string | ArrayBuffer | Uint8Array)[] = []
+        ;(ws as any)._queue = pendingQueue
+        ;(ws as any)._upstreamReady = false
+
+        try {
+          const upstream = new WebSocket(targetWsUrl)
+          ;(ws as any)._upstream = upstream
+          upstream.binaryType = "arraybuffer"
+
+          upstream.addEventListener("open", () => {
+            ;(ws as any)._upstreamReady = true
+            // Drain queued messages
+            for (const msg of pendingQueue) {
+              try { upstream.send(msg) } catch { /* */ }
+            }
+            pendingQueue.length = 0
+          })
+
+          upstream.addEventListener("message", (ev) => {
+            try {
+              if (ev.data instanceof ArrayBuffer) {
+                ws.sendBinary(new Uint8Array(ev.data))
+              } else {
+                ws.send(ev.data as string)
+              }
+            } catch { /* client disconnected */ }
+          })
+
+          upstream.addEventListener("close", () => { ws.close() })
+          upstream.addEventListener("error", () => { ws.close() })
+        } catch {
+          ws.close()
+        }
+      },
+      message(ws, message) {
+        const upstream = (ws as any)._upstream as WebSocket | undefined
+        if (!upstream) return
+        // If upstream isn't connected yet, queue the message
+        if (!(ws as any)._upstreamReady) {
+          ;(ws as any)._queue?.push(message)
+          return
+        }
+        if (upstream.readyState !== WebSocket.OPEN) return
+        try { upstream.send(message) } catch { /* upstream disconnected */ }
+      },
+      close(ws) {
+        const upstream = (ws as any)._upstream as WebSocket | undefined
+        if (upstream && upstream.readyState === WebSocket.OPEN) {
+          upstream.close()
+        }
+      },
+    },
   })
 
-  proxyServers.set(toolId, server)
-  console.log(`[WebTool] Proxy for ${toolId} listening on http://localhost:${proxyPort} -> ${targetBase}`)
+  proxyServers.set(key, server)
+  console.log(`[WebTool] Proxy for ${key} listening on http://localhost:${proxyPort} -> ${targetBase} (WS enabled)`)
 }
 
-function stopProxyServer(toolId: string) {
-  const server = proxyServers.get(toolId)
+function stopProxyServer(key: string) {
+  const server = proxyServers.get(key)
   if (server) {
     server.stop()
-    proxyServers.delete(toolId)
-    console.log(`[WebTool] Proxy for ${toolId} stopped`)
+    proxyServers.delete(key)
+    console.log(`[WebTool] Proxy for ${key} stopped`)
   }
 }

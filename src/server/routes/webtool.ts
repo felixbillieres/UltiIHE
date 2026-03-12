@@ -22,7 +22,7 @@ webtoolRoutes.get("/webtools", (c) => {
     tools: TOOL_DEFS.map((t) => ({
       id: t.id,
       name: t.name,
-      port: t.port,
+      basePort: t.basePort,
     })),
   })
 })
@@ -60,7 +60,8 @@ webtoolRoutes.post("/webtools/:toolId/launch", async (c) => {
 
 webtoolRoutes.post("/webtools/:toolId/stop", async (c) => {
   const toolId = c.req.param("toolId")
-  await stopTool(toolId)
+  const body = await c.req.json<{ container?: string }>().catch(() => ({} as { container?: string }))
+  await stopTool(toolId, body.container)
   return c.json({ ok: true })
 })
 
@@ -68,7 +69,8 @@ webtoolRoutes.post("/webtools/:toolId/stop", async (c) => {
 
 webtoolRoutes.get("/webtools/:toolId/status", (c) => {
   const toolId = c.req.param("toolId")
-  const tool = getRunningTool(toolId)
+  const container = c.req.query("container")
+  const tool = getRunningTool(toolId, container)
   if (!tool) return c.json({ running: false })
   return c.json({ running: true, tool })
 })

@@ -1,11 +1,13 @@
-import { Radar, Network } from "lucide-react"
+import { Radar, Network, Monitor } from "lucide-react"
 
 export const TOOL_ICONS: Record<string, React.ReactNode> = {
+  Monitor: <Monitor className="w-3 h-3 shrink-0" />,
   Radar: <Radar className="w-3 h-3 shrink-0" />,
   Network: <Network className="w-3 h-3 shrink-0" />,
 }
 
 export const TOOL_ICONS_SM: Record<string, React.ReactNode> = {
+  Monitor: <Monitor className="w-3.5 h-3.5" />,
   Radar: <Radar className="w-3.5 h-3.5" />,
   Network: <Network className="w-3.5 h-3.5" />,
 }

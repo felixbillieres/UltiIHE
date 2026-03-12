@@ -186,11 +186,11 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 
   openToolTab: (toolId, name, container, projectId) => {
     const pid = projectId || get()._currentProjectId || ""
-    const id = `tool:${toolId}`
+    const id = container ? `tool:${toolId}:${container}` : `tool:${toolId}`
     get().addTab({
       id,
       type: "webtool",
-      title: name,
+      title: container ? `${name} (${container.replace(/^exegol-/, "")})` : name,
       projectId: pid,
       container,
       toolId,

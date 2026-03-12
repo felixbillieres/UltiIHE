@@ -5,7 +5,7 @@ import { WEB_TOOLS } from "../../stores/webtools"
 import { TOOL_ICONS_SM } from "./terminalConstants"
 
 interface WebToolsDropdownProps {
-  openToolTabs: string[]
+  openToolTabs: string[] // tool IDs that have open tabs
   onLaunch: (id: string) => void
   onSettings: () => void
 }
@@ -68,7 +68,7 @@ export function WebToolsDropdown({
               Web Tools
             </div>
             {WEB_TOOLS.map((tool) => {
-              const isOpen = openToolTabs.includes(tool.id)
+              const openCount = openToolTabs.filter((id) => id === tool.id).length
               return (
                 <button
                   key={tool.id}
@@ -82,8 +82,13 @@ export function WebToolsDropdown({
                     {TOOL_ICONS_SM[tool.icon]}
                   </span>
                   <span className="flex-1">{tool.name}</span>
-                  {isOpen && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  {openCount > 0 && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      {openCount > 1 && (
+                        <span className="text-[9px] text-emerald-400 font-mono">{openCount}</span>
+                      )}
+                    </span>
                   )}
                 </button>
               )

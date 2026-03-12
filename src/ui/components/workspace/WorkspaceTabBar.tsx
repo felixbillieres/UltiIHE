@@ -17,7 +17,7 @@ import {
   ExternalLink,
 } from "lucide-react"
 import { usePopOutStore } from "../../stores/popout"
-import { useWebToolsStore, WEB_TOOLS } from "../../stores/webtools"
+import { useWebToolsStore, WEB_TOOLS, toolKey } from "../../stores/webtools"
 import { TOOL_ICONS } from "../terminal/terminalConstants"
 import { NewTerminalButton } from "../terminal/NewTerminalButton"
 import { WebToolsDropdown } from "../terminal/WebToolsDropdown"
@@ -265,7 +265,9 @@ function TabItem({
     (s) => tab.type === "file" && tab.fileId ? s.savingFiles.has(tab.fileId) : false,
   )
   const toolStatus = useWebToolsStore(
-    (s) => tab.type === "webtool" && tab.toolId ? s.runningTools[tab.toolId]?.status : undefined,
+    (s) => tab.type === "webtool" && tab.toolId && tab.container
+      ? s.runningTools[toolKey(tab.toolId, tab.container)]?.status
+      : undefined,
   )
 
   const icon = getTabIcon(tab, toolStatus)
