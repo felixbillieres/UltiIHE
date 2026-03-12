@@ -119,22 +119,22 @@ const HighlightedCode = memo(function HighlightedCode({
 
 const mdComponents: ComponentProps<typeof Markdown>["components"] = {
   h1: ({ children }) => (
-    <div className="font-bold text-text-strong text-base mt-2 mb-1">{children}</div>
+    <div className="font-bold text-text-strong text-base mt-1.5 mb-0.5">{children}</div>
   ),
   h2: ({ children }) => (
-    <div className="font-semibold text-text-strong mt-2 mb-0.5">{children}</div>
+    <div className="font-semibold text-text-strong mt-1.5 mb-0.5">{children}</div>
   ),
   h3: ({ children }) => (
-    <div className="font-semibold text-text-strong text-xs mt-2 mb-0.5">{children}</div>
+    <div className="font-semibold text-text-strong text-xs mt-1 mb-0.5">{children}</div>
   ),
-  p: ({ children }) => <p className="my-1">{children}</p>,
+  p: ({ children }) => <p className="my-0.5 leading-relaxed">{children}</p>,
   ul: ({ children }) => (
-    <ul className="my-1 ml-4 space-y-0.5 list-disc list-outside">{children}</ul>
+    <ul className="my-0.5 ml-4 list-disc list-outside">{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="my-1 ml-4 space-y-0.5 list-decimal list-outside">{children}</ol>
+    <ol className="my-0.5 ml-4 list-decimal list-outside">{children}</ol>
   ),
-  li: ({ children }) => <li className="text-text-base">{children}</li>,
+  li: ({ children }) => <li className="text-text-base my-0 [&>p]:my-0 [&>p]:inline">{children}</li>,
   strong: ({ children }) => (
     <strong className="font-semibold text-text-strong">{children}</strong>
   ),
@@ -161,7 +161,7 @@ const mdComponents: ComponentProps<typeof Markdown>["components"] = {
   },
   pre: ({ children }) => <>{children}</>,
   blockquote: ({ children }) => (
-    <blockquote className="border-l-2 border-accent/30 pl-3 my-1 text-text-weak italic">
+    <blockquote className="border-l-2 border-accent/30 pl-3 my-0.5 text-text-weak italic [&>p]:my-0">
       {children}
     </blockquote>
   ),

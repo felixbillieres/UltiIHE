@@ -207,7 +207,7 @@ function AssistantParts({ parts }: { parts: MessagePart[] }) {
       {parts.map((part, i) => {
         if (part.type === "text") {
           return part.content ? (
-            <div key={i} className="whitespace-pre-wrap break-words">
+            <div key={i} className="break-words">
               <MarkdownContent content={part.content} />
             </div>
           ) : null
@@ -279,9 +279,9 @@ export function MessageBubble({
           <AssistantParts parts={message.parts} />
         ) : (
           <div
-            className={`inline-block text-sm leading-relaxed whitespace-pre-wrap break-words font-sans ${
+            className={`inline-block text-sm leading-relaxed break-words font-sans ${
               isUser
-                ? "bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm max-w-[85%]"
+                ? "bg-accent/8 text-text-strong px-3 py-2 rounded-lg rounded-tr-sm max-w-[85%] whitespace-pre-wrap"
                 : isError
                   ? "bg-status-error/8 border border-status-error/20 text-status-error px-3 py-2 rounded-lg max-w-[95%]"
                   : "text-text-base"
