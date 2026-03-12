@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { ToolCallPart } from "../../stores/session"
 import { MarkdownContent } from "./MarkdownContent"
 import {
@@ -97,15 +97,50 @@ function formatDuration(startTime: number, endTime?: number): string {
 
 export function ToolCallCard({ part }: { part: ToolCallPart }) {
   const [expanded, setExpanded] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const meta = getToolMeta(part.tool)
   const summary = getArgsSummary(part.tool, part.args)
   const duration = formatDuration(part.startTime, part.endTime)
   const { Icon } = meta
+  const isCompleted = part.status === "completed" || part.status === "error"
+
+  // Auto-collapse when tool finishes
+  useEffect(() => {
+    if (isCompleted) {
+      setCollapsed(true)
+    }
+  }, [isCompleted])
+
+  // Collapsed: single-line pill
+  if (collapsed && isCompleted) {
+    return (
+      <button
+        onClick={() => setCollapsed(false)}
+        className="my-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-0/50 border border-border-weak hover:bg-surface-1/50 transition-colors text-left"
+      >
+        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 ${
+          part.status === "error" ? "bg-red-400/15" : "bg-emerald-400/15"
+        }`}>
+          {part.status === "error"
+            ? <X className="w-2.5 h-2.5 text-red-400" />
+            : <Check className="w-2.5 h-2.5 text-emerald-400" />
+          }
+        </div>
+        <Icon className={`w-3 h-3 ${meta.color}`} />
+        <span className="text-[11px] text-text-weaker">{meta.name}</span>
+        {summary && <span className="text-[10px] text-text-weaker/60 truncate max-w-[200px] font-mono">{summary}</span>}
+        {duration && <span className="text-[10px] text-text-weaker/60 tabular-nums">{duration}</span>}
+      </button>
+    )
+  }
 
   return (
     <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          if (isCompleted) setCollapsed(true)
+          else setExpanded(!expanded)
+        }}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
         {/* Status indicator */}

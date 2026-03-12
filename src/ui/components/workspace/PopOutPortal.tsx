@@ -51,7 +51,7 @@ export function PopOutPortal({
       `scrollbars=no`,
     ].join(",")
 
-    const popup = window.open("", windowName, features)
+    const popup = window.open("about:blank", windowName, features)
     if (!popup) {
       console.warn("[PopOut] Popup blocked by browser")
       onClose()
@@ -62,11 +62,12 @@ export function PopOutPortal({
     closedByUs.current = false
 
     // ─── Build the popup document via DOM manipulation ──────
-    const doc = popup.document
+    // Use document.open/write/close for reliable cross-browser init (Firefox)
+    popup.document.open()
+    popup.document.write("<!DOCTYPE html><html><head></head><body></body></html>")
+    popup.document.close()
 
-    // Clear everything
-    doc.head.innerHTML = ""
-    doc.body.innerHTML = ""
+    const doc = popup.document
 
     // <base> so relative URLs (CSS, fonts, images) resolve against our origin
     const base = doc.createElement("base")
@@ -123,12 +124,15 @@ export function PopOutPortal({
     mountDiv.id = "popout-root"
     doc.body.appendChild(mountDiv)
 
-    // Defer portal setup to next frame so styles are processed
-    requestAnimationFrame(() => {
-      if (!popup.closed) {
-        setContainer(mountDiv)
-      }
-    })
+    // Defer portal setup — use popup's own RAF + fallback timeout for Firefox
+    const setReady = () => {
+      if (!popup.closed) setContainer(mountDiv)
+    }
+    if (popup.requestAnimationFrame) {
+      popup.requestAnimationFrame(setReady)
+    } else {
+      setTimeout(setReady, 50)
+    }
 
     // ─── Handle window close ────────────────────────────────
     const pollInterval = setInterval(() => {

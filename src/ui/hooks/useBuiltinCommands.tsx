@@ -48,7 +48,7 @@ export function useBuiltinCommands(
   projectId: string,
   layout: LayoutActions,
 ) {
-  const palette = useCommandPalette()
+  const { toggle: paletteToggle } = useCommandPalette()
 
   const commands = useMemo((): CommandOption[] => {
     // ── General ──────────────────────────────────────────
@@ -58,7 +58,7 @@ export function useBuiltinCommands(
         title: "Command Palette",
         category: "General",
         keybind: "mod+shift+p",
-        onSelect: () => palette.toggle(),
+        onSelect: () => paletteToggle(),
       },
       {
         id: "settings.open",
@@ -288,7 +288,7 @@ export function useBuiltinCommands(
     ]
 
     return [...general, ...session, ...navigation, ...terminal, ...modelAgent]
-  }, [projectId, layout, palette])
+  }, [projectId, layout, paletteToggle])
 
   useRegisterCommands("builtin", commands)
 }

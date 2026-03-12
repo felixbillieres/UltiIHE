@@ -128,7 +128,7 @@ function FileApprovalItem({
   onApprove: () => void
   onDeny: () => void
 }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
 
   const isDelete = tool.toolName === "file_delete"
   const isCreateDir = tool.toolName === "file_create_dir"
@@ -242,6 +242,8 @@ export function FileApprovalBanner({
   onApproveAll: () => void
   onDenyAll: () => void
 }) {
+  const [groupExpanded, setGroupExpanded] = useState(false)
+
   if (tools.length === 0) return null
 
   const totalStats = tools.reduce(
@@ -259,15 +261,19 @@ export function FileApprovalBanner({
   return (
     <div className="shrink-0 border-t border-blue-400/20 bg-surface-1/80 backdrop-blur-sm">
       <div className="px-3 pt-2.5 pb-2">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
+        {/* Header — clickable to toggle group */}
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setGroupExpanded(!groupExpanded)}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
+            <ChevronDown className={`w-3 h-3 text-blue-400 shrink-0 transition-transform ${groupExpanded ? "rotate-0" : "-rotate-90"}`} />
             <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
             <span className="text-xs font-medium text-text-strong font-sans">
               {tools.length} file change{tools.length > 1 ? "s" : ""}
             </span>
             <DiffStatsBar additions={totalStats.additions} deletions={totalStats.deletions} />
-          </div>
+          </button>
 
           {/* Batch actions */}
           <div className="flex items-center gap-1.5">
@@ -288,17 +294,56 @@ export function FileApprovalBanner({
           </div>
         </div>
 
-        {/* File cards */}
-        <div className="space-y-1.5 max-h-[450px] overflow-y-auto scrollbar-thin">
-          {tools.map((tool) => (
-            <FileApprovalItem
-              key={tool.id}
-              tool={tool}
-              onApprove={() => onApprove(tool.id)}
-              onDeny={() => onDeny(tool.id)}
-            />
-          ))}
-        </div>
+        {/* File cards — only shown when group expanded */}
+        {groupExpanded && (
+          <div className="space-y-1.5 max-h-[450px] overflow-y-auto scrollbar-thin mt-2">
+            {tools.map((tool) => (
+              <FileApprovalItem
+                key={tool.id}
+                tool={tool}
+                onApprove={() => onApprove(tool.id)}
+                onDeny={() => onDeny(tool.id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Resolved files summary ────────────────────────────────────────
+
+export function ResolvedFilesSummary({
+  resolved,
+}: {
+  resolved: { id: string; resolution: "approved" | "denied"; toolName: string; args: Record<string, unknown>; diff?: string }[]
+}) {
+  if (resolved.length === 0) return null
+
+  const approved = resolved.filter((r) => r.resolution === "approved").length
+  const denied = resolved.filter((r) => r.resolution === "denied").length
+
+  const totalStats = resolved.reduce(
+    (acc, t) => {
+      if (t.diff) {
+        const s = diffStats(t.diff)
+        acc.additions += s.additions
+        acc.deletions += s.deletions
+      }
+      return acc
+    },
+    { additions: 0, deletions: 0 },
+  )
+
+  return (
+    <div className="shrink-0 px-3 py-1.5 border-t border-border-weak/50 bg-surface-0/30">
+      <div className="flex items-center gap-2 text-[11px] text-text-weaker font-sans">
+        <Check className="w-3 h-3 text-emerald-400/60" />
+        <span>{resolved.length} file operation{resolved.length > 1 ? "s" : ""}</span>
+        <DiffStatsBar additions={totalStats.additions} deletions={totalStats.deletions} />
+        {approved > 0 && <span className="text-emerald-400/70">{approved} accepted</span>}
+        {denied > 0 && <span className="text-red-400/70">{denied} denied</span>}
       </div>
     </div>
   )

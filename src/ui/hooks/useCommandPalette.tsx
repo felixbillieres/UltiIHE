@@ -241,17 +241,21 @@ export function useCommandPalette() {
 export function useRegisterCommands(key: string, commands: CommandOption[]) {
   const { register, unregister } = useCommandPalette()
 
-  // Use ref to avoid re-registering on every render
+  // Store latest commands in ref to avoid stale closures
   const commandsRef = useRef(commands)
   commandsRef.current = commands
 
+  // Register once on mount, unregister on unmount
   useEffect(() => {
     register(key, commandsRef.current)
     return () => unregister(key)
-  }, [key, register, unregister])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
 
-  // Re-register when commands change
-  useEffect(() => {
+  // Re-register only when commands array identity changes
+  const prevCommandsRef = useRef(commands)
+  if (prevCommandsRef.current !== commands) {
+    prevCommandsRef.current = commands
     register(key, commands)
-  }, [key, commands, register])
+  }
 }

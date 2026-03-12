@@ -19,7 +19,7 @@ import { ContextQuotes } from "./ContextQuotes"
 import { CommandPopover } from "./CommandPopover"
 import { MessageBubble } from "./MessageBubble"
 import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
-import { FileApprovalBanner } from "./FileApprovalBanner"
+import { FileApprovalBanner, ResolvedFilesSummary } from "./FileApprovalBanner"
 
 // ── SSE parser ────────────────────────────────────────────────
 
@@ -97,7 +97,9 @@ export function ChatPanel({ projectId }: Props) {
   const removePendingCommand = useCommandApprovalStore((s) => s.removePending)
   const setApprovalMode = useCommandApprovalStore((s) => s.setMode)
   const pendingTools = useToolApprovalStore((s) => s.pending)
+  const resolvedTools = useToolApprovalStore((s) => s.resolved)
   const removePendingTool = useToolApprovalStore((s) => s.removePending)
+  const resolveTool = useToolApprovalStore((s) => s.resolveTool)
   const { send: wsSend } = useWebSocket()
 
   const [input, setInput] = useState("")
@@ -308,6 +310,7 @@ export function ChatPanel({ projectId }: Props) {
     streamingMsgIdRef.current = assistantId
 
     setStreaming(true)
+    useToolApprovalStore.getState().clearResolved()
     const abort = new AbortController()
     abortRef.current = abort
 
@@ -661,92 +664,95 @@ export function ChatPanel({ projectId }: Props) {
         </div>
       )}
 
-      {/* Approval banners */}
-      {pendingCommands.map((cmd) => (
+      {/* Approval banners — sequential: show only first pending command */}
+      {pendingCommands.length > 0 && (
         <PermissionBanner
-          key={`cmd-${cmd.id}`}
-          command={cmd}
+          key={`cmd-${pendingCommands[0].id}`}
+          command={pendingCommands[0]}
           queueSize={pendingCommands.length}
           onAllowOnce={() => {
             wsSend({
               type: "command:approve",
-              data: { commandId: cmd.id },
+              data: { commandId: pendingCommands[0].id },
             })
-            removePendingCommand(cmd.id)
+            removePendingCommand(pendingCommands[0].id)
           }}
           onAllowAlways={() => {
             wsSend({
               type: "command:approve",
-              data: { commandId: cmd.id, allowAll: true },
+              data: { commandId: pendingCommands[0].id, allowAll: true },
             })
-            removePendingCommand(cmd.id)
+            removePendingCommand(pendingCommands[0].id)
             setApprovalMode("allow-all-session")
             wsSend({ type: "command:set-mode", data: { mode: "allow-all-session" } })
           }}
           onDeny={() => {
             wsSend({
               type: "command:reject",
-              data: { commandId: cmd.id },
+              data: { commandId: pendingCommands[0].id },
             })
-            removePendingCommand(cmd.id)
+            removePendingCommand(pendingCommands[0].id)
           }}
         />
-      ))}
-      {/* File change approvals */}
+      )}
+      {/* File change approvals + resolved summary */}
       {(() => {
         const FILE_TOOLS = new Set(["file_write", "file_edit", "file_delete", "file_create_dir"])
         const fileTools = pendingTools.filter((t) => FILE_TOOLS.has(t.toolName))
         const otherTools = pendingTools.filter((t) => !FILE_TOOLS.has(t.toolName))
+        const resolvedFiles = resolvedTools.filter((t) => FILE_TOOLS.has(t.toolName))
         return (
           <>
+            <ResolvedFilesSummary resolved={resolvedFiles} />
             <FileApprovalBanner
               tools={fileTools}
               onApprove={(id) => {
                 const t = fileTools.find((f) => f.id === id)
                 wsSend({ type: "tool:approve", data: { id } })
-                removePendingTool(id)
+                resolveTool(id, "approved")
                 toast.success(`Accepted: ${(t?.args.filePath || t?.args.targetPath || t?.args.dirPath || "") as string}`)
               }}
               onApproveAlways={(id) => {
                 wsSend({ type: "tool:approve", data: { id, allowAlways: true } })
-                removePendingTool(id)
+                resolveTool(id, "approved")
               }}
               onDeny={(id) => {
                 const t = fileTools.find((f) => f.id === id)
                 wsSend({ type: "tool:reject", data: { id } })
-                removePendingTool(id)
+                resolveTool(id, "denied")
                 toast.error(`Denied: ${(t?.args.filePath || t?.args.targetPath || t?.args.dirPath || "") as string}`)
               }}
               onApproveAll={() => {
                 wsSend({ type: "tool:approve-all", data: { allowAlways: false } })
-                for (const t of fileTools) removePendingTool(t.id)
+                for (const t of fileTools) resolveTool(t.id, "approved")
                 toast.success(`Accepted all ${fileTools.length} file changes`)
               }}
               onDenyAll={() => {
                 wsSend({ type: "tool:reject-all", data: {} })
-                for (const t of fileTools) removePendingTool(t.id)
+                for (const t of fileTools) resolveTool(t.id, "denied")
                 toast.error(`Denied all ${fileTools.length} file changes`)
               }}
             />
-            {otherTools.map((tool) => (
+            {/* Other tools — sequential: show only first */}
+            {otherTools.length > 0 && (
               <ToolPermissionBanner
-                key={`tool-${tool.id}`}
-                tool={tool}
+                key={`tool-${otherTools[0].id}`}
+                tool={otherTools[0]}
                 queueSize={otherTools.length}
                 onAllowOnce={() => {
-                  wsSend({ type: "tool:approve", data: { id: tool.id } })
-                  removePendingTool(tool.id)
+                  wsSend({ type: "tool:approve", data: { id: otherTools[0].id } })
+                  removePendingTool(otherTools[0].id)
                 }}
                 onAllowAlways={() => {
-                  wsSend({ type: "tool:approve", data: { id: tool.id, allowAlways: true } })
-                  removePendingTool(tool.id)
+                  wsSend({ type: "tool:approve", data: { id: otherTools[0].id, allowAlways: true } })
+                  removePendingTool(otherTools[0].id)
                 }}
                 onDeny={() => {
-                  wsSend({ type: "tool:reject", data: { id: tool.id } })
-                  removePendingTool(tool.id)
+                  wsSend({ type: "tool:reject", data: { id: otherTools[0].id } })
+                  removePendingTool(otherTools[0].id)
                 }}
               />
-            ))}
+            )}
           </>
         )
       })()}

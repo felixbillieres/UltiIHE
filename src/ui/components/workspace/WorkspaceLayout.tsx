@@ -105,16 +105,16 @@ export function WorkspaceLayout({ project }: Props) {
 
   const hasContainers = project.containerIds.length > 0
 
-  const toggleFilesPanel = () =>
-    setLayout((l) => ({ ...l, filesPanelOpen: !l.filesPanelOpen }))
-  const toggleChatPanel = () =>
-    setLayout((l) => ({ ...l, chatPanelOpen: !l.chatPanelOpen }))
-  const toggleSessionSidebar = () =>
-    setLayout((l) => ({ ...l, sessionSidebarOpen: !l.sessionSidebarOpen }))
-  const toggleBottomPanel = () =>
-    setLayout((l) => ({ ...l, bottomPanelOpen: !l.bottomPanelOpen }))
-  const swapPanels = () =>
-    setLayout((l) => ({ ...l, swapped: !l.swapped }))
+  const toggleFilesPanel = useCallback(() =>
+    setLayout((l) => ({ ...l, filesPanelOpen: !l.filesPanelOpen })), [setLayout])
+  const toggleChatPanel = useCallback(() =>
+    setLayout((l) => ({ ...l, chatPanelOpen: !l.chatPanelOpen })), [setLayout])
+  const toggleSessionSidebar = useCallback(() =>
+    setLayout((l) => ({ ...l, sessionSidebarOpen: !l.sessionSidebarOpen })), [setLayout])
+  const toggleBottomPanel = useCallback(() =>
+    setLayout((l) => ({ ...l, bottomPanelOpen: !l.bottomPanelOpen })), [setLayout])
+  const swapPanels = useCallback(() =>
+    setLayout((l) => ({ ...l, swapped: !l.swapped })), [setLayout])
 
   // Determine which panel is on which side
   const filesOnLeft = !layout.swapped
