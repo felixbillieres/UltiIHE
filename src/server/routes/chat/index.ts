@@ -113,7 +113,7 @@ chatRoutes.post("/compact", async (c) => {
       model,
       system,
       messages: compactionMessages as any,
-      maxRetries: 1,
+      maxRetries: 0,
     })
 
     const summary = await result.text
@@ -163,7 +163,7 @@ Rules:
           content: messages.map((m) => `[${m.role}]: ${m.content.slice(0, 300)}`).join("\n"),
         },
       ],
-      maxRetries: 1,
+      maxRetries: 0,
     })
 
     let title = result.text
@@ -377,7 +377,12 @@ chatRoutes.post("/chat", async (c) => {
         tools,
         // Hide InvalidTool from model's active tools
         activeTools: Object.keys(tools).filter((t) => t !== "invalid"),
-        stopWhen: stepCountIs(30),
+        // Limit to 10 steps (each step = 1 API call). OpenCode uses 1 with manual loop.
+        // 10 covers 99% of pentest workflows without runaway cost.
+        stopWhen: stepCountIs(10),
+        // No automatic retries — errors bubble up immediately to the user.
+        // AI SDK defaults to 2 retries (3 total attempts), which silently burns quota.
+        maxRetries: 0,
         providerOptions,
         abortSignal: abortController.signal,
         // Sampling defaults (provider-specific)
@@ -428,6 +433,8 @@ chatRoutes.post("/chat", async (c) => {
     let earlyError: string | null = null
     let streamDone = false
     let doomLoopAborted = false
+    let stepCount = 0
+    let toolCallCount = 0
 
     try {
       const textPromise = result.text.then(
@@ -471,6 +478,7 @@ chatRoutes.post("/chat", async (c) => {
             break
           case "tool-call":
             hasContent = true
+            toolCallCount++
             bufferedEvents.push(sse("tool-call", {
               id: (part as any).toolCallId,
               tool: (part as any).toolName,
@@ -583,6 +591,7 @@ chatRoutes.post("/chat", async (c) => {
                 })))
                 break
               case "tool-call": {
+                toolCallCount++
                 const toolCallId = (part as any).toolCallId
                 runningToolCalls.add(toolCallId)
                 controller.enqueue(encoder.encode(sse("tool-call", {
@@ -636,6 +645,9 @@ chatRoutes.post("/chat", async (c) => {
               message: extractErrorMessage(err),
             })))
           }
+        }
+        if (toolCallCount > 0) {
+          console.log(`[Chat] Stream done | ${toolCallCount} tool calls`)
         }
         controller.enqueue(encoder.encode(sse("done", {})))
         controller.close()
