@@ -57,6 +57,10 @@ interface SettingsStore {
   fontSize: number
   fontFamily: string
 
+  // Sound
+  soundEnabled: boolean
+  soundId: string
+
   // Language
   language: Language
 
@@ -76,6 +80,10 @@ interface SettingsStore {
   setColorScheme: (scheme: "dark" | "light" | "system") => void
   setFontSize: (size: number) => void
   setFontFamily: (font: string) => void
+
+  // Actions - Sound
+  setSoundEnabled: (enabled: boolean) => void
+  setSoundId: (id: string) => void
 
   // Actions - Language
   setLanguage: (lang: Language) => void
@@ -115,6 +123,8 @@ export const useSettingsStore = create<SettingsStore>()(
       colorScheme: "dark",
       fontSize: 14,
       fontFamily: "IBM Plex Mono",
+      soundEnabled: false,
+      soundId: "gentle",
       language: detectLanguage(),
       providers: [],
       activeProvider: "anthropic",
@@ -138,6 +148,10 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       setFontFamily: (font) => set({ fontFamily: font }),
+
+      // --- Sound ---
+      setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
+      setSoundId: (id) => set({ soundId: id }),
 
       // --- Language ---
       setLanguage: (lang) => set({ language: lang }),
@@ -237,6 +251,8 @@ export const useSettingsStore = create<SettingsStore>()(
         colorScheme: state.colorScheme,
         fontSize: state.fontSize,
         fontFamily: state.fontFamily,
+        soundEnabled: state.soundEnabled,
+        soundId: state.soundId,
         language: state.language,
         providers: state.providers,
         activeProvider: state.activeProvider,

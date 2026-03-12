@@ -3,6 +3,7 @@ import { terminalManager } from "../terminal/manager"
 import { commandQueue } from "../terminal/command-queue"
 import { questionQueue } from "../ai/tool/question-queue"
 import { toolApprovalQueue } from "../ai/tool/tool-approval"
+import { opsTracker } from "../terminal/ops-tracker"
 import type { ServerWebSocket } from "bun"
 
 // --- Message Schemas ---
@@ -104,6 +105,11 @@ const toolSetModeSchema = z.object({
   }),
 })
 
+const opsStopAllSchema = z.object({
+  type: z.literal("ops:stop-all"),
+  data: z.object({}),
+})
+
 const clientMessageSchema = z.discriminatedUnion("type", [
   terminalCreateSchema,
   terminalInputSchema,
@@ -118,6 +124,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   toolApproveAllSchema,
   toolRejectAllSchema,
   toolSetModeSchema,
+  opsStopAllSchema,
 ])
 
 type ClientMessage = z.infer<typeof clientMessageSchema>
@@ -128,11 +135,10 @@ const connectedClients = new Set<ServerWebSocket<unknown>>()
 
 /** Broadcast a message to all connected WebSocket clients */
 function broadcast(_terminalId: string, message: object): void {
-  if (connectedClients.size > 1) {
-    console.warn(`[WS] Broadcasting to ${connectedClients.size} clients — expected 1 (possible duplicate connections)`)
-  }
   const payload = JSON.stringify(message)
-  for (const client of connectedClients) {
+  // Copy to array to avoid modifying Set during iteration
+  const clients = [...connectedClients]
+  for (const client of clients) {
     try {
       client.send(payload)
     } catch {
@@ -216,6 +222,16 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
       toolApprovalQueue.setMode(msg.data.mode)
       console.log(`[Tool] Approval mode set to: ${msg.data.mode}`)
       break
+    case "ops:stop-all": {
+      const count = terminalManager.interruptAllAI()
+      opsTracker.cancelAll()
+      console.log(`[Ops] Stopped ${count} running AI operations`)
+      broadcastToClients({
+        type: "ops:stopped",
+        data: { count },
+      })
+      break
+    }
   }
 }
 
@@ -325,7 +341,8 @@ function handleQuestionAnswer(
 // Wire broadcast to WS clients for both queues
 const broadcastToClients = (message: object) => {
   const payload = JSON.stringify(message)
-  for (const client of connectedClients) {
+  const clients = [...connectedClients]
+  for (const client of clients) {
     try {
       client.send(payload)
     } catch {
@@ -337,6 +354,7 @@ commandQueue.setBroadcast(broadcastToClients)
 questionQueue.setBroadcast(broadcastToClients)
 toolApprovalQueue.setBroadcast(broadcastToClients)
 terminalManager.setBroadcast((_terminalId, message) => broadcastToClients(message))
+opsTracker.setBroadcast(broadcastToClients)
 
 export const websocketHandlers = {
   open(ws: ServerWebSocket<unknown>) {

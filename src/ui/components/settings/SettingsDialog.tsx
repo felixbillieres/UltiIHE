@@ -1,14 +1,15 @@
 import { useState } from "react"
 import { useSettingsStore } from "../../stores/settings"
 import { t } from "../../i18n/translations"
-import { X, Palette, Keyboard, Bot, Plug, Cpu } from "lucide-react"
+import { X, Palette, Keyboard, Bot, Plug, Cpu, Blocks } from "lucide-react"
 import { LocalAISettings } from "./LocalAISettings"
 import { GeneralSettings } from "./GeneralSettings"
 import { ProviderSettings } from "./ProviderSettings"
 import { ModelSettings } from "./ModelSettings"
 import { KeybindSettings } from "./KeybindSettings"
+import { MCPSettings } from "./MCPSettings"
 
-type Tab = "general" | "providers" | "models" | "local" | "keybinds"
+type Tab = "general" | "providers" | "models" | "local" | "keybinds" | "mcp"
 
 interface Props {
   onClose: () => void
@@ -38,6 +39,7 @@ export function SettingsDialog({ onClose }: Props) {
             <TabBtn active={tab === "models"} onClick={() => setTab("models")} icon={<Bot className="w-3.5 h-3.5" />} label={t(lang, "settings.tabs.models")} />
             <TabBtn active={tab === "local"} onClick={() => setTab("local")} icon={<Cpu className="w-3.5 h-3.5" />} label="Local AI" />
             <TabBtn active={tab === "keybinds"} onClick={() => setTab("keybinds")} icon={<Keyboard className="w-3.5 h-3.5" />} label={t(lang, "settings.tabs.keybinds")} />
+            <TabBtn active={tab === "mcp"} onClick={() => setTab("mcp")} icon={<Blocks className="w-3.5 h-3.5" />} label="MCP Servers" />
           </div>
           <div className="flex-1 overflow-y-auto p-5">
             {tab === "general" && <GeneralSettings />}
@@ -45,6 +47,7 @@ export function SettingsDialog({ onClose }: Props) {
             {tab === "models" && <ModelSettings />}
             {tab === "local" && <LocalAISettings />}
             {tab === "keybinds" && <KeybindSettings />}
+            {tab === "mcp" && <MCPSettings />}
           </div>
         </div>
       </div>

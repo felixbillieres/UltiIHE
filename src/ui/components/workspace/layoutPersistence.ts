@@ -1,5 +1,7 @@
 const LAYOUT_KEY = "ultiIHE-layout"
 
+export type LayoutPreset = "default" | "focus" | "editor" | "terminal" | "recon"
+
 export interface LayoutState {
   chatPanelOpen: boolean
   chatPanelWidth: number
@@ -9,6 +11,7 @@ export interface LayoutState {
   swapped: boolean // false = files left + chat right, true = chat left + files right
   bottomPanelOpen: boolean
   bottomPanelHeight: number
+  activePreset?: LayoutPreset
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -20,6 +23,35 @@ export const DEFAULT_LAYOUT: LayoutState = {
   swapped: false,
   bottomPanelOpen: false,
   bottomPanelHeight: 280,
+  activePreset: "default",
+}
+
+export const LAYOUT_PRESETS: Record<LayoutPreset, { label: string; description: string; panels: Partial<LayoutState> }> = {
+  default: {
+    label: "Default",
+    description: "Files + Terminals + Chat",
+    panels: { filesPanelOpen: true, chatPanelOpen: true, bottomPanelOpen: false },
+  },
+  focus: {
+    label: "Focus",
+    description: "Terminals + AI chat (no files)",
+    panels: { filesPanelOpen: false, chatPanelOpen: true, bottomPanelOpen: false },
+  },
+  editor: {
+    label: "Editor",
+    description: "Files + Terminals (no chat)",
+    panels: { filesPanelOpen: true, chatPanelOpen: false, bottomPanelOpen: false },
+  },
+  terminal: {
+    label: "Terminal",
+    description: "Full screen terminals",
+    panels: { filesPanelOpen: false, chatPanelOpen: false, bottomPanelOpen: false },
+  },
+  recon: {
+    label: "Recon",
+    description: "Everything open — full workspace",
+    panels: { filesPanelOpen: true, chatPanelOpen: true, bottomPanelOpen: true },
+  },
 }
 
 export function loadLayout(): LayoutState {

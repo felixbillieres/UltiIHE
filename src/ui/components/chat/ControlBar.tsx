@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { toast } from "sonner"
 import {
   useSettingsStore,
   AGENTS,
@@ -44,6 +45,25 @@ function agentColorBg(agent: AgentId): string {
 function ContextIndicator() {
   const info = useContextStore((s) => s.info)
   const [showTooltip, setShowTooltip] = useState(false)
+  const [warned80, setWarned80] = useState(false)
+  const [warned95, setWarned95] = useState(false)
+
+  // Context overflow warnings
+  useEffect(() => {
+    if (!info) return
+    if (info.percentUsed >= 95 && !warned95) {
+      setWarned95(true)
+      toast.error("Context nearly full (95%). Consider using /compact to free space.", { duration: 5000 })
+    } else if (info.percentUsed >= 80 && !warned80) {
+      setWarned80(true)
+      toast("Context usage at 80%. Consider compacting soon.", { duration: 3000 })
+    }
+    // Reset warnings if context drops (after compaction)
+    if (info.percentUsed < 70) {
+      setWarned80(false)
+      setWarned95(false)
+    }
+  }, [info?.percentUsed])
 
   if (!info) return null
 

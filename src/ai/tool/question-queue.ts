@@ -12,6 +12,7 @@ interface PendingQuestion {
   question: string
   options?: string[]
   resolve: (answer: string) => void
+  timeoutId: ReturnType<typeof setTimeout>
 }
 
 class QuestionQueue {
@@ -29,7 +30,14 @@ class QuestionQueue {
     const id = randomUUID()
 
     return new Promise<string>((resolve) => {
-      this.pending.set(id, { id, question, options, resolve })
+      const timeoutId = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id)
+          resolve("(no response — timed out after 5 minutes)")
+        }
+      }, 300_000)
+
+      this.pending.set(id, { id, question, options, resolve, timeoutId })
 
       this.broadcast?.({
         type: "question:pending",
@@ -37,14 +45,6 @@ class QuestionQueue {
         question,
         options,
       })
-
-      // 5-minute timeout
-      setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          resolve("(no response — timed out after 5 minutes)")
-        }
-      }, 300_000)
     })
   }
 
@@ -55,6 +55,7 @@ class QuestionQueue {
     const entry = this.pending.get(id)
     if (!entry) return
     this.pending.delete(id)
+    clearTimeout(entry.timeoutId)
     entry.resolve(response)
   }
 

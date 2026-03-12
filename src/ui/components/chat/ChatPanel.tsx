@@ -10,16 +10,19 @@ import { useChatContextStore } from "../../stores/chatContext"
 import { useContextStore } from "../../stores/context"
 import { useLocalAIStore } from "../../stores/localAI"
 import { useAutoScroll } from "../../hooks/useAutoScroll"
-import { Send, Bot, Loader2, Square, ArrowDown } from "lucide-react"
+import { Send, Bot, Loader2, Square, ArrowDown, Search, X } from "lucide-react"
 import { toast } from "sonner"
 
+import { playSound } from "../../utils/sound"
 import { useSlashCommands, useAtOptions, type SlashCommand, type AtOption } from "./chatCommands"
 import { ControlBar } from "./ControlBar"
 import { ContextQuotes } from "./ContextQuotes"
 import { CommandPopover } from "./CommandPopover"
-import { MessageBubble } from "./MessageBubble"
+import { MessageBubble, CompactionMessage } from "./MessageBubble"
 import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
 import { FileApprovalBanner, ResolvedFilesSummary } from "./FileApprovalBanner"
+import { ImageAttachments } from "./ImageAttachments"
+import { OperationsTracker } from "./OperationsTracker"
 
 // ── SSE parser ────────────────────────────────────────────────
 
@@ -91,6 +94,10 @@ export function ChatPanel({ projectId }: Props) {
   const quotes = useChatContextStore((s) => s.quotes)
   const removeQuote = useChatContextStore((s) => s.removeQuote)
   const clearQuotes = useChatContextStore((s) => s.clearQuotes)
+  const images = useChatContextStore((s) => s.images)
+  const addImage = useChatContextStore((s) => s.addImage)
+  const removeImage = useChatContextStore((s) => s.removeImage)
+  const clearImages = useChatContextStore((s) => s.clearImages)
 
   const pendingCommands = useCommandApprovalStore((s) => s.pending)
   const approvalMode = useCommandApprovalStore((s) => s.mode)
@@ -107,6 +114,22 @@ export function ChatPanel({ projectId }: Props) {
   const abortRef = useRef<AbortController | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const streamingMsgIdRef = useRef<string | null>(null)
+
+  // Message history (ArrowUp/Down)
+  const historyRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const draftRef = useRef("")
+
+  // Image drag state
+  const [draggingOver, setDraggingOver] = useState(false)
+
+  // Search state
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Model picker trigger ref
+  const [showModelPickerFromSlash, setShowModelPickerFromSlash] = useState(false)
 
   // Slash & @ popover state
   const [popover, setPopover] = useState<"slash" | "at" | null>(null)
@@ -158,6 +181,105 @@ export function ChatPanel({ projectId }: Props) {
   }, [input])
 
   const hasTerminals = terminals.length > 0
+
+  // Global keyboard shortcuts for the chat panel
+  useEffect(() => {
+    function onGlobalKeyDown(e: KeyboardEvent) {
+      // Ctrl+F: open message search (when chat panel is focused)
+      if (e.key === "f" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        // Only intercept if focus is within the chat panel
+        const chatPanel = containerRef.current?.closest(".h-full.flex.flex-col")
+        if (chatPanel?.contains(document.activeElement) || document.activeElement === textareaRef.current) {
+          e.preventDefault()
+          setSearchOpen(true)
+          setTimeout(() => searchInputRef.current?.focus(), 50)
+        }
+      }
+    }
+    window.addEventListener("keydown", onGlobalKeyDown)
+    return () => window.removeEventListener("keydown", onGlobalKeyDown)
+  }, [])
+
+  // Filtered messages for search
+  const searchResults = useMemo(() => {
+    if (!searchQuery.trim()) return null
+    const q = searchQuery.toLowerCase()
+    return messages.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.id)
+  }, [searchQuery, messages])
+
+  // ── Image paste/drop handlers ─────────────────────────────────
+  const ALLOWED_IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
+
+  function processFiles(files: FileList | File[]) {
+    for (const file of Array.from(files)) {
+      if (!ALLOWED_IMAGE_MIMES.has(file.type)) continue
+      const reader = new FileReader()
+      reader.onload = () => {
+        addImage({
+          filename: file.name,
+          mime: file.type,
+          dataUrl: reader.result as string,
+          size: file.size,
+        })
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent) {
+    const files = e.clipboardData?.files
+    if (files && files.length > 0) {
+      const imageFiles = Array.from(files).filter((f) => ALLOWED_IMAGE_MIMES.has(f.type))
+      if (imageFiles.length > 0) {
+        e.preventDefault()
+        processFiles(imageFiles)
+      }
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDraggingOver(false)
+
+    // Handle drag from file manager panel (container images)
+    const exegolData = e.dataTransfer?.getData("application/x-exegol-file")
+    if (exegolData) {
+      try {
+        const { container, path, name } = JSON.parse(exegolData) as { container: string; path: string; name: string }
+        // Fetch image from container via API and convert to data URL
+        fetch(`/api/files/${container}/read?path=${encodeURIComponent(path)}&base64=true`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.base64 && data.mime) {
+              addImage({
+                filename: name,
+                mime: data.mime,
+                dataUrl: `data:${data.mime};base64,${data.base64}`,
+                size: data.size || 0,
+              })
+            }
+          })
+          .catch(() => {})
+      } catch {}
+      return
+    }
+
+    // Handle native file drops (from OS file manager)
+    const files = e.dataTransfer?.files
+    if (files && files.length > 0) {
+      processFiles(files)
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    setDraggingOver(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault()
+    setDraggingOver(false)
+  }
 
   // ── Auto-title generation (fire-and-forget) ─────────────────
 
@@ -233,7 +355,7 @@ export function ChatPanel({ projectId }: Props) {
   async function handleSend() {
     if (streaming) return
     if (!hasTerminals) return
-    if (!input.trim() && quotes.length === 0) return
+    if (!input.trim() && quotes.length === 0 && images.length === 0) return
 
     const provider = getActiveProvider()
     const isLocal = activeProvider === "local"
@@ -262,7 +384,15 @@ export function ChatPanel({ projectId }: Props) {
     }
 
     // Build message content with context quotes
+    // Push to message history (dedup with last)
     const userText = input.trim()
+    if (userText && historyRef.current[historyRef.current.length - 1] !== userText) {
+      historyRef.current.push(userText)
+      if (historyRef.current.length > 50) historyRef.current.shift()
+    }
+    historyIndexRef.current = -1
+    draftRef.current = ""
+
     let messageContent = userText
     if (quotes.length > 0) {
       const contextBlock = quotes
@@ -281,6 +411,12 @@ export function ChatPanel({ projectId }: Props) {
       clearQuotes()
     }
 
+    // Include image references in message content
+    if (images.length > 0) {
+      const imageNote = images.map((img) => `[Image: ${img.filename}]`).join(" ")
+      messageContent = messageContent ? `${messageContent}\n\n${imageNote}` : imageNote
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -290,6 +426,8 @@ export function ChatPanel({ projectId }: Props) {
     }
     addMessage(sid, userMessage)
     setInput("")
+    const attachedImages = [...images]
+    if (attachedImages.length > 0) clearImages()
 
     const currentSession = useSessionStore
       .getState()
@@ -346,40 +484,72 @@ export function ChatPanel({ projectId }: Props) {
     }
 
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: abort.signal,
-        body: JSON.stringify({
-          messages: apiMessages,
-          providerId: provider?.type === "custom" ? "custom" : activeProvider,
-          modelId: activeModel,
-          apiKey: provider?.apiKey || "local",
-          baseUrl: provider?.baseUrl,
-          containerIds: project?.containerIds || [],
-          activeTerminalId,
-          mode: activeMode,
-          agent: activeAgent,
-          thinkingEffort,
-        }),
-      })
+      // Retry loop with exponential backoff (like OpenCode)
+      const MAX_RETRIES = 3
+      let res: Response | undefined
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: abort.signal,
+          body: JSON.stringify({
+            messages: apiMessages,
+            providerId: provider?.type === "custom" ? "custom" : activeProvider,
+            modelId: activeModel,
+            apiKey: provider?.apiKey || "local",
+            baseUrl: provider?.baseUrl,
+            containerIds: project?.containerIds || [],
+            activeTerminalId,
+            mode: activeMode,
+            agent: activeAgent,
+            thinkingEffort,
+            images: attachedImages.map((img) => ({
+              mime: img.mime,
+              dataUrl: img.dataUrl,
+            })),
+          }),
+        })
 
-      if (!res.ok) {
-        let errorMsg = `HTTP ${res.status}`
+        // Retryable errors: 429 (rate limit), 503 (overloaded), 529 (overloaded)
+        if ((res.status === 429 || res.status === 503 || res.status === 529) && attempt < MAX_RETRIES && !abort.signal.aborted) {
+          // Parse Retry-After header (seconds or ms)
+          const retryAfterRaw = res.headers.get("retry-after")
+          const retryAfterMs = res.headers.get("retry-after-ms")
+          let delayMs: number
+          if (retryAfterMs) {
+            delayMs = Math.min(parseFloat(retryAfterMs), 30_000)
+          } else if (retryAfterRaw) {
+            const parsed = parseFloat(retryAfterRaw)
+            delayMs = !isNaN(parsed) ? Math.min(parsed * 1000, 30_000) : 5000
+          } else {
+            // Exponential backoff: 2s, 4s, 8s — capped at 30s
+            delayMs = Math.min(2000 * Math.pow(2, attempt), 30_000)
+          }
+          const delaySecs = Math.ceil(delayMs / 1000)
+          toast(`Rate limited (${res.status}). Retrying in ${delaySecs}s... (${attempt + 1}/${MAX_RETRIES})`, { duration: delayMs })
+          await new Promise((r) => setTimeout(r, delayMs))
+          if (abort.signal.aborted) break
+          continue
+        }
+        break // Success or non-retryable error
+      }
+
+      if (!res!.ok) {
+        let errorMsg = `HTTP ${res!.status}`
         try {
-          const contentType = res.headers.get("content-type") || ""
+          const contentType = res!.headers.get("content-type") || ""
           if (contentType.includes("json")) {
-            const err = await res.json()
+            const err = await res!.json()
             errorMsg = err.error || errorMsg
           } else {
-            errorMsg = (await res.text()) || errorMsg
+            errorMsg = (await res!.text()) || errorMsg
           }
-        } catch {}
+        } catch { /* ignore parse errors */ }
         throw new Error(errorMsg)
       }
 
       // Read context metadata from response header
-      const contextHeader = res.headers.get("X-Context-Info")
+      const contextHeader = res!.headers.get("X-Context-Info")
       if (contextHeader) {
         useContextStore.getState().updateFromHeader(contextHeader)
       }
@@ -389,7 +559,7 @@ export function ChatPanel({ projectId }: Props) {
         useLocalAIStore.getState().fetchServerStatus()
       }
 
-      const reader = res.body?.getReader()
+      const reader = res!.body?.getReader()
       if (!reader) throw new Error("No response body")
 
       const decoder = new TextDecoder()
@@ -511,8 +681,12 @@ export function ChatPanel({ projectId }: Props) {
         const textPart = parts[idx] as { type: "text"; content: string }
         textPart.content += errorDisplay
         flushToStore()
+        playSound("error")
       }
     } finally {
+      if (fullText.trim() && !abortRef.current?.signal.aborted) {
+        playSound("message-done")
+      }
       setStreaming(false)
       abortRef.current = null
       streamingMsgIdRef.current = null
@@ -521,6 +695,23 @@ export function ChatPanel({ projectId }: Props) {
 
   function handleStop() {
     abortRef.current?.abort()
+    // Immediately mark streaming as done so UI updates
+    setStreaming(false)
+    abortRef.current = null
+    // Mark any in-flight tool calls as interrupted in the current message
+    if (streamingMsgIdRef.current && activeSessionId) {
+      const msgs = useSessionStore.getState().getActiveMessages()
+      const msg = msgs.find((m) => m.id === streamingMsgIdRef.current)
+      if (msg?.parts) {
+        const updatedParts = msg.parts.map((p) =>
+          p.type === "tool-call" && (p as ToolCallPart).status === "running"
+            ? { ...p, status: "error" as const, output: "[Interrupted]", endTime: Date.now() }
+            : p,
+        )
+        updateMessage(activeSessionId, streamingMsgIdRef.current, { parts: updatedParts })
+      }
+      streamingMsgIdRef.current = null
+    }
   }
 
   function handleInputChange(value: string) {
@@ -551,6 +742,23 @@ export function ChatPanel({ projectId }: Props) {
       setInput,
       setAgent: useSettingsStore.getState().setActiveAgent,
       cycleThinkingEffort: useSettingsStore.getState().cycleThinkingEffort,
+      newSession: () => useSessionStore.getState().startNewChat(projectId),
+      compact: () => {
+        const provider = getActiveProvider()
+        if (activeSessionId) autoCompact(activeSessionId, provider)
+      },
+      undo: () => {
+        if (activeSessionId) {
+          const ok = useSessionStore.getState().undoLastExchange(activeSessionId)
+          if (ok) toast.success("Undone last exchange")
+          else toast.error("Nothing to undo")
+        }
+      },
+      openModelPicker: () => setShowModelPickerFromSlash(true),
+      focusTerminal: () => {
+        const term = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement
+        term?.focus()
+      },
     })
     textareaRef.current?.focus()
   }
@@ -562,6 +770,58 @@ export function ChatPanel({ projectId }: Props) {
       setInput(input.replace(/@\S*$/, ""))
     } else if (option.type === "terminal") {
       setInput(input.replace(/@\S*$/, `@${option.display} `))
+    } else if (option.id === "__url__") {
+      // @url: prompt user for URL, then fetch content
+      const url = prompt("Enter URL to fetch:")
+      setInput(input.replace(/@\S*$/, ""))
+      if (url) {
+        toast("Fetching URL...", { duration: 2000 })
+        fetch("/api/fetch-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.content) {
+              const lines = data.content.split("\n")
+              useChatContextStore.getState().addQuote({
+                source: "file",
+                container: "web",
+                filePath: url,
+                fileName: new URL(url).hostname + new URL(url).pathname.slice(0, 30),
+                language: data.contentType?.includes("json") ? "json" : data.contentType?.includes("html") ? "html" : "text",
+                text: data.content,
+                lineCount: lines.length,
+              })
+              toast.success("URL content attached")
+            } else {
+              toast.error(data.error || "Failed to fetch URL")
+            }
+          })
+          .catch(() => toast.error("Failed to fetch URL"))
+      }
+    } else if (option.type === "file" && option.fileMeta) {
+      // Fetch file content and add as context quote
+      const meta = option.fileMeta
+      setInput(input.replace(/@\S*$/, ""))
+      fetch(`/api/files/${meta.container}/read?path=${encodeURIComponent(meta.path)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.content) {
+            const lines = data.content.split("\n")
+            useChatContextStore.getState().addQuote({
+              source: "file",
+              container: meta.container,
+              filePath: meta.path,
+              fileName: meta.path.split("/").pop() || meta.path,
+              language: meta.language,
+              text: data.content,
+              lineCount: lines.length,
+            })
+          }
+        })
+        .catch(() => {})
     }
     textareaRef.current?.focus()
   }
@@ -597,11 +857,105 @@ export function ChatPanel({ projectId }: Props) {
       }
     }
 
+    // Message history navigation (ArrowUp/Down when no popover)
+    if (e.key === "ArrowUp" && historyRef.current.length > 0) {
+      const ta = textareaRef.current
+      const cursorAtStart = !ta || ta.selectionStart === 0
+      if (cursorAtStart) {
+        e.preventDefault()
+        if (historyIndexRef.current === -1) {
+          draftRef.current = input
+          historyIndexRef.current = historyRef.current.length - 1
+        } else if (historyIndexRef.current > 0) {
+          historyIndexRef.current--
+        }
+        setInput(historyRef.current[historyIndexRef.current])
+        return
+      }
+    }
+    if (e.key === "ArrowDown" && historyIndexRef.current !== -1) {
+      const ta = textareaRef.current
+      const cursorAtEnd = !ta || ta.selectionStart === ta.value.length
+      if (cursorAtEnd) {
+        e.preventDefault()
+        if (historyIndexRef.current < historyRef.current.length - 1) {
+          historyIndexRef.current++
+          setInput(historyRef.current[historyIndexRef.current])
+        } else {
+          historyIndexRef.current = -1
+          setInput(draftRef.current)
+        }
+        return
+      }
+    }
+
+    // Escape: clear input or close search
+    if (e.key === "Escape") {
+      if (searchOpen) {
+        setSearchOpen(false)
+        setSearchQuery("")
+        textareaRef.current?.focus()
+        return
+      }
+      if (input) {
+        e.preventDefault()
+        setInput("")
+        return
+      }
+    }
+
+    // Ctrl+Shift+Backspace: undo last exchange
+    if (e.key === "Backspace" && e.ctrlKey && e.shiftKey) {
+      e.preventDefault()
+      if (activeSessionId) {
+        const ok = useSessionStore.getState().undoLastExchange(activeSessionId)
+        if (ok) toast.success("Undone last exchange")
+        else toast.error("Nothing to undo")
+      }
+      return
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
     }
   }
+
+  // ── Fork & Retry handlers ──────────────────────────────────
+  const handleFork = useCallback((messageId: string) => {
+    if (!activeSessionId) return
+    const forked = useSessionStore.getState().forkSession(activeSessionId, messageId)
+    if (forked) toast.success(`Forked: ${forked.title}`)
+  }, [activeSessionId])
+
+  const handleRetry = useCallback(() => {
+    if (!activeSessionId || streaming) return
+    // Remove last assistant message, re-send the last user message
+    const msgs = useSessionStore.getState().getActiveMessages()
+    if (msgs.length < 2) return
+    const lastAssistant = msgs[msgs.length - 1]
+    if (lastAssistant.role !== "assistant") return
+    // Remove last assistant
+    useSessionStore.getState().removeLastMessages(activeSessionId, 1)
+    // Re-trigger send with last user message content
+    const lastUser = msgs[msgs.length - 2]
+    if (lastUser?.role === "user") {
+      setInput(lastUser.content)
+      // Small delay to let state update, then auto-send
+      setTimeout(() => {
+        handleSend()
+      }, 100)
+    }
+  }, [activeSessionId, streaming])
+
+  // Find last assistant message id for retry button
+  // NOTE: Must be called before the early return to maintain consistent hook ordering
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return messages[i].id
+    }
+    return null
+  }, [messages])
 
   // No active session — empty state
   if (!activeSession) {
@@ -620,6 +974,39 @@ export function ChatPanel({ projectId }: Props) {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Search bar */}
+      {searchOpen && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-surface-1 border-b border-border-weak">
+          <Search className="w-3.5 h-3.5 text-text-weaker shrink-0" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setSearchOpen(false)
+                setSearchQuery("")
+                textareaRef.current?.focus()
+              }
+            }}
+            placeholder="Search messages..."
+            className="flex-1 text-xs bg-transparent text-text-base placeholder-text-weaker focus:outline-none font-sans"
+            autoFocus
+          />
+          {searchResults && (
+            <span className="text-[10px] text-text-weaker font-sans tabular-nums">
+              {searchResults.length} match{searchResults.length !== 1 ? "es" : ""}
+            </span>
+          )}
+          <button
+            onClick={() => { setSearchOpen(false); setSearchQuery("") }}
+            className="p-0.5 rounded hover:bg-surface-2 text-text-weaker"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
       {/* Messages */}
       <div
         ref={containerRef}
@@ -636,18 +1023,23 @@ export function ChatPanel({ projectId }: Props) {
             </p>
           </div>
         ) : (
-          messages.map((msg) => (
-            <MessageBubble
-              key={msg.id}
-              message={msg}
-              isStreaming={
-                streaming &&
-                msg.id === streamingMsgIdRef.current &&
-                (!msg.parts || msg.parts.length === 0) &&
-                msg.content === ""
-              }
-            />
-          ))
+          messages
+            .filter((msg) => !searchResults || searchResults.includes(msg.id))
+            .map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isStreaming={
+                  streaming &&
+                  msg.id === streamingMsgIdRef.current &&
+                  (!msg.parts || msg.parts.length === 0) &&
+                  msg.content === ""
+                }
+                isLastAssistant={msg.id === lastAssistantId}
+                onFork={handleFork}
+                onRetry={handleRetry}
+              />
+            ))
         )}
       </div>
 
@@ -757,8 +1149,24 @@ export function ChatPanel({ projectId }: Props) {
         )
       })()}
 
+      {/* Operations tracker */}
+      <OperationsTracker />
+
       {/* Input area */}
-      <div className="shrink-0 border-t border-border-weak">
+      <div
+        className="shrink-0 border-t border-border-weak relative"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
+        {/* Drag overlay */}
+        {draggingOver && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-lg pointer-events-none">
+            <span className="text-xs text-accent font-sans font-medium">Drop image here</span>
+          </div>
+        )}
+        {/* Image attachments */}
+        <ImageAttachments images={images} onRemove={removeImage} />
         {/* Terminal context quotes */}
         {quotes.length > 0 && (
           <ContextQuotes quotes={quotes} onRemove={removeQuote} onClear={clearQuotes} />
@@ -797,6 +1205,7 @@ export function ChatPanel({ projectId }: Props) {
               value={input}
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder={hasTerminals ? "Message, /command, or @mention..." : "Open a terminal to start chatting..."}
               rows={1}
               disabled={!hasTerminals}
@@ -812,7 +1221,7 @@ export function ChatPanel({ projectId }: Props) {
             ) : (
               <button
                 onClick={handleSend}
-                disabled={!hasTerminals || (!input.trim() && quotes.length === 0)}
+                disabled={!hasTerminals || (!input.trim() && quotes.length === 0 && images.length === 0)}
                 className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
               >
                 <Send className="w-3.5 h-3.5" />

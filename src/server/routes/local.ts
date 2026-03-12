@@ -72,10 +72,24 @@ localRoutes.post("/local/models/download", async (c) => {
   }
 
   return streamSSE(c, async (stream) => {
-    for await (const progress of downloadModel(modelDef)) {
+    try {
+      for await (const progress of downloadModel(modelDef)) {
+        await stream.writeSSE({
+          event: "progress",
+          data: JSON.stringify(progress),
+        })
+      }
+    } catch (err) {
       await stream.writeSSE({
         event: "progress",
-        data: JSON.stringify(progress),
+        data: JSON.stringify({
+          modelId,
+          status: "error",
+          downloadedMB: 0,
+          totalMB: modelDef.fileSizeMB,
+          percent: 0,
+          error: (err as Error).message || "Download failed",
+        }),
       })
     }
   })

@@ -7,7 +7,7 @@ import { useWebSocket } from "../../hooks/useWebSocket"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
 import { SettingsDialog } from "../settings/SettingsDialog"
-import { type LayoutState, loadLayout, saveLayout } from "./layoutPersistence"
+import { type LayoutState, type LayoutPreset, loadLayout, saveLayout, LAYOUT_PRESETS } from "./layoutPersistence"
 import { IconRail } from "./IconRail"
 import { ChatSidePanel } from "./ChatSidePanel"
 import { FilesSidePanel } from "./FilesSidePanel"
@@ -115,6 +115,10 @@ export function WorkspaceLayout({ project }: Props) {
     setLayout((l) => ({ ...l, bottomPanelOpen: !l.bottomPanelOpen })), [setLayout])
   const swapPanels = useCallback(() =>
     setLayout((l) => ({ ...l, swapped: !l.swapped })), [setLayout])
+  const applyPreset = useCallback((preset: LayoutPreset) => {
+    const p = LAYOUT_PRESETS[preset]
+    setLayout((l) => ({ ...l, ...p.panels, activePreset: preset }))
+  }, [setLayout])
 
   // Determine which panel is on which side
   const filesOnLeft = !layout.swapped
@@ -195,6 +199,8 @@ export function WorkspaceLayout({ project }: Props) {
             onToggleChatPanel={toggleChatPanel}
             onToggleBottomPanel={toggleBottomPanel}
             onSwapPanels={swapPanels}
+            activePreset={layout.activePreset}
+            onApplyPreset={applyPreset}
           />
 
           {/* Left side panel */}

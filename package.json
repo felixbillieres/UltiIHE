@@ -28,6 +28,7 @@
     "@ai-sdk/togetherai": "^2.0.39",
     "@ai-sdk/xai": "^3.0.67",
     "@hono/node-server": "^1.13.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@monaco-editor/react": "^4.7.0",
     "@openrouter/ai-sdk-provider": "^2.2.5",
     "@xterm/addon-fit": "^0.10.0",

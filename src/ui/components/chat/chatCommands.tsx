@@ -1,5 +1,6 @@
 import { useMemo } from "react"
 import { useTerminalStore } from "../../stores/terminal"
+import { useFileStore } from "../../stores/files"
 import { AGENTS, type AgentId } from "../../stores/settings"
 import {
   Bot,
@@ -9,6 +10,12 @@ import {
   Swords,
   ClipboardList,
   Hash,
+  FileText,
+  MessageSquarePlus,
+  Minimize2,
+  Undo2,
+  Cpu,
+  Link,
 } from "lucide-react"
 
 export interface SlashCommand {
@@ -21,17 +28,24 @@ export interface SlashCommand {
 }
 
 export interface AtOption {
-  type: "agent" | "terminal"
+  type: "agent" | "terminal" | "file"
   id: string
   display: string
   description?: string
   icon: React.ReactNode
+  /** For file type: container and path */
+  fileMeta?: { container: string; path: string; language: string }
 }
 
 export interface SlashContext {
   setInput: (text: string) => void
   setAgent: (agent: AgentId) => void
   cycleThinkingEffort: () => void
+  newSession: () => void
+  compact: () => void
+  undo: () => void
+  openModelPicker: () => void
+  focusTerminal: () => void
 }
 
 export function useSlashCommands(): SlashCommand[] {
@@ -108,6 +122,61 @@ export function useSlashCommands(): SlashCommand[] {
         icon: <Hash className="w-3.5 h-3.5" />,
         action: (ctx) => ctx.setInput(""),
       },
+      {
+        id: "new",
+        trigger: "new",
+        title: "New session",
+        description: "Create a fresh chat session",
+        icon: <MessageSquarePlus className="w-3.5 h-3.5" />,
+        action: (ctx) => {
+          ctx.newSession()
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "compact",
+        trigger: "compact",
+        title: "Compact context",
+        description: "Summarize old messages to free tokens",
+        icon: <Minimize2 className="w-3.5 h-3.5" />,
+        action: (ctx) => {
+          ctx.compact()
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "undo",
+        trigger: "undo",
+        title: "Undo last exchange",
+        description: "Remove last user+assistant message pair",
+        icon: <Undo2 className="w-3.5 h-3.5" />,
+        action: (ctx) => {
+          ctx.undo()
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "model",
+        trigger: "model",
+        title: "Change model",
+        description: "Open the model picker",
+        icon: <Cpu className="w-3.5 h-3.5" />,
+        action: (ctx) => {
+          ctx.openModelPicker()
+          ctx.setInput("")
+        },
+      },
+      {
+        id: "terminal",
+        trigger: "terminal",
+        title: "Focus terminal",
+        description: "Switch focus to the active terminal",
+        icon: <Terminal className="w-3.5 h-3.5" />,
+        action: (ctx) => {
+          ctx.focusTerminal()
+          ctx.setInput("")
+        },
+      },
     ],
     [],
   )
@@ -115,6 +184,7 @@ export function useSlashCommands(): SlashCommand[] {
 
 export function useAtOptions(): AtOption[] {
   const terminals = useTerminalStore((s) => s.terminals)
+  const openFiles = useFileStore((s) => s.openFiles)
 
   return useMemo(() => {
     const agents: AtOption[] = AGENTS.map((a) => ({
@@ -138,6 +208,23 @@ export function useAtOptions(): AtOption[] {
       icon: <Terminal className="w-3.5 h-3.5 text-text-weaker" />,
     }))
 
-    return [...agents, ...terms]
-  }, [terminals])
+    const files: AtOption[] = openFiles.map((f) => ({
+      type: "file" as const,
+      id: f.id,
+      display: f.filename,
+      description: `${f.container}:${f.path}`,
+      icon: <FileText className="w-3.5 h-3.5 text-blue-400" />,
+      fileMeta: { container: f.container, path: f.path, language: f.language },
+    }))
+
+    const urlOption: AtOption = {
+      type: "file" as const,
+      id: "__url__",
+      display: "url",
+      description: "Fetch a URL and attach its content",
+      icon: <Link className="w-3.5 h-3.5 text-green-400" />,
+    }
+
+    return [urlOption, ...agents, ...terms, ...files]
+  }, [terminals, openFiles])
 }

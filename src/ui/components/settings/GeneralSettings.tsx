@@ -3,9 +3,10 @@ import {
   THEMES,
   type Language,
 } from "../../stores/settings"
-import { t, type TranslationKey } from "../../i18n/translations"
-import { Globe, Monitor, Sun, Moon } from "lucide-react"
+import { t } from "../../i18n/translations"
+import { Globe, Volume2, VolumeX, Play } from "lucide-react"
 import { Section } from "./SettingsSection"
+import { SOUND_OPTIONS, previewSound } from "../../utils/sound"
 
 export const LANGUAGE_LABELS: Record<Language, string> = {
   en: "English", fr: "Fran\u00e7ais", de: "Deutsch", es: "Espa\u00f1ol", ja: "\u65e5\u672c\u8a9e", zh: "\u4e2d\u6587",
@@ -18,8 +19,10 @@ const MONO_FONTS = [
 
 export function GeneralSettings() {
   const {
-    activeTheme, colorScheme, fontSize, fontFamily, language: lang,
-    setTheme, setColorScheme, setFontSize, setFontFamily, setLanguage,
+    activeTheme, fontSize, fontFamily, language: lang,
+    soundEnabled, soundId,
+    setTheme, setFontSize, setFontFamily, setLanguage,
+    setSoundEnabled, setSoundId,
   } = useSettingsStore()
 
   return (
@@ -45,29 +48,6 @@ export function GeneralSettings() {
               <span className="text-[10px] text-text-base font-sans">{theme.name}</span>
             </button>
           ))}
-        </div>
-      </Section>
-
-      {/* Color scheme */}
-      <Section title={t(lang, "settings.general.colorScheme")}>
-        <div className="flex gap-2">
-          {(["dark", "light", "system"] as const).map((scheme) => {
-            const Icon = scheme === "dark" ? Moon : scheme === "light" ? Sun : Monitor
-            return (
-              <button
-                key={scheme}
-                onClick={() => setColorScheme(scheme)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-sans transition-colors ${
-                  colorScheme === scheme
-                    ? "bg-accent/8 text-accent border border-accent/30"
-                    : "bg-surface-0 text-text-weak border border-border-weak hover:border-border-base"
-                }`}
-              >
-                <Icon className="w-3 h-3" />
-                {t(lang, `theme.scheme.${scheme}` as TranslationKey)}
-              </button>
-            )
-          })}
         </div>
       </Section>
 
@@ -112,6 +92,51 @@ export function GeneralSettings() {
               {label}
             </button>
           ))}
+        </div>
+      </Section>
+
+      {/* Sounds */}
+      <Section title="Sounds">
+        <div className="space-y-3">
+          {/* Toggle switch */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <button
+              role="switch"
+              aria-checked={soundEnabled}
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              className={`relative w-9 h-5 rounded-full transition-colors ${
+                soundEnabled ? "bg-accent" : "bg-surface-3"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  soundEnabled ? "translate-x-4" : "translate-x-0"
+                }`}
+              />
+            </button>
+            <span className="flex items-center gap-1.5 text-xs text-text-base font-sans">
+              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-accent" /> : <VolumeX className="w-3.5 h-3.5 text-text-weaker" />}
+              {soundEnabled ? "Sound on" : "Sound off"}
+            </span>
+          </label>
+          {soundEnabled && (
+            <div className="flex gap-2 flex-wrap">
+              {SOUND_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  onClick={() => { setSoundId(opt.id); previewSound(opt.id) }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-sans transition-colors ${
+                    soundId === opt.id
+                      ? "bg-accent/8 text-accent border border-accent/30"
+                      : "bg-surface-0 text-text-weak border border-border-weak hover:border-border-base"
+                  }`}
+                >
+                  <Play className="w-2.5 h-2.5" />
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </Section>
     </div>

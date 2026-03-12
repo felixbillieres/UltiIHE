@@ -21,6 +21,7 @@ import {
 import { resolveContextWindow, preWarmModel } from "./contextResolver"
 import { normalizeMessages, getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withProviderTransforms, sanitizeSchema } from "./providerTransforms"
 import { invalidTool, buildRepairCallback, createDoomLoopTracker } from "./toolResilience"
+import { getMCPTools } from "../../../ai/mcp/client"
 
 export const chatRoutes = new Hono()
 
@@ -196,6 +197,7 @@ chatRoutes.post("/chat", async (c) => {
     mode = "build",
     agent = "build",
     thinkingEffort = "off",
+    images = [],
   } = body as {
     messages: any[]
     providerId: string
@@ -207,6 +209,7 @@ chatRoutes.post("/chat", async (c) => {
     mode?: ReasoningMode
     agent?: AgentId
     thinkingEffort?: ThinkingEffort
+    images?: Array<{ mime: string; dataUrl: string }>
   }
 
   if (!messages || !providerId || !modelId) {
@@ -282,6 +285,10 @@ chatRoutes.post("/chat", async (c) => {
     tools = limited
   }
 
+  // Merge MCP tools from connected servers
+  const mcpTools = getMCPTools()
+  tools = { ...tools, ...mcpTools }
+
   // Add InvalidTool for repair fallback (hidden from model via activeTools)
   tools = { ...tools, invalid: invalidTool }
 
@@ -289,6 +296,27 @@ chatRoutes.post("/chat", async (c) => {
   // Note: message normalization (empty content, tool IDs, etc.) is now handled
   // by the wrapLanguageModel middleware — applied at the AI SDK level like OpenCode.
   let processedMessages = [...messages]
+
+  // ── Inject images into last user message ─────────────────
+  if (images.length > 0) {
+    for (let i = processedMessages.length - 1; i >= 0; i--) {
+      if (processedMessages[i].role === "user") {
+        const msg = processedMessages[i]
+        const textContent = typeof msg.content === "string" ? msg.content : ""
+        const parts: any[] = []
+        for (const img of images) {
+          const match = img.dataUrl.match(/^data:([^;]+);base64,(.+)$/)
+          if (match) {
+            parts.push({ type: "image", image: match[2], mimeType: match[1] })
+          }
+        }
+        parts.push({ type: "text", text: textContent })
+        processedMessages[i] = { ...msg, content: parts }
+        break
+      }
+    }
+  }
+
   const currentTokens = estimateMessagesTokens(processedMessages)
   if (shouldPrune(currentTokens, budget)) {
     const { messages: pruned } = pruneMessages(processedMessages)
@@ -327,6 +355,13 @@ chatRoutes.post("/chat", async (c) => {
 
     let capturedError: unknown = null
 
+    // Abort signal: cancels streamText when client disconnects
+    const abortController = new AbortController()
+    const clientSignal = c.req.raw.signal
+    if (clientSignal) {
+      clientSignal.addEventListener("abort", () => abortController.abort(), { once: true })
+    }
+
     let result
     try {
       result = streamText({
@@ -338,6 +373,7 @@ chatRoutes.post("/chat", async (c) => {
         activeTools: Object.keys(tools).filter((t) => t !== "invalid"),
         stopWhen: stepCountIs(30),
         providerOptions,
+        abortSignal: abortController.signal,
         // Sampling defaults (provider-specific)
         ...(sampling.temperature !== undefined && { temperature: sampling.temperature }),
         ...(sampling.topP !== undefined && { topP: sampling.topP }),
@@ -498,8 +534,18 @@ chatRoutes.post("/chat", async (c) => {
     const postTokens = estimateMessagesTokens(processedMessages)
     const needsCompaction = shouldCompact(postTokens, budget)
 
+    // Track running tool call IDs for abort cleanup
+    const runningToolCalls = new Set<string>()
+
     const encoder = new TextEncoder()
     const stream = new ReadableStream({
+      cancel() {
+        // Client disconnected — abort the AI stream so tool calls stop
+        abortController.abort()
+        // Note: running tool calls will be marked as interrupted on the frontend
+        // via the handleStop() cleanup (ChatPanel.tsx)
+        console.log(`[Chat] Client disconnected, aborting stream (${runningToolCalls.size} tool calls interrupted)`)
+      },
       async start(controller) {
         // Emit buffered events
         for (const evt of bufferedEvents) {
@@ -531,8 +577,10 @@ chatRoutes.post("/chat", async (c) => {
                 })))
                 break
               case "tool-call": {
+                const toolCallId = (part as any).toolCallId
+                runningToolCalls.add(toolCallId)
                 controller.enqueue(encoder.encode(sse("tool-call", {
-                  id: (part as any).toolCallId,
+                  id: toolCallId,
                   tool: (part as any).toolName,
                   args: (part as any).args,
                 })))
@@ -549,13 +597,16 @@ chatRoutes.post("/chat", async (c) => {
                 }
                 break
               }
-              case "tool-result":
+              case "tool-result": {
+                const resultId = (part as any).toolCallId
+                runningToolCalls.delete(resultId)
                 controller.enqueue(encoder.encode(sse("tool-result", {
-                  id: (part as any).toolCallId,
+                  id: resultId,
                   output: truncateOutput(String((part as any).result ?? "")),
                   isError: false,
                 })))
                 break
+              }
               case "error":
                 controller.enqueue(encoder.encode(sse("error", {
                   message: extractErrorMessage(part.error),
@@ -564,9 +615,21 @@ chatRoutes.post("/chat", async (c) => {
             }
           }
         } catch (err) {
-          controller.enqueue(encoder.encode(sse("error", {
-            message: extractErrorMessage(err),
-          })))
+          // If aborted, emit abort events for any running tool calls
+          if (abortController.signal.aborted && runningToolCalls.size > 0) {
+            for (const id of runningToolCalls) {
+              controller.enqueue(encoder.encode(sse("tool-result", {
+                id,
+                output: "[Interrupted by user]",
+                isError: true,
+              })))
+            }
+            runningToolCalls.clear()
+          } else {
+            controller.enqueue(encoder.encode(sse("error", {
+              message: extractErrorMessage(err),
+            })))
+          }
         }
         controller.enqueue(encoder.encode(sse("done", {})))
         controller.close()

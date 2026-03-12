@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/exegol-favicon.png" />
     <title>Exegol IHE</title>
+    <script>
+      // Theme preload: apply color scheme before React renders to avoid flash
+      (function() {
+        try {
+          var raw = localStorage.getItem('ultiIHE-settings');
+          var scheme = raw ? JSON.parse(raw).state.colorScheme : 'dark';
+          if (!scheme) scheme = 'dark';
+          var isDark = scheme === 'dark' || (scheme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', isDark);
+          document.documentElement.classList.toggle('light', !isDark);
+          document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+        } catch(e) {}
+      })();
+    </script>
     <style>
       :root {
         /* Neutral gray palette inspired by OpenCode / VS Code Dark+ */

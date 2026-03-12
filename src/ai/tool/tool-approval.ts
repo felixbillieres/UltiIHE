@@ -22,6 +22,7 @@ interface PendingApproval {
   /** Whether this is a new file creation */
   isNewFile?: boolean
   resolve: (approved: boolean) => void
+  timeoutId: ReturnType<typeof setTimeout>
 }
 
 class ToolApprovalQueue {
@@ -64,6 +65,13 @@ class ToolApprovalQueue {
     const id = randomUUID()
 
     return new Promise<boolean>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id)
+          resolve(false)
+        }
+      }, 120_000)
+
       this.pending.set(id, {
         id,
         toolName,
@@ -73,6 +81,7 @@ class ToolApprovalQueue {
         fileKey: extra?.fileKey,
         isNewFile: extra?.isNewFile,
         resolve,
+        timeoutId,
       })
 
       this.broadcast?.({
@@ -85,14 +94,6 @@ class ToolApprovalQueue {
         fileKey: extra?.fileKey,
         isNewFile: extra?.isNewFile,
       })
-
-      // 2 minute timeout → auto-reject
-      setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          resolve(false)
-        }
-      }, 120_000)
     })
   }
 
@@ -100,6 +101,7 @@ class ToolApprovalQueue {
     const entry = this.pending.get(id)
     if (!entry) return
     this.pending.delete(id)
+    clearTimeout(entry.timeoutId)
 
     if (allowAlways) {
       this.alwaysAllowed.add(entry.toolName)
@@ -112,6 +114,7 @@ class ToolApprovalQueue {
     const entry = this.pending.get(id)
     if (!entry) return
     this.pending.delete(id)
+    clearTimeout(entry.timeoutId)
     entry.resolve(false)
   }
 
@@ -119,27 +122,29 @@ class ToolApprovalQueue {
    * Approve all pending file operation approvals at once.
    */
   approveAll(allowAlways = false) {
-    for (const [id, entry] of this.pending) {
+    for (const [, entry] of this.pending) {
+      clearTimeout(entry.timeoutId)
       if (allowAlways) {
         this.alwaysAllowed.add(entry.toolName)
       }
       entry.resolve(true)
-      this.pending.delete(id)
     }
+    this.pending.clear()
   }
 
   /**
    * Reject all pending approvals at once.
    */
   rejectAll() {
-    for (const [id, entry] of this.pending) {
+    for (const [, entry] of this.pending) {
+      clearTimeout(entry.timeoutId)
       entry.resolve(false)
-      this.pending.delete(id)
     }
+    this.pending.clear()
   }
 
   getPending() {
-    return Array.from(this.pending.values()).map(({ resolve: _, ...rest }) => rest)
+    return Array.from(this.pending.values()).map(({ resolve: _, timeoutId: __, ...rest }) => rest)
   }
 }
 

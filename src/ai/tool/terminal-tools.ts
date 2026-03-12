@@ -120,6 +120,7 @@ export const terminalWriteTool: Tool<
       const normalizedInput = input.replace(/\\n/g, "\n")
 
       // Queue the command for user approval (or auto-run if enabled)
+      // Pool logic: if terminal is busy, command-queue may redirect to another terminal
       const result = await commandQueue.enqueue({
         terminalId,
         terminalName: terminal.name,
@@ -127,7 +128,13 @@ export const terminalWriteTool: Tool<
       })
 
       if (result.approved) {
-        return { success: true, terminalId, status: "executed" }
+        return {
+          success: true,
+          terminalId: result.actualTerminalId || terminalId,
+          status: result.actualTerminalId && result.actualTerminalId !== terminalId
+            ? `executed (redirected to pool terminal)`
+            : "executed",
+        }
       } else {
         return { success: false, terminalId, status: "rejected" }
       }

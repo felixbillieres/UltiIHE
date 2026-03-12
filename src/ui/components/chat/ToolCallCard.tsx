@@ -97,26 +97,19 @@ function formatDuration(startTime: number, endTime?: number): string {
 
 export function ToolCallCard({ part }: { part: ToolCallPart }) {
   const [expanded, setExpanded] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
   const meta = getToolMeta(part.tool)
   const summary = getArgsSummary(part.tool, part.args)
   const duration = formatDuration(part.startTime, part.endTime)
   const { Icon } = meta
   const isCompleted = part.status === "completed" || part.status === "error"
+  const hasOutput = !!part.output
 
-  // Auto-collapse when tool finishes
-  useEffect(() => {
-    if (isCompleted) {
-      setCollapsed(true)
-    }
-  }, [isCompleted])
-
-  // Collapsed: single-line pill
-  if (collapsed && isCompleted) {
+  // Collapsed pill (completed, not expanded)
+  if (isCompleted && !expanded) {
     return (
       <button
-        onClick={() => setCollapsed(false)}
-        className="my-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-0/50 border border-border-weak hover:bg-surface-1/50 transition-colors text-left"
+        onClick={() => { if (hasOutput) setExpanded(true) }}
+        className={`my-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-0/50 border border-border-weak transition-colors text-left ${hasOutput ? "hover:bg-surface-1/50 cursor-pointer" : "cursor-default"}`}
       >
         <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 ${
           part.status === "error" ? "bg-red-400/15" : "bg-emerald-400/15"
@@ -130,6 +123,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
         <span className="text-[11px] text-text-weaker">{meta.name}</span>
         {summary && <span className="text-[10px] text-text-weaker/60 truncate max-w-[200px] font-mono">{summary}</span>}
         {duration && <span className="text-[10px] text-text-weaker/60 tabular-nums">{duration}</span>}
+        {hasOutput && <ChevronDown className="w-2.5 h-2.5 text-text-weaker/60 shrink-0" />}
       </button>
     )
   }
@@ -137,10 +131,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
   return (
     <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
       <button
-        onClick={() => {
-          if (isCompleted) setCollapsed(true)
-          else setExpanded(!expanded)
-        }}
+        onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
         {/* Status indicator */}
@@ -181,7 +172,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
         )}
 
         {/* Expand indicator */}
-        {part.output && (
+        {hasOutput && (
           <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         )}
       </button>

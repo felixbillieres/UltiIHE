@@ -226,6 +226,17 @@ export const useLocalAIStore = create<LocalAIStore>()((set, get) => ({
         body: JSON.stringify({ modelId }),
       })
 
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => `HTTP ${res.status}`)
+        set((s) => ({
+          downloads: {
+            ...s.downloads,
+            [modelId]: { modelId, status: "error" as const, downloadedMB: 0, totalMB: 0, percent: 0, error: errorText },
+          },
+        }))
+        return
+      }
+
       const reader = res.body?.getReader()
       if (!reader) return
       const decoder = new TextDecoder()
@@ -253,6 +264,20 @@ export const useLocalAIStore = create<LocalAIStore>()((set, get) => ({
           }
         }
       }
+    } catch (err) {
+      set((s) => ({
+        downloads: {
+          ...s.downloads,
+          [modelId]: {
+            modelId,
+            status: "error" as const,
+            downloadedMB: 0,
+            totalMB: 0,
+            percent: 0,
+            error: (err as Error).message || "Download failed",
+          },
+        },
+      }))
     } finally {
       // Refresh model list
       await get().fetchModels()

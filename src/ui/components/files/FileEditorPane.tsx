@@ -124,8 +124,13 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
 
   useEffect(() => {
     return () => {
-      const ed = editorRef.current as any
-      if (ed?._ultiCleanup) ed._ultiCleanup()
+      const ed = editorRef.current
+      if (!ed) return
+      // Run cleanup for event listeners
+      if ((ed as any)._ultiCleanup) (ed as any)._ultiCleanup()
+      // Dispose Monaco editor instance to free memory
+      ed.dispose()
+      editorRef.current = null
     }
   }, [])
 

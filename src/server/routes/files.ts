@@ -13,7 +13,8 @@ function validatePath(path: string): boolean {
   if (!path.startsWith("/")) return false
   if (path.includes("..")) return false
   if (path.includes("\0")) return false
-  return /^\/[a-zA-Z0-9_./ -]*$/.test(path)
+  // Whitelist: alphanumeric, common path chars. Blocks shell metacharacters (;|&$`'"(){}!<>)
+  return /^\/[a-zA-Z0-9_./ @+:,~#%-]*$/.test(path)
 }
 
 const PROTECTED_ROOTS = new Set([
@@ -73,6 +74,18 @@ filesRoutes.get("/files/:container/read", async (c) => {
       return c.json({ error: "File too large (> 5MB)" }, 413)
     }
 
+    // Base64 mode for binary files (images dragged to chat)
+    const base64 = c.req.query("base64")
+    if (base64 === "true") {
+      const result = await execAsync(`docker exec ${container} base64 -w0 "${path}"`)
+      const ext = path.split(".").pop()?.toLowerCase() || ""
+      const mimeMap: Record<string, string> = {
+        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+        gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp",
+      }
+      return c.json({ base64: result.stdout.trim(), mime: mimeMap[ext] || "application/octet-stream", size })
+    }
+
     const result = await execAsync(`docker exec ${container} cat "${path}"`)
     return c.json({ content: result.stdout, size })
   } catch (e) {
@@ -90,6 +103,8 @@ filesRoutes.post("/files/:container/write", async (c) => {
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
   if (typeof content !== "string") return c.json({ error: "Content must be a string" }, 400)
+  // Size limit: 10MB max for file writes
+  if (content.length > 10 * 1024 * 1024) return c.json({ error: "Content too large (> 10MB)" }, 413)
 
   try {
     const proc = Bun.spawn(["docker", "exec", "-i", container, "tee", path], {

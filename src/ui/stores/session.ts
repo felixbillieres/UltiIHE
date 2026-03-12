@@ -54,6 +54,8 @@ export interface Session {
 interface SessionStore {
   sessions: Session[]
   activeSessionId: string | null
+  /** Non-persisted undo buffer per session (last removed exchange) */
+  _undoBuffer: Record<string, Message[]>
 
   // Session CRUD
   createSession: (projectId: string, title?: string) => Session
@@ -68,6 +70,12 @@ interface SessionStore {
   updateMessage: (sessionId: string, messageId: string, updates: { content?: string; parts?: MessagePart[] }) => void
   getActiveMessages: () => Message[]
 
+  // Undo/Redo/Fork
+  undoLastExchange: (sessionId: string) => boolean
+  redoLastExchange: (sessionId: string) => boolean
+  forkSession: (sessionId: string, upToMessageId: string) => Session | null
+  removeLastMessages: (sessionId: string, count: number) => Message[]
+
   // Convenience
   getActiveSession: () => Session | undefined
   startNewChat: (projectId: string) => void
@@ -78,6 +86,7 @@ export const useSessionStore = create<SessionStore>()(
     (set, get) => ({
       sessions: [],
       activeSessionId: null,
+      _undoBuffer: {},
 
       createSession: (projectId, title) => {
         const session: Session = {
@@ -170,6 +179,79 @@ export const useSessionStore = create<SessionStore>()(
         }))
       },
 
+      undoLastExchange: (sessionId) => {
+        const session = get().sessions.find((s) => s.id === sessionId)
+        if (!session || session.messages.length < 2) return false
+        // Remove last assistant + user pair
+        const msgs = session.messages
+        const lastAssistant = msgs.length >= 1 && msgs[msgs.length - 1].role === "assistant" ? 1 : 0
+        const lastUser = msgs.length >= 2 && msgs[msgs.length - 1 - lastAssistant].role === "user" ? 1 : 0
+        const removeCount = lastAssistant + lastUser
+        if (removeCount === 0) return false
+        const removed = msgs.slice(-removeCount)
+        set((s) => ({
+          _undoBuffer: { ...s._undoBuffer, [sessionId]: removed },
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? { ...sess, messages: sess.messages.slice(0, -removeCount), updatedAt: Date.now() }
+              : sess,
+          ),
+        }))
+        return true
+      },
+
+      redoLastExchange: (sessionId) => {
+        const buffer = get()._undoBuffer[sessionId]
+        if (!buffer || buffer.length === 0) return false
+        set((s) => ({
+          _undoBuffer: { ...s._undoBuffer, [sessionId]: [] },
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? { ...sess, messages: [...sess.messages, ...buffer], updatedAt: Date.now() }
+              : sess,
+          ),
+        }))
+        return true
+      },
+
+      forkSession: (sessionId, upToMessageId) => {
+        const session = get().sessions.find((s) => s.id === sessionId)
+        if (!session) return null
+        const msgIdx = session.messages.findIndex((m) => m.id === upToMessageId)
+        if (msgIdx === -1) return null
+        const forkedMessages = session.messages.slice(0, msgIdx + 1).map((m) => ({
+          ...m,
+          id: crypto.randomUUID(),
+        }))
+        const forked: Session = {
+          id: crypto.randomUUID(),
+          projectId: session.projectId,
+          title: `${session.title} (fork)`,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          messages: forkedMessages,
+        }
+        set((s) => ({
+          sessions: [forked, ...s.sessions],
+          activeSessionId: forked.id,
+        }))
+        return forked
+      },
+
+      removeLastMessages: (sessionId, count) => {
+        const session = get().sessions.find((s) => s.id === sessionId)
+        if (!session) return []
+        const removed = session.messages.slice(-count)
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? { ...sess, messages: sess.messages.slice(0, -count), updatedAt: Date.now() }
+              : sess,
+          ),
+        }))
+        return removed
+      },
+
       getActiveMessages: () => {
         const state = get()
         if (!state.activeSessionId) return []
@@ -195,6 +277,7 @@ export const useSessionStore = create<SessionStore>()(
       partialize: (state) => ({
         sessions: state.sessions.slice(0, 50),
         activeSessionId: state.activeSessionId,
+        // _undoBuffer is intentionally excluded (ephemeral)
       }),
       // Migrate old sessions that lack `messages` or `parts`
       merge: (persisted, current) => {

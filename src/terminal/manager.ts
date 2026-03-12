@@ -1,8 +1,13 @@
 import { stripAnsi } from "./strip-ansi"
+import { opsTracker } from "./ops-tracker"
 import type { IPty } from "bun-pty"
 
 const CONTAINER_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 const RING_BUFFER_MAX_LINES = 1000
+const MAX_AI_POOL = 4
+
+// Prompt patterns for Exegol and common shells
+const PROMPT_RE = /[\$#>]\s*$/
 
 export interface Terminal {
   id: string
@@ -12,6 +17,12 @@ export interface Terminal {
   ringBuffer: string[]
   subscribers: Set<WebSocket>
   alive: boolean
+  /** Whether a command is currently executing */
+  busy: boolean
+  /** Whether this terminal was created by the AI (part of the pool) */
+  aiManaged: boolean
+  /** Timer for prompt detection debounce */
+  _idleTimer?: ReturnType<typeof setTimeout>
 }
 
 export type WsBroadcast = (terminalId: string, message: object) => void
@@ -35,10 +46,63 @@ class TerminalManager {
     this._broadcast = fn
   }
 
+  /** Get an idle AI-managed terminal for a container, or create one if under pool limit */
+  async getOrCreatePoolTerminal(container: string): Promise<Terminal | null> {
+    // Find idle AI terminal for this container
+    for (const t of this.terminals.values()) {
+      if (t.aiManaged && t.container === container && t.alive && !t.busy) {
+        return t
+      }
+    }
+    // Count AI terminals for this container
+    let aiCount = 0
+    for (const t of this.terminals.values()) {
+      if (t.aiManaged && t.container === container && t.alive) aiCount++
+    }
+    if (aiCount >= MAX_AI_POOL) return null // all busy, must queue
+    // Create a new pool terminal
+    const terminal = await this.createFromTool(container, `ai-ops-${aiCount + 1}`)
+    terminal.aiManaged = true
+    return terminal
+  }
+
+  /** Send SIGINT (Ctrl+C) to a terminal */
+  sendInterrupt(terminalId: string): void {
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal || !terminal.alive) return
+    terminal.process.write("\x03") // Ctrl+C
+    terminal.busy = false
+  }
+
+  /** Send SIGINT to all busy AI-managed terminals */
+  interruptAllAI(): number {
+    let count = 0
+    for (const t of this.terminals.values()) {
+      if (t.aiManaged && t.alive && t.busy) {
+        t.process.write("\x03")
+        t.busy = false
+        count++
+      }
+    }
+    return count
+  }
+
+  /** Mark a terminal as busy */
+  markBusy(terminalId: string): void {
+    const terminal = this.terminals.get(terminalId)
+    if (terminal) terminal.busy = true
+  }
+
+  /** Check if a terminal is busy */
+  isBusy(terminalId: string): boolean {
+    return this.terminals.get(terminalId)?.busy ?? false
+  }
+
   /** Create a terminal using the stored broadcast (for AI tool calls) */
   async createFromTool(container: string, name?: string): Promise<Terminal> {
     if (!this._broadcast) throw new Error("No broadcast function set — server not ready")
     const terminal = await this.create(container, name, this._broadcast)
+    terminal.aiManaged = true
     console.log(`[Terminal] AI-created: ${terminal.name} (${terminal.id}) on ${container}, broadcasting terminal:created`)
     // Notify frontend so it adds the tab — ws.ts handleTerminalCreate does this
     // for user-created terminals, but AI-created ones bypass that handler.
@@ -104,6 +168,8 @@ class TerminalManager {
       ringBuffer: [],
       subscribers: new Set(),
       alive: true,
+      busy: false,
+      aiManaged: false,
     }
 
     this.terminals.set(id, terminal)
@@ -122,6 +188,22 @@ class TerminalManager {
       }
       while (terminal.ringBuffer.length > RING_BUFFER_MAX_LINES) {
         terminal.ringBuffer.shift()
+      }
+
+      // Busy detection: after output stops for 300ms, check for prompt
+      if (terminal.busy) {
+        if (terminal._idleTimer) clearTimeout(terminal._idleTimer)
+        terminal._idleTimer = setTimeout(() => {
+          const lastLine = terminal.ringBuffer[terminal.ringBuffer.length - 1] || ""
+          if (PROMPT_RE.test(lastLine)) {
+            terminal.busy = false
+            opsTracker.completeByTerminal(terminal.id)
+            broadcast(terminal.id, {
+              type: "terminal:idle",
+              data: { terminalId: terminal.id },
+            })
+          }
+        }, 300)
       }
 
       // Send raw output to WebSocket clients (for xterm.js rendering)
@@ -184,8 +266,13 @@ class TerminalManager {
     if (!terminal) return
 
     terminal.alive = false
+    if (terminal._idleTimer) clearTimeout(terminal._idleTimer)
     try {
+      // SIGTERM first, then SIGKILL after 3s grace period (like OpenCode)
       terminal.process.kill()
+      setTimeout(() => {
+        try { terminal.process.kill("SIGKILL") } catch { /* already dead */ }
+      }, 3000)
     } catch {
       // already dead
     }

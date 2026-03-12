@@ -1,5 +1,6 @@
 import { type Project } from "../../stores/project"
 import { useCommandPalette } from "../../hooks/useCommandPalette"
+import { type LayoutPreset, LAYOUT_PRESETS } from "./layoutPersistence"
 import {
   Settings as SettingsIcon,
   Plus,
@@ -12,7 +13,20 @@ import {
   PanelBottomClose,
   PanelBottomOpen,
   ArrowLeftRight,
+  LayoutDashboard,
+  MessageSquare,
+  FileCode,
+  Monitor,
+  Radar,
 } from "lucide-react"
+
+const PRESET_ICONS: Record<LayoutPreset, React.ReactNode> = {
+  default: <LayoutDashboard className="w-3 h-3" />,
+  focus: <MessageSquare className="w-3 h-3" />,
+  editor: <FileCode className="w-3 h-3" />,
+  terminal: <Monitor className="w-3 h-3" />,
+  recon: <Radar className="w-3 h-3" />,
+}
 
 interface IconRailProps {
   project: Project
@@ -26,10 +40,12 @@ interface IconRailProps {
   chatPanelOpen: boolean
   bottomPanelOpen: boolean
   swapped: boolean
+  activePreset?: LayoutPreset
   onToggleFilesPanel: () => void
   onToggleChatPanel: () => void
   onToggleBottomPanel: () => void
   onSwapPanels: () => void
+  onApplyPreset?: (preset: LayoutPreset) => void
 }
 
 export function IconRail({
@@ -44,10 +60,12 @@ export function IconRail({
   chatPanelOpen,
   bottomPanelOpen,
   swapped,
+  activePreset,
   onToggleFilesPanel,
   onToggleChatPanel,
   onToggleBottomPanel,
   onSwapPanels,
+  onApplyPreset,
 }: IconRailProps) {
   const { open: openCommandPalette } = useCommandPalette()
   return (
@@ -149,6 +167,28 @@ export function IconRail({
             <PanelBottomOpen className="w-3.5 h-3.5" />
           )}
         </button>
+
+        <div className="w-6 h-px bg-border-weak/50 my-0.5" />
+
+        {/* Layout presets */}
+        {onApplyPreset && (
+          <div className="flex flex-col items-center gap-0.5">
+            {(Object.keys(LAYOUT_PRESETS) as LayoutPreset[]).map((preset) => (
+              <button
+                key={preset}
+                onClick={() => onApplyPreset(preset)}
+                className={`w-9 h-6 rounded flex items-center justify-center transition-colors shrink-0 ${
+                  activePreset === preset
+                    ? "text-accent bg-accent/10"
+                    : "text-text-weaker hover:bg-surface-2 hover:text-text-weak"
+                }`}
+                title={`${LAYOUT_PRESETS[preset].label} — ${LAYOUT_PRESETS[preset].description}`}
+              >
+                {PRESET_ICONS[preset]}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="w-6 h-px bg-border-weak/50 my-0.5" />
 

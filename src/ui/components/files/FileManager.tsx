@@ -425,13 +425,14 @@ export function FileManager({ containerIds }: FileManagerProps) {
         ) : viewMode === "list" ? (
           <ListView
             entries={sorted}
+            container={container}
             sortKey={sortKey}
             sortDir={sortDir}
             onSort={handleSort}
             onClick={handleEntryClick}
           />
         ) : (
-          <GridView entries={sorted} onClick={handleEntryClick} />
+          <GridView entries={sorted} container={container} onClick={handleEntryClick} />
         )}
       </div>
     </div>
@@ -473,14 +474,23 @@ function SortHeader({
   )
 }
 
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"])
+
+function isImageFile(name: string): boolean {
+  const ext = name.split(".").pop()?.toLowerCase() || ""
+  return IMAGE_EXTENSIONS.has(ext)
+}
+
 function ListView({
   entries,
+  container,
   sortKey,
   sortDir,
   onSort,
   onClick,
 }: {
   entries: FileEntry[]
+  container: string
   sortKey: SortKey
   sortDir: SortDir
   onSort: (key: SortKey) => void
@@ -495,27 +505,39 @@ function ListView({
         <SortHeader label="Modified" sortKey={sortKey} thisKey="modified" sortDir={sortDir} onSort={onSort} className="justify-end" />
       </div>
 
-      {entries.map((entry) => (
-        <button
-          key={entry.path}
-          onClick={() => onClick(entry)}
-          onDoubleClick={() => onClick(entry)}
-          className="w-full grid grid-cols-[1fr_80px_120px] gap-2 px-3 py-1 items-center hover:bg-surface-1 transition-colors group text-left"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            {entry.type === "dir" ? getDirIcon(entry.name) : getFileIcon(entry.name, entry.type)}
-            <span className="text-[12px] font-sans text-text-base truncate group-hover:text-text-strong">
-              {entry.name}
+      {entries.map((entry) => {
+        const draggable = entry.type === "file" && isImageFile(entry.name)
+        return (
+          <button
+            key={entry.path}
+            onClick={() => onClick(entry)}
+            onDoubleClick={() => onClick(entry)}
+            draggable={draggable}
+            onDragStart={draggable ? (e) => {
+              e.dataTransfer.setData("application/x-exegol-file", JSON.stringify({
+                container,
+                path: entry.path,
+                name: entry.name,
+              }))
+              e.dataTransfer.effectAllowed = "copy"
+            } : undefined}
+            className={`w-full grid grid-cols-[1fr_80px_120px] gap-2 px-3 py-1 items-center hover:bg-surface-1 transition-colors group text-left ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {entry.type === "dir" ? getDirIcon(entry.name) : getFileIcon(entry.name, entry.type)}
+              <span className="text-[12px] font-sans text-text-base truncate group-hover:text-text-strong">
+                {entry.name}
+              </span>
+            </div>
+            <span className="text-[11px] font-sans text-text-weaker text-right">
+              {entry.type === "file" ? formatSize(entry.size) : "-"}
             </span>
-          </div>
-          <span className="text-[11px] font-sans text-text-weaker text-right">
-            {entry.type === "file" ? formatSize(entry.size) : "-"}
-          </span>
-          <span className="text-[11px] font-sans text-text-weaker text-right">
-            {formatDate(entry.modified)}
-          </span>
-        </button>
-      ))}
+            <span className="text-[11px] font-sans text-text-weaker text-right">
+              {formatDate(entry.modified)}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -524,19 +546,32 @@ function ListView({
 
 function GridView({
   entries,
+  container,
   onClick,
 }: {
   entries: FileEntry[]
+  container: string
   onClick: (entry: FileEntry) => void
 }) {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-2">
       <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-1">
-        {entries.map((entry) => (
+        {entries.map((entry) => {
+          const draggable = entry.type === "file" && isImageFile(entry.name)
+          return (
           <button
             key={entry.path}
             onClick={() => onClick(entry)}
-            className="flex flex-col items-center gap-1 px-2 py-2 rounded-lg hover:bg-surface-1 transition-colors group"
+            draggable={draggable}
+            onDragStart={draggable ? (e) => {
+              e.dataTransfer.setData("application/x-exegol-file", JSON.stringify({
+                container,
+                path: entry.path,
+                name: entry.name,
+              }))
+              e.dataTransfer.effectAllowed = "copy"
+            } : undefined}
+            className={`flex flex-col items-center gap-1 px-2 py-2 rounded-lg hover:bg-surface-1 transition-colors group ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
           >
             <div className="w-10 h-10 flex items-center justify-center">
               {entry.type === "dir" ? (
@@ -551,7 +586,8 @@ function GridView({
               {entry.name}
             </span>
           </button>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

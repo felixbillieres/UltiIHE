@@ -1,4 +1,5 @@
 import { terminalManager } from "./manager"
+import { opsTracker } from "./ops-tracker"
 
 export interface PendingCommand {
   id: string
@@ -10,6 +11,7 @@ export interface PendingCommand {
 
 interface QueueEntry extends PendingCommand {
   resolve: (result: { approved: boolean }) => void
+  timeoutId: ReturnType<typeof setTimeout>
 }
 
 export type CommandApprovalMode = "ask" | "auto-run" | "allow-all-session"
@@ -44,28 +46,54 @@ class CommandQueue {
     terminalId: string
     terminalName: string
     command: string
-  }): Promise<{ approved: boolean }> {
+  }): Promise<{ approved: boolean; actualTerminalId?: string }> {
     const id = crypto.randomUUID()
+
+    // ── Pool logic: if target terminal is busy, auto-allocate ──
+    let targetId = opts.terminalId
+    let targetName = opts.terminalName
+    if (terminalManager.isBusy(targetId)) {
+      const terminal = terminalManager.getTerminal(targetId)
+      if (terminal) {
+        const poolTerm = await terminalManager.getOrCreatePoolTerminal(terminal.container)
+        if (poolTerm) {
+          targetId = poolTerm.id
+          targetName = poolTerm.name
+        }
+        // If pool is full, we'll wait for the terminal to be idle
+        // by queuing on the original terminal — it'll execute when prompt returns
+      }
+    }
 
     // Auto-run: execute immediately with typing effect
     if (this.mode === "auto-run" || this.mode === "allow-all-session") {
-      await terminalManager.writeTyping(opts.terminalId, opts.command)
+      terminalManager.markBusy(targetId)
+      opsTracker.start({ id, command: opts.command, terminalId: targetId, terminalName: targetName })
+      await terminalManager.writeTyping(targetId, opts.command)
       // Notify frontend that a command was auto-executed
       this.broadcast?.({
         type: "command:executed",
         data: {
           id,
-          terminalId: opts.terminalId,
-          terminalName: opts.terminalName,
+          terminalId: targetId,
+          terminalName: targetName,
           command: opts.command,
           auto: true,
         },
       })
-      return { approved: true }
+      return { approved: true, actualTerminalId: targetId }
     }
 
     // Ask mode: send to frontend, wait for approval
     return new Promise<{ approved: boolean }>((resolve) => {
+      // Timeout after 2 minutes — auto-reject
+      const timeoutId = setTimeout(() => {
+        if (this.pending.has(id)) {
+          this.pending.delete(id)
+          resolve({ approved: false })
+        }
+      }, 120_000)
+
       const entry: QueueEntry = {
         id,
         terminalId: opts.terminalId,
@@ -73,6 +101,7 @@ class CommandQueue {
         command: opts.command,
         createdAt: Date.now(),
         resolve,
+        timeoutId,
       }
       this.pending.set(id, entry)
 
@@ -86,14 +115,6 @@ class CommandQueue {
           command: opts.command,
         },
       })
-
-      // Timeout after 2 minutes — auto-reject
-      setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          resolve({ approved: false })
-        }
-      }, 120_000)
     })
   }
 
@@ -106,10 +127,20 @@ class CommandQueue {
     if (!entry) return
 
     this.pending.delete(entry.id)
+    clearTimeout(entry.timeoutId)
 
     if (allowAll) {
       this.mode = "allow-all-session"
     }
+
+    // Track operation + mark busy
+    terminalManager.markBusy(entry.terminalId)
+    opsTracker.start({
+      id: entry.id,
+      command: entry.command,
+      terminalId: entry.terminalId,
+      terminalName: entry.terminalName,
+    })
 
     // Inject with typing effect
     await terminalManager.writeTyping(entry.terminalId, entry.command)
@@ -122,6 +153,7 @@ class CommandQueue {
     if (!entry) return
 
     this.pending.delete(entry.id)
+    clearTimeout(entry.timeoutId)
     entry.resolve({ approved: false })
   }
 
@@ -131,13 +163,21 @@ class CommandQueue {
     if (!entry) return
 
     this.pending.delete(entry.id)
+    clearTimeout(entry.timeoutId)
+    terminalManager.markBusy(entry.terminalId)
+    opsTracker.start({
+      id: entry.id,
+      command: newCommand,
+      terminalId: entry.terminalId,
+      terminalName: entry.terminalName,
+    })
     await terminalManager.writeTyping(entry.terminalId, newCommand)
     entry.resolve({ approved: true })
   }
 
   /** Get all pending commands (for UI reconnect) */
   listPending(): PendingCommand[] {
-    return [...this.pending.values()].map(({ resolve: _, ...rest }) => rest)
+    return [...this.pending.values()].map(({ resolve: _, timeoutId: __, ...rest }) => rest)
   }
 }
 
