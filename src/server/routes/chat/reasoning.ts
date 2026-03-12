@@ -28,31 +28,38 @@ export function getReasoningOptions(
     else return {}
   }
 
-  const budgetMap = { low: 8000, medium: 16000, high: 32000 } as const
-
-  // Provider-specific budget caps — some providers have lower maximums
-  // Gemini 2.5 Flash: max 24576 thinking tokens
-  const GOOGLE_MAX_THINKING = 24576
+  // Provider-specific thinking token budgets
+  const anthropicBudget = { low: 5000, medium: 10000, high: 50000 } as const
+  const googleBudget = { low: 1024, medium: 8192, high: 32768 } as const
 
   switch (providerId) {
     case "anthropic":
       return {
         anthropic: {
-          thinking: { type: "enabled", budgetTokens: budgetMap[effort] },
+          thinking: { type: "enabled", budgetTokens: anthropicBudget[effort] },
         },
       }
     case "openai":
+      // o3, o4-mini use reasoningEffort directly (low/medium/high)
       return {
         openai: {
-          reasoningEffort: effort === "high" ? "high" : effort === "low" ? "low" : "medium",
+          reasoningEffort: effort,
         },
       }
     case "google":
+      // Gemini 2.5 Pro/Flash thinking models use thinkingBudget
       return {
         google: {
           thinkingConfig: {
-            thinkingBudget: Math.min(budgetMap[effort], GOOGLE_MAX_THINKING),
+            thinkingBudget: googleBudget[effort],
           },
+        },
+      }
+    case "xai":
+      // Grok-3 uses reasoning_effort in provider options
+      return {
+        xai: {
+          reasoningEffort: effort,
         },
       }
     case "deepseek":

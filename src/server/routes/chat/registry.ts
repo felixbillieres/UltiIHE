@@ -18,36 +18,107 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { getServerStatus, startServer } from "../../services/local/server"
 import { listInstalledModels } from "../../services/local/models"
 
+// --- SDK instance caching ---
+// Simple hash for cache keys (not crypto — just dedup)
+function quickHash(str: string): string {
+  let h = 0
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0
+  }
+  return h.toString(36)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sdkCache = new Map<string, any>()
+const MAX_CACHE_SIZE = 20
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getCachedOrCreate(key: string, factory: () => any): any {
+  if (sdkCache.has(key)) return sdkCache.get(key)
+  // Evict oldest if too many
+  if (sdkCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = sdkCache.keys().next().value
+    if (firstKey) sdkCache.delete(firstKey)
+  }
+  const sdk = factory()
+  sdkCache.set(key, sdk)
+  return sdk
+}
+
+export function clearRegistryCache() {
+  sdkCache.clear()
+}
+
 /**
  * Create a provider registry scoped to the current request.
  * Each provider is lazy-initialized with the API key from the request body.
+ * SDK instances are cached by provider+apiKey for cacheable providers.
+ * Local and custom providers are NOT cached (they depend on runtime state).
  */
 export async function createRegistry(providerId: string, apiKey: string, modelId?: string, baseUrl?: string) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const providers: Record<string, () => any> = {
-    anthropic: () => createAnthropic({ apiKey }),
-    openai: () => createOpenAI({ apiKey }),
-    google: () => createGoogleGenerativeAI({ apiKey }),
-    mistral: () => createMistral({ apiKey }),
-    groq: () => createGroq({ apiKey }),
-    openrouter: () => createOpenRouter({ apiKey }),
-    xai: () => createXai({ apiKey }),
-    deepseek: () => createDeepSeek({ apiKey }),
-    togetherai: () => createTogetherAI({ apiKey }),
-    perplexity: () => createPerplexity({ apiKey }),
-    fireworks: () => createFireworks({ apiKey }),
-    cerebras: () => createCerebras({ apiKey }),
-    "amazon-bedrock": () =>
+    anthropic: () => getCachedOrCreate(`anthropic:${quickHash(apiKey)}`, () =>
+      createAnthropic({
+        apiKey,
+        headers: { "anthropic-beta": "interleaved-thinking-2025-05-14" },
+      })
+    ),
+    openai: () => getCachedOrCreate(`openai:${quickHash(apiKey)}`, () =>
+      createOpenAI({ apiKey })
+    ),
+    google: () => getCachedOrCreate(`google:${quickHash(apiKey)}`, () =>
+      createGoogleGenerativeAI({ apiKey })
+    ),
+    mistral: () => getCachedOrCreate(`mistral:${quickHash(apiKey)}`, () =>
+      createMistral({ apiKey })
+    ),
+    groq: () => getCachedOrCreate(`groq:${quickHash(apiKey)}`, () =>
+      createGroq({ apiKey })
+    ),
+    openrouter: () => getCachedOrCreate(`openrouter:${quickHash(apiKey)}`, () =>
+      createOpenRouter({
+        apiKey,
+        headers: {
+          "X-Title": "Exegol IHE",
+          "HTTP-Referer": "https://github.com/ExegolIHE",
+        },
+      })
+    ),
+    xai: () => getCachedOrCreate(`xai:${quickHash(apiKey)}`, () =>
+      createXai({ apiKey })
+    ),
+    deepseek: () => getCachedOrCreate(`deepseek:${quickHash(apiKey)}`, () =>
+      createDeepSeek({ apiKey })
+    ),
+    togetherai: () => getCachedOrCreate(`togetherai:${quickHash(apiKey)}`, () =>
+      createTogetherAI({ apiKey })
+    ),
+    perplexity: () => getCachedOrCreate(`perplexity:${quickHash(apiKey)}`, () =>
+      createPerplexity({ apiKey })
+    ),
+    fireworks: () => getCachedOrCreate(`fireworks:${quickHash(apiKey)}`, () =>
+      createFireworks({ apiKey })
+    ),
+    cerebras: () => getCachedOrCreate(`cerebras:${quickHash(apiKey)}`, () =>
+      createCerebras({ apiKey })
+    ),
+    "amazon-bedrock": () => getCachedOrCreate(`amazon-bedrock:${quickHash(apiKey)}`, () =>
       createAmazonBedrock({
         region: process.env.AWS_REGION || "us-east-1",
         apiKey: apiKey || process.env.AWS_BEARER_TOKEN_BEDROCK,
-      }),
-    azure: () =>
+      })
+    ),
+    azure: () => getCachedOrCreate(`azure:${quickHash(apiKey)}:${quickHash(baseUrl || "")}`, () =>
       createAzure({
         apiKey,
         resourceName: baseUrl || process.env.AZURE_RESOURCE_NAME || "",
-      }),
-    cohere: () => createCohere({ apiKey }),
+      })
+    ),
+    cohere: () => getCachedOrCreate(`cohere:${quickHash(apiKey)}`, () =>
+      createCohere({ apiKey })
+    ),
+    // local and custom are NOT cached — they depend on runtime state
     local: async () => {
       let status = getServerStatus()
 

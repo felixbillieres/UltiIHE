@@ -1,13 +1,12 @@
 /**
  * Dynamic provider catalog — fetches from /api/providers (models.dev data).
  *
- * Replaces the hardcoded PROVIDER_CATALOG with live data that auto-updates.
- * Falls back to the static catalog on fetch failure.
+ * Starts empty and loads all provider/model data from the API on mount.
  */
 
 import { create } from "zustand"
 import type { ProviderInfo, ModelInfo } from "./settingsTypes"
-import { PROVIDER_CATALOG, LOCAL_PROVIDER } from "./settingsCatalogs"
+import { LOCAL_PROVIDER } from "./settingsCatalogs"
 
 interface ProviderCatalogStore {
   // Data
@@ -29,7 +28,7 @@ interface ProviderCatalogStore {
 }
 
 export const useProviderCatalog = create<ProviderCatalogStore>((set, get) => ({
-  providers: PROVIDER_CATALOG, // Start with static fallback
+  providers: [], // Populated dynamically from /api/providers
   localProvider: LOCAL_PROVIDER,
   loading: false,
   lastFetch: 0,
@@ -58,7 +57,7 @@ export const useProviderCatalog = create<ProviderCatalogStore>((set, get) => ({
         set({ loading: false })
       }
     } catch (e) {
-      console.warn("[ProviderCatalog] Fetch failed, using static fallback:", e)
+      console.warn("[ProviderCatalog] Fetch failed, catalog will be empty until retry:", e)
       set({ loading: false, error: (e as Error).message })
     }
   },

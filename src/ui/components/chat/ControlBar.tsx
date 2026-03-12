@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import {
@@ -18,6 +18,8 @@ import {
   Cpu,
   Loader2,
   Gauge,
+  Search,
+  Clock,
 } from "lucide-react"
 
 function Separator() {
@@ -334,6 +336,25 @@ export function ControlBar() {
   )
 }
 
+const PROVIDER_SORT_ORDER = [
+  "anthropic", "openai", "google", "mistral", "xai", "deepseek",
+  "groq", "openrouter", "togetherai", "fireworks", "cerebras",
+  "cohere", "perplexity",
+]
+
+function StatusBadge({ status }: { status: "alpha" | "beta" | "deprecated" }) {
+  const colors = {
+    alpha: "bg-yellow-500/15 text-yellow-400",
+    beta: "bg-blue-500/15 text-blue-400",
+    deprecated: "bg-red-500/15 text-red-400",
+  }
+  return (
+    <span className={`px-1 py-px rounded text-[9px] font-sans font-medium ${colors[status]}`}>
+      {status}
+    </span>
+  )
+}
+
 function ModelPicker({
   currentProvider,
   currentModel,
@@ -348,9 +369,12 @@ function ModelPicker({
   anchorRef: React.RefObject<HTMLElement>
 }) {
   const providers = useSettingsStore((s) => s.providers)
+  const recentModels = useSettingsStore((s) => s.recentModels)
   const { catalog, server, fetchModels } = useLocalAIStore()
   const ref = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [pos, setPos] = useState({ bottom: 0, left: 0, maxWidth: 320 })
+  const [search, setSearch] = useState("")
 
   // Position relative to anchor button via portal
   useEffect(() => {
@@ -358,7 +382,6 @@ function ModelPicker({
     const update = () => {
       const rect = anchorRef.current!.getBoundingClientRect()
       const maxW = Math.min(320, window.innerWidth - 16)
-      // Open above the button; clamp left so it doesn't overflow right
       const left = Math.max(8, Math.min(rect.left, window.innerWidth - maxW - 8))
       setPos({
         bottom: window.innerHeight - rect.top + 4,
@@ -370,6 +393,11 @@ function ModelPicker({
     window.addEventListener("resize", update)
     return () => window.removeEventListener("resize", update)
   }, [anchorRef])
+
+  // Focus search input on open
+  useEffect(() => {
+    searchRef.current?.focus()
+  }, [])
 
   // Fetch local model catalog when picker opens
   useEffect(() => {
@@ -394,12 +422,54 @@ function ModelPicker({
   )
 
   const catalogProviders = useProviderCatalog((s) => s.providers)
-  const availableProviders = catalogProviders.filter((p) =>
-    configuredProviderIds.has(p.id),
-  )
+
+  // Sort providers by importance
+  const availableProviders = useMemo(() => {
+    const filtered = catalogProviders.filter((p) => configuredProviderIds.has(p.id))
+    return [...filtered].sort((a, b) => {
+      const ai = PROVIDER_SORT_ORDER.indexOf(a.id)
+      const bi = PROVIDER_SORT_ORDER.indexOf(b.id)
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+    })
+  }, [catalogProviders, configuredProviderIds])
 
   // Installed local models
   const installedLocal = catalog.filter((m) => m.installed)
+
+  // Search filter
+  const q = search.toLowerCase().trim()
+  const filteredLocal = q
+    ? installedLocal.filter(
+        (m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
+      )
+    : installedLocal
+  const filteredProviders = useMemo(() => {
+    if (!q) return availableProviders
+    return availableProviders
+      .map((p) => ({
+        ...p,
+        models: p.models.filter(
+          (m) => m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q),
+        ),
+      }))
+      .filter((p) => p.models.length > 0)
+  }, [availableProviders, q])
+
+  // Resolve recent models for display
+  const recentEntries = useMemo(() => {
+    if (q) return [] // hide recents when searching
+    return recentModels
+      .map((r) => {
+        // Look up in catalog
+        const provider = catalogProviders.find((p) => p.id === r.providerId)
+        const model = provider?.models.find((m) => m.id === r.modelId)
+        // Check local catalog
+        const localModel = r.providerId === "local" ? catalog.find((m) => m.id === r.modelId) : null
+        const displayName = localModel?.name || model?.name || r.modelId.split("/").pop() || r.modelId
+        const providerName = localModel ? "Local" : provider?.name || r.providerId
+        return { ...r, displayName, providerName, model }
+      })
+  }, [recentModels, catalogProviders, catalog, q])
 
   const hasAnything = availableProviders.length > 0 || installedLocal.length > 0
 
@@ -419,8 +489,60 @@ function ModelPicker({
       className="fixed z-[9999] max-h-[400px] overflow-y-auto bg-surface-2 border border-border-base rounded-xl shadow-xl py-1"
       style={{ bottom: pos.bottom, left: pos.left, width: pos.maxWidth }}
     >
+      {/* Search input */}
+      <div className="px-2 pt-1 pb-1.5">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-0 border border-border-weak">
+          <Search className="w-3 h-3 text-text-weaker shrink-0" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search models..."
+            className="flex-1 bg-transparent text-xs font-sans text-text-base placeholder:text-text-weaker outline-none"
+          />
+        </div>
+      </div>
+
+      {/* Recent models */}
+      {recentEntries.length > 0 && (
+        <div>
+          <div className="px-3 py-1.5 flex items-center gap-1.5">
+            <Clock className="w-3 h-3 text-text-weaker" />
+            <span className="text-[10px] text-text-weaker uppercase tracking-wide font-sans font-semibold">
+              Recent
+            </span>
+          </div>
+          {recentEntries.map((entry) => {
+            const isSelected =
+              entry.providerId === currentProvider && entry.modelId === currentModel
+            return (
+              <button
+                key={`${entry.providerId}-${entry.modelId}`}
+                onClick={() => onSelect(entry.providerId, entry.modelId)}
+                className={`w-full flex items-center justify-between px-3 py-1.5 text-left transition-colors ${
+                  isSelected
+                    ? "bg-accent/10 text-accent"
+                    : "text-text-base hover:bg-surface-3"
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-sans truncate">{entry.displayName}</span>
+                    {entry.model?.status && <StatusBadge status={entry.model.status} />}
+                  </div>
+                  <span className="text-[10px] text-text-weaker font-sans">{entry.providerName}</span>
+                </div>
+                {isSelected && <Zap className="w-3 h-3 text-accent shrink-0" />}
+              </button>
+            )
+          })}
+          <div className="mx-3 my-1 border-t border-border-weak" />
+        </div>
+      )}
+
       {/* Local models — shown first if any are installed */}
-      {installedLocal.length > 0 && (
+      {filteredLocal.length > 0 && (
         <div>
           <div className="px-3 py-1.5 flex items-center gap-1.5">
             <Cpu className="w-3 h-3 text-accent" />
@@ -429,7 +551,7 @@ function ModelPicker({
             </span>
             <span className="text-[9px] text-text-weaker font-sans">Free</span>
           </div>
-          {installedLocal.map((model) => {
+          {filteredLocal.map((model) => {
             const isSelected = currentProvider === "local" && currentModel === model.id
             const isRunning = server.running && server.modelId === model.id
             return (
@@ -478,14 +600,14 @@ function ModelPicker({
             )
           })}
           {/* Separator between local and cloud */}
-          {availableProviders.length > 0 && (
+          {filteredProviders.length > 0 && (
             <div className="mx-3 my-1 border-t border-border-weak" />
           )}
         </div>
       )}
 
       {/* Cloud providers */}
-      {availableProviders.map((provider) => (
+      {filteredProviders.map((provider) => (
         <div key={provider.id}>
           <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wide font-sans font-medium">
             {provider.name}
@@ -504,7 +626,10 @@ function ModelPicker({
                 }`}
               >
                 <div className="min-w-0">
-                  <div className="text-xs font-sans truncate">{model.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-sans truncate">{model.name}</span>
+                    {model.status && <StatusBadge status={model.status} />}
+                  </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-text-weaker font-mono">
                       {(model.contextWindow / 1000).toFixed(0)}k ctx
@@ -527,6 +652,13 @@ function ModelPicker({
           })}
         </div>
       ))}
+
+      {/* No results */}
+      {q && filteredLocal.length === 0 && filteredProviders.length === 0 && (
+        <div className="px-3 py-3 text-xs text-text-weaker font-sans text-center">
+          No models matching "{search}"
+        </div>
+      )}
     </div>
   )
 

@@ -17,7 +17,7 @@ export type {
 export { AGENTS } from "./settingsTypes"
 
 export type { MonoFont } from "./settingsCatalogs"
-export { PROVIDER_CATALOG, THEMES, DEFAULT_KEYBINDS, MONO_FONTS } from "./settingsCatalogs"
+export { THEMES, DEFAULT_KEYBINDS, MONO_FONTS } from "./settingsCatalogs"
 
 // Internal imports for store use
 import type {
@@ -29,7 +29,7 @@ import type {
   Language,
 } from "./settingsTypes"
 import { AGENTS } from "./settingsTypes"
-import { PROVIDER_CATALOG, THEMES, DEFAULT_KEYBINDS } from "./settingsCatalogs"
+import { THEMES, DEFAULT_KEYBINDS } from "./settingsCatalogs"
 import { useProviderCatalog } from "./providerCatalog"
 
 // ---------------------------------------------------------------------------
@@ -72,8 +72,14 @@ interface SettingsStore {
   activeAgent: AgentId
   thinkingEffort: ThinkingEffort
 
+  // Recent models
+  recentModels: Array<{ providerId: string; modelId: string }>
+
   // Keybindings
   customKeybinds: Record<string, string>
+
+  // Actions - Recent models
+  addRecentModel: (providerId: string, modelId: string) => void
 
   // Actions - Appearance
   setTheme: (id: string) => void
@@ -132,7 +138,19 @@ export const useSettingsStore = create<SettingsStore>()(
       activeMode: "build",
       activeAgent: "build" as AgentId,
       thinkingEffort: "off" as ThinkingEffort,
+      recentModels: [],
       customKeybinds: {},
+
+      // --- Recent models ---
+      addRecentModel: (providerId, modelId) =>
+        set((s) => {
+          const filtered = s.recentModels.filter(
+            (r) => !(r.providerId === providerId && r.modelId === modelId),
+          )
+          return {
+            recentModels: [{ providerId, modelId }, ...filtered].slice(0, 5),
+          }
+        }),
 
       // --- Appearance ---
       setTheme: (id) => {
@@ -178,7 +196,11 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setActiveProvider: (id) => set({ activeProvider: id }),
 
-      setActiveModel: (model) => set({ activeModel: model }),
+      setActiveModel: (model) => {
+        set({ activeModel: model })
+        const state = get()
+        state.addRecentModel(state.activeProvider, model)
+      },
 
       setActiveMode: (mode) => set({ activeMode: mode }),
 
@@ -231,17 +253,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       getActiveModelInfo: () => {
         const state = get()
-        // Try dynamic catalog first (models.dev)
-        const dynamic = useProviderCatalog.getState().findModel(state.activeModel)
-        if (dynamic) return dynamic
-        // Fallback to static catalog
-        for (const provider of PROVIDER_CATALOG) {
-          const model = provider.models.find(
-            (m) => m.id === state.activeModel,
-          )
-          if (model) return model
-        }
-        return undefined
+        return useProviderCatalog.getState().findModel(state.activeModel)
       },
     }),
     {
@@ -261,6 +273,7 @@ export const useSettingsStore = create<SettingsStore>()(
         activeAgent: state.activeAgent,
         thinkingEffort: state.thinkingEffort,
         customKeybinds: state.customKeybinds,
+        recentModels: state.recentModels,
       }),
     },
   ),

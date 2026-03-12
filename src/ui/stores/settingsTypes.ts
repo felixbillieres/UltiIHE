@@ -12,6 +12,7 @@ export interface ModelInfo {
   vision: boolean
   costPer1kInput?: number
   costPer1kOutput?: number
+  status?: "alpha" | "beta" | "deprecated"
 }
 
 export interface ProviderInfo {

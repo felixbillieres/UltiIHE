@@ -7,6 +7,8 @@
     "dev": "bunx --bun vite",
     "dev:server": "bun --watch run src/server/index.ts",
     "dev:all": "concurrently \"bun run dev:server\" \"bun run dev\"",
+    "update-snapshot": "bun run scripts/update-models-snapshot.ts",
+    "prebuild": "bun run update-snapshot",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
