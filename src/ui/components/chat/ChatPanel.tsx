@@ -58,6 +58,9 @@ class SSEParser {
   }
 }
 
+// Stable reference for empty arrays (avoids infinite re-render loops)
+const EMPTY_MESSAGES: Message[] = []
+
 // ── Component ────────────────────────────────────────────────
 
 interface Props {
@@ -65,30 +68,42 @@ interface Props {
 }
 
 export function ChatPanel({ projectId }: Props) {
-  const {
-    activeSessionId,
-    createSession,
-    addMessage,
-    updateMessage,
-    updateMessageContent,
-    renameSession,
-    getActiveMessages,
-    getActiveSession,
-  } = useSessionStore()
+  // Use individual selectors — never bare useSessionStore() which subscribes to everything
+  const createSession = useSessionStore((s) => s.createSession)
+  const addMessage = useSessionStore((s) => s.addMessage)
+  const updateMessage = useSessionStore((s) => s.updateMessage)
+  const updateMessageContent = useSessionStore((s) => s.updateMessageContent)
+  const renameSession = useSessionStore((s) => s.renameSession)
 
-  const {
-    activeModel,
-    activeProvider,
-    activeMode,
-    activeAgent,
-    thinkingEffort,
-    getActiveProvider,
-  } = useSettingsStore()
+  // Per-project active session
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
+  const activeSession = useSessionStore((s) => {
+    const sid = s.activeSessionIdByProject[projectId]
+    return sid ? s.sessions.find((sess) => sess.id === sid) : undefined
+  })
+  const messages = useSessionStore((s) => {
+    const sid = s.activeSessionIdByProject[projectId]
+    if (!sid) return EMPTY_MESSAGES
+    const session = s.sessions.find((sess) => sess.id === sid)
+    return session?.messages || EMPTY_MESSAGES
+  })
+
+  const activeModel = useSettingsStore((s) => s.activeModel)
+  const activeProvider = useSettingsStore((s) => s.activeProvider)
+  const activeMode = useSettingsStore((s) => s.activeMode)
+  const activeAgent = useSettingsStore((s) => s.activeAgent)
+  const thinkingEffort = useSettingsStore((s) => s.thinkingEffort)
+  const getActiveProvider = useSettingsStore((s) => s.getActiveProvider)
 
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.id === projectId),
   )
-  const terminals = useTerminalStore((s) => s.terminals)
+  // Only show terminals for this project
+  const allTerminals = useTerminalStore((s) => s.terminals)
+  const terminals = useMemo(
+    () => allTerminals.filter((t) => t.projectId === projectId),
+    [allTerminals, projectId],
+  )
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId)
 
   const quotes = useChatContextStore((s) => s.quotes)
@@ -158,9 +173,6 @@ export function ChatPanel({ projectId }: Props) {
       ),
     [atOptions, popoverFilter],
   )
-
-  const messages = getActiveMessages()
-  const activeSession = getActiveSession()
 
   // Smart auto-scroll
   const { containerRef, showScrollButton, scrollToBottom, onContentUpdate } =
@@ -700,7 +712,7 @@ export function ChatPanel({ projectId }: Props) {
     abortRef.current = null
     // Mark any in-flight tool calls as interrupted in the current message
     if (streamingMsgIdRef.current && activeSessionId) {
-      const msgs = useSessionStore.getState().getActiveMessages()
+      const msgs = useSessionStore.getState().getActiveMessages(projectId)
       const msg = msgs.find((m) => m.id === streamingMsgIdRef.current)
       if (msg?.parts) {
         const updatedParts = msg.parts.map((p) =>
@@ -931,7 +943,7 @@ export function ChatPanel({ projectId }: Props) {
   const handleRetry = useCallback(() => {
     if (!activeSessionId || streaming) return
     // Remove last assistant message, re-send the last user message
-    const msgs = useSessionStore.getState().getActiveMessages()
+    const msgs = useSessionStore.getState().getActiveMessages(projectId)
     if (msgs.length < 2) return
     const lastAssistant = msgs[msgs.length - 1]
     if (lastAssistant.role !== "assistant") return

@@ -34,6 +34,7 @@ export interface FileEntry {
 
 export interface OpenFile {
   id: string // "container:path"
+  projectId: string
   container: string
   path: string
   filename: string
@@ -50,7 +51,8 @@ export interface OpenFile {
 interface FileStore {
   // Editor state
   openFiles: OpenFile[]
-  activeFileId: string | null
+  activeFileIdByProject: Record<string, string | null>
+  _currentProjectId: string | null
   savingFiles: Set<string>
 
   // Directory cache: key = "container:path"
@@ -58,11 +60,15 @@ interface FileStore {
   loadingDirs: Set<string>
 
   // Editor actions
-  openFile: (container: string, path: string) => Promise<void>
+  openFile: (container: string, path: string, projectId?: string) => Promise<void>
   closeFile: (id: string) => void
   setActiveFile: (id: string | null) => void
   updateContent: (id: string, content: string) => void
   saveFile: (id: string) => Promise<void>
+
+  // Project scoping
+  switchProject: (projectId: string) => void
+  getProjectFiles: (projectId: string) => OpenFile[]
 
   // Directory actions
   fetchDirectory: (container: string, path: string) => Promise<FileEntry[]>
@@ -93,7 +99,8 @@ function parentDir(path: string): string {
 
 export const useFileStore = create<FileStore>((set, get) => ({
   openFiles: [],
-  activeFileId: null,
+  activeFileIdByProject: {},
+  _currentProjectId: null,
   savingFiles: new Set(),
   dirCache: {},
   loadingDirs: new Set(),
@@ -143,11 +150,14 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   // ── Editor actions ──────────────────────────────────────────
 
-  openFile: async (container, path) => {
+  openFile: async (container, path, projectId) => {
     const id = `${container}:${path}`
+    const pid = projectId || get()._currentProjectId || ""
     const existing = get().openFiles.find((f) => f.id === id)
     if (existing) {
-      set({ activeFileId: id })
+      set((s) => ({
+        activeFileIdByProject: { ...s.activeFileIdByProject, [pid]: id },
+      }))
       return
     }
 
@@ -157,9 +167,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
     set((s) => ({
       openFiles: [
         ...s.openFiles,
-        { id, container, path, filename, content: "", originalContent: "", isDirty: false, language, loading: true },
+        { id, projectId: pid, container, path, filename, content: "", originalContent: "", isDirty: false, language, loading: true },
       ],
-      activeFileId: id,
+      activeFileIdByProject: { ...s.activeFileIdByProject, [pid]: id },
     }))
 
     try {
@@ -183,19 +193,34 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   closeFile: (id) => {
     set((s) => {
-      const idx = s.openFiles.findIndex((f) => f.id === id)
+      const file = s.openFiles.find((f) => f.id === id)
+      const pid = file?.projectId || s._currentProjectId || ""
+      const projectFiles = s.openFiles.filter((f) => f.projectId === pid)
+      const idx = projectFiles.findIndex((f) => f.id === id)
       const newFiles = s.openFiles.filter((f) => f.id !== id)
-      let newActive = s.activeFileId
-      if (s.activeFileId === id) {
-        newActive = newFiles.length === 0
+      const currentActive = s.activeFileIdByProject[pid] ?? null
+      let newActive = currentActive
+      if (currentActive === id) {
+        const remaining = projectFiles.filter((f) => f.id !== id)
+        newActive = remaining.length === 0
           ? null
-          : newFiles[Math.min(idx, newFiles.length - 1)].id
+          : remaining[Math.min(idx, remaining.length - 1)].id
       }
-      return { openFiles: newFiles, activeFileId: newActive }
+      return {
+        openFiles: newFiles,
+        activeFileIdByProject: { ...s.activeFileIdByProject, [pid]: newActive },
+      }
     })
   },
 
-  setActiveFile: (id) => set({ activeFileId: id }),
+  setActiveFile: (id) =>
+    set((s) => {
+      const file = s.openFiles.find((f) => f.id === id)
+      const pid = file?.projectId || s._currentProjectId || ""
+      return {
+        activeFileIdByProject: { ...s.activeFileIdByProject, [pid]: id },
+      }
+    }),
 
   updateContent: (id, content) => {
     set((s) => ({
@@ -323,4 +348,10 @@ export const useFileStore = create<FileStore>((set, get) => ({
       return false
     }
   },
+
+  switchProject: (projectId) =>
+    set({ _currentProjectId: projectId }),
+
+  getProjectFiles: (projectId) =>
+    get().openFiles.filter((f) => f.projectId === projectId),
 }))

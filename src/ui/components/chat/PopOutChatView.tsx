@@ -35,7 +35,7 @@ function PopOutSidebar({
   onToggle: () => void
 }) {
   const allSessions = useSessionStore((s) => s.sessions)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
   const setActiveSession = useSessionStore((s) => s.setActiveSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
   const startNewChat = useSessionStore((s) => s.startNewChat)
@@ -121,7 +121,7 @@ function PopOutSidebar({
               key={session.id}
               session={session}
               isActive={session.id === activeSessionId}
-              onSelect={() => setActiveSession(session.id)}
+              onSelect={() => setActiveSession(session.id, projectId)}
               onDelete={() => deleteSession(session.id)}
             />
           ))
@@ -225,7 +225,7 @@ export function PopOutChatView({
     s.projects.find((p) => p.id === projectId),
   )
   const allSessions = useSessionStore((s) => s.sessions)
-  const activeSessionId = useSessionStore((s) => s.activeSessionId)
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
   const startNewChat = useSessionStore((s) => s.startNewChat)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 

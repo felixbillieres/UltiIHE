@@ -1,8 +1,12 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { type Project, useProjectStore } from "../../stores/project"
 import { useContainerStore } from "../../stores/container"
 import { usePopOutStore } from "../../stores/popout"
+import { useTerminalStore } from "../../stores/terminal"
+import { useWorkspaceStore } from "../../stores/workspace"
+import { useFileStore } from "../../stores/files"
+import { useChatContextStore } from "../../stores/chatContext"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
@@ -62,6 +66,21 @@ export function WorkspaceLayout({ project }: Props) {
       return next
     })
   }, [])
+
+  // ── Project switch: scope all stores to the new project ──
+  const prevProjectIdRef = useRef(project.id)
+  useEffect(() => {
+    // Notify all per-project stores about the project switch
+    useTerminalStore.getState().switchProject(project.id)
+    useWorkspaceStore.getState().switchProject(project.id)
+    useFileStore.getState().switchProject(project.id)
+
+    // Clear transient chat context (quotes/images don't belong to new project)
+    if (prevProjectIdRef.current !== project.id) {
+      useChatContextStore.getState().clearAll()
+    }
+    prevProjectIdRef.current = project.id
+  }, [project.id])
 
   useEffect(() => {
     fetchContainers()
@@ -185,6 +204,7 @@ export function WorkspaceLayout({ project }: Props) {
             projects={projects}
             onNavigateHome={() => navigate("/")}
             onSwitchProject={(id) => {
+              // Switch project — per-project stores will scope on next render via useEffect
               setActiveProject(id)
               navigate(`/project/${id}`)
             }}

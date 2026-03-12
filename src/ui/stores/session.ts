@@ -53,7 +53,8 @@ export interface Session {
 
 interface SessionStore {
   sessions: Session[]
-  activeSessionId: string | null
+  /** Per-project active session — like OpenCode's per-directory scoping */
+  activeSessionIdByProject: Record<string, string | null>
   /** Non-persisted undo buffer per session (last removed exchange) */
   _undoBuffer: Record<string, Message[]>
 
@@ -61,14 +62,14 @@ interface SessionStore {
   createSession: (projectId: string, title?: string) => Session
   deleteSession: (id: string) => void
   renameSession: (id: string, title: string) => void
-  setActiveSession: (id: string | null) => void
+  setActiveSession: (id: string | null, projectId: string) => void
   getProjectSessions: (projectId: string) => Session[]
 
   // Message management
   addMessage: (sessionId: string, message: Message) => void
   updateMessageContent: (sessionId: string, messageId: string, content: string) => void
   updateMessage: (sessionId: string, messageId: string, updates: { content?: string; parts?: MessagePart[] }) => void
-  getActiveMessages: () => Message[]
+  getActiveMessages: (projectId: string) => Message[]
 
   // Undo/Redo/Fork
   undoLastExchange: (sessionId: string) => boolean
@@ -77,7 +78,8 @@ interface SessionStore {
   removeLastMessages: (sessionId: string, count: number) => Message[]
 
   // Convenience
-  getActiveSession: () => Session | undefined
+  getActiveSession: (projectId: string) => Session | undefined
+  getActiveSessionId: (projectId: string) => string | null
   startNewChat: (projectId: string) => void
 }
 
@@ -85,7 +87,7 @@ export const useSessionStore = create<SessionStore>()(
   persist(
     (set, get) => ({
       sessions: [],
-      activeSessionId: null,
+      activeSessionIdByProject: {},
       _undoBuffer: {},
 
       createSession: (projectId, title) => {
@@ -99,17 +101,26 @@ export const useSessionStore = create<SessionStore>()(
         }
         set((s) => ({
           sessions: [session, ...s.sessions],
-          activeSessionId: session.id,
+          activeSessionIdByProject: {
+            ...s.activeSessionIdByProject,
+            [projectId]: session.id,
+          },
         }))
         return session
       },
 
       deleteSession: (id) => {
-        set((s) => ({
-          sessions: s.sessions.filter((sess) => sess.id !== id),
-          activeSessionId:
-            s.activeSessionId === id ? null : s.activeSessionId,
-        }))
+        set((s) => {
+          const session = s.sessions.find((sess) => sess.id === id)
+          const newMap = { ...s.activeSessionIdByProject }
+          if (session && newMap[session.projectId] === id) {
+            newMap[session.projectId] = null
+          }
+          return {
+            sessions: s.sessions.filter((sess) => sess.id !== id),
+            activeSessionIdByProject: newMap,
+          }
+        })
       },
 
       renameSession: (id, title) => {
@@ -120,7 +131,13 @@ export const useSessionStore = create<SessionStore>()(
         }))
       },
 
-      setActiveSession: (id) => set({ activeSessionId: id }),
+      setActiveSession: (id, projectId) =>
+        set((s) => ({
+          activeSessionIdByProject: {
+            ...s.activeSessionIdByProject,
+            [projectId]: id,
+          },
+        })),
 
       getProjectSessions: (projectId) =>
         get()
@@ -233,7 +250,10 @@ export const useSessionStore = create<SessionStore>()(
         }
         set((s) => ({
           sessions: [forked, ...s.sessions],
-          activeSessionId: forked.id,
+          activeSessionIdByProject: {
+            ...s.activeSessionIdByProject,
+            [forked.projectId]: forked.id,
+          },
         }))
         return forked
       },
@@ -252,31 +272,40 @@ export const useSessionStore = create<SessionStore>()(
         return removed
       },
 
-      getActiveMessages: () => {
+      getActiveMessages: (projectId) => {
         const state = get()
-        if (!state.activeSessionId) return []
-        const session = state.sessions.find(
-          (s) => s.id === state.activeSessionId,
-        )
+        const activeId = state.activeSessionIdByProject[projectId]
+        if (!activeId) return []
+        const session = state.sessions.find((s) => s.id === activeId)
         return session?.messages || []
       },
 
-      getActiveSession: () => {
+      getActiveSession: (projectId) => {
         const state = get()
-        if (!state.activeSessionId) return undefined
-        return state.sessions.find((s) => s.id === state.activeSessionId)
+        const activeId = state.activeSessionIdByProject[projectId]
+        if (!activeId) return undefined
+        return state.sessions.find((s) => s.id === activeId)
+      },
+
+      getActiveSessionId: (projectId) => {
+        return get().activeSessionIdByProject[projectId] ?? null
       },
 
       startNewChat: (projectId) => {
         const session = get().createSession(projectId)
-        set({ activeSessionId: session.id })
+        set((s) => ({
+          activeSessionIdByProject: {
+            ...s.activeSessionIdByProject,
+            [projectId]: session.id,
+          },
+        }))
       },
     }),
     {
       name: "ultiIHE-sessions",
       partialize: (state) => ({
         sessions: state.sessions.slice(0, 50),
-        activeSessionId: state.activeSessionId,
+        activeSessionIdByProject: state.activeSessionIdByProject,
         // _undoBuffer is intentionally excluded (ephemeral)
       }),
       // Migrate old sessions that lack `messages` or `parts`
@@ -290,6 +319,16 @@ export const useSessionStore = create<SessionStore>()(
               parts: m.parts ?? [],
             })),
           }))
+        }
+        // Migrate legacy global activeSessionId → per-project
+        if (p?.activeSessionId && !p?.activeSessionIdByProject) {
+          const session = p.sessions?.find((s: any) => s.id === p.activeSessionId)
+          if (session) {
+            p.activeSessionIdByProject = { [session.projectId]: p.activeSessionId }
+          } else {
+            p.activeSessionIdByProject = {}
+          }
+          delete p.activeSessionId
         }
         return { ...current, ...p }
       },

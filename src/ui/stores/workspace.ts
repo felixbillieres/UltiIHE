@@ -8,6 +8,7 @@ export interface WorkspaceTab {
   id: string // "terminal:{terminalId}", "file:{container}:{path}", "tool:{toolId}"
   type: TabType
   title: string
+  projectId: string
   container?: string
   // Type-specific references
   terminalId?: string
@@ -22,7 +23,10 @@ export interface WorkspaceTab {
 
 interface WorkspaceStore {
   tabs: WorkspaceTab[]
-  activeTabId: string | null
+  /** Per-project active tab */
+  activeTabIdByProject: Record<string, string | null>
+  /** Currently active project for tab scoping */
+  _currentProjectId: string | null
   filter: TabType | null
 
   // Tab CRUD
@@ -38,13 +42,18 @@ interface WorkspaceStore {
   getVisibleTabs: () => WorkspaceTab[]
 
   // Convenience creators
-  openTerminalTab: (terminalId: string, name: string, container: string) => void
-  openFileTab: (fileId: string, filename: string, container: string) => void
-  openToolTab: (toolId: string, name: string, container?: string) => void
+  openTerminalTab: (terminalId: string, name: string, container: string, projectId?: string) => void
+  openFileTab: (fileId: string, filename: string, container: string, projectId?: string) => void
+  openToolTab: (toolId: string, name: string, container?: string, projectId?: string) => void
 
   // Bulk
   closeTabsByType: (type: TabType) => void
   closeAllUnpinned: () => void
+
+  /** Switch project context — filters visible tabs */
+  switchProject: (projectId: string) => void
+  /** Get tabs for a specific project */
+  getProjectTabs: (projectId: string) => WorkspaceTab[]
 }
 
 function nextActiveTab(
@@ -63,17 +72,29 @@ function nextActiveTab(
 
 export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   tabs: [],
-  activeTabId: null,
+  activeTabIdByProject: {},
+  _currentProjectId: null,
   filter: null,
 
   addTab: (tab) =>
     set((s) => {
       // Don't add duplicates — just activate
       const existing = s.tabs.find((t) => t.id === tab.id)
-      if (existing) return { activeTabId: tab.id }
+      if (existing) {
+        return {
+          activeTabIdByProject: {
+            ...s.activeTabIdByProject,
+            ...(tab.projectId ? { [tab.projectId]: tab.id } : s._currentProjectId ? { [s._currentProjectId]: tab.id } : {}),
+          },
+        }
+      }
+      const pid = tab.projectId || s._currentProjectId
       return {
         tabs: [...s.tabs, { ...tab, pinned: false, hasNotification: false }],
-        activeTabId: tab.id,
+        activeTabIdByProject: {
+          ...s.activeTabIdByProject,
+          ...(pid ? { [pid]: tab.id } : {}),
+        },
       }
     }),
 
@@ -81,13 +102,29 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
     set((s) => {
       const tab = s.tabs.find((t) => t.id === id)
       if (!tab || tab.pinned) return s
+      const projectId = tab.projectId
+      const projectTabs = s.tabs.filter((t) => t.projectId === projectId)
+      const currentActive = s.activeTabIdByProject[projectId] ?? null
       return {
         tabs: s.tabs.filter((t) => t.id !== id),
-        activeTabId: nextActiveTab(s.tabs, id, s.activeTabId),
+        activeTabIdByProject: {
+          ...s.activeTabIdByProject,
+          [projectId]: nextActiveTab(projectTabs, id, currentActive),
+        },
       }
     }),
 
-  setActiveTab: (id) => set({ activeTabId: id }),
+  setActiveTab: (id) =>
+    set((s) => {
+      const tab = s.tabs.find((t) => t.id === id)
+      const pid = tab?.projectId || s._currentProjectId
+      return {
+        activeTabIdByProject: {
+          ...s.activeTabIdByProject,
+          ...(pid ? { [pid]: id } : {}),
+        },
+      }
+    }),
 
   renameTab: (id, title) =>
     set((s) => ({
@@ -111,41 +148,50 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   setFilter: (filter) => set({ filter }),
 
   getVisibleTabs: () => {
-    const { tabs, filter } = get()
-    if (!filter) return tabs
-    return tabs.filter((t) => t.type === filter)
+    const { tabs, filter, _currentProjectId } = get()
+    let filtered = _currentProjectId
+      ? tabs.filter((t) => t.projectId === _currentProjectId)
+      : tabs
+    if (filter) filtered = filtered.filter((t) => t.type === filter)
+    return filtered
   },
 
   // ── Convenience creators ──────────────────────────────────
 
-  openTerminalTab: (terminalId, name, container) => {
+  openTerminalTab: (terminalId, name, container, projectId) => {
+    const pid = projectId || get()._currentProjectId || ""
     const id = `terminal:${terminalId}`
     get().addTab({
       id,
       type: "terminal",
       title: name,
+      projectId: pid,
       container,
       terminalId,
     })
   },
 
-  openFileTab: (fileId, filename, container) => {
+  openFileTab: (fileId, filename, container, projectId) => {
+    const pid = projectId || get()._currentProjectId || ""
     const id = `file:${fileId}`
     get().addTab({
       id,
       type: "file",
       title: filename,
+      projectId: pid,
       container,
       fileId,
     })
   },
 
-  openToolTab: (toolId, name, container) => {
+  openToolTab: (toolId, name, container, projectId) => {
+    const pid = projectId || get()._currentProjectId || ""
     const id = `tool:${toolId}`
     get().addTab({
       id,
       type: "webtool",
       title: name,
+      projectId: pid,
       container,
       toolId,
     })
@@ -155,24 +201,41 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
 
   closeTabsByType: (type) =>
     set((s) => {
-      const remaining = s.tabs.filter((t) => t.type !== type || t.pinned)
-      const activeGone = !remaining.find((t) => t.id === s.activeTabId)
+      const pid = s._currentProjectId
+      const remaining = s.tabs.filter((t) => t.type !== type || t.pinned || (pid && t.projectId !== pid))
+      const currentActive = pid ? s.activeTabIdByProject[pid] : null
+      const activeGone = !remaining.find((t) => t.id === currentActive)
+      const newActive = activeGone
+        ? remaining.filter((t) => !pid || t.projectId === pid).pop()?.id ?? null
+        : currentActive
       return {
         tabs: remaining,
-        activeTabId: activeGone
-          ? remaining.length > 0
-            ? remaining[remaining.length - 1].id
-            : null
-          : s.activeTabId,
+        activeTabIdByProject: {
+          ...s.activeTabIdByProject,
+          ...(pid ? { [pid]: newActive } : {}),
+        },
       }
     }),
 
   closeAllUnpinned: () =>
     set((s) => {
-      const remaining = s.tabs.filter((t) => t.pinned)
+      const pid = s._currentProjectId
+      const remaining = s.tabs.filter((t) => t.pinned || (pid && t.projectId !== pid))
+      const projectRemaining = remaining.filter((t) => !pid || t.projectId === pid)
       return {
         tabs: remaining,
-        activeTabId: remaining.length > 0 ? remaining[0].id : null,
+        activeTabIdByProject: {
+          ...s.activeTabIdByProject,
+          ...(pid ? { [pid]: projectRemaining[0]?.id ?? null } : {}),
+        },
       }
     }),
+
+  switchProject: (projectId) =>
+    set((s) => ({
+      _currentProjectId: projectId,
+    })),
+
+  getProjectTabs: (projectId) =>
+    get().tabs.filter((t) => t.projectId === projectId),
 }))

@@ -114,8 +114,9 @@ export function useBuiltinCommands(
         category: "Session",
         icon: <Trash2 className="w-3.5 h-3.5" />,
         onSelect: () => {
-          const { activeSessionId, deleteSession } = useSessionStore.getState()
-          if (activeSessionId) deleteSession(activeSessionId)
+          const { getActiveSessionId, deleteSession } = useSessionStore.getState()
+          const sid = getActiveSessionId(projectId)
+          if (sid) deleteSession(sid)
         },
       },
     ]

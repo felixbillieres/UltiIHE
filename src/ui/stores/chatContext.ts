@@ -44,6 +44,8 @@ interface ChatContextStore {
   addImage: (image: Omit<ImageAttachment, "id">) => void
   removeImage: (id: string) => void
   clearImages: () => void
+  /** Clear all context (quotes + images) on project switch */
+  clearAll: () => void
 }
 
 const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
@@ -80,4 +82,7 @@ export const useChatContextStore = create<ChatContextStore>()((set) => ({
     })),
 
   clearImages: () => set({ images: [] }),
+
+  /** Clear all context on project switch */
+  clearAll: () => set({ quotes: [], images: [] }),
 }))

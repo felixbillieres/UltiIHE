@@ -32,12 +32,24 @@ export type LayoutNode =
 
 // ─── Store ────────────────────────────────────────────────────
 
+/** Snapshot of layout state for a project */
+interface ProjectTerminalState {
+  groups: TerminalGroup[]
+  layout: LayoutNode | null
+  focusedGroupId: string | null
+  activeTerminalId: string | null
+}
+
 interface TerminalStore {
   terminals: TerminalInstance[]
   groups: TerminalGroup[]
   layout: LayoutNode | null
   focusedGroupId: string | null
   activeTerminalId: string | null
+  /** Per-project layout snapshots (saved on switch, restored on return) */
+  _projectState: Record<string, ProjectTerminalState>
+  /** Currently active project for layout scoping */
+  _currentProjectId: string | null
 
   // Terminal CRUD
   addTerminal: (terminal: TerminalInstance, groupId?: string) => void
@@ -56,6 +68,9 @@ interface TerminalStore {
   // Project scoping — returns terminals for a given project
   getProjectTerminals: (projectId: string) => TerminalInstance[]
   getProjectGroups: (projectId: string) => TerminalGroup[]
+
+  /** Switch project: save current layout, restore target project's layout */
+  switchProject: (projectId: string) => void
 }
 
 let groupCounter = 0
@@ -143,6 +158,8 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
   layout: null,
   focusedGroupId: null,
   activeTerminalId: null,
+  _projectState: {},
+  _currentProjectId: null,
 
   addTerminal: (terminal, groupId) =>
     set((state) => {
@@ -408,4 +425,63 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         g.terminalIds.some((tid) => projectTerminalIds.has(tid)),
       )
   },
+
+  switchProject: (projectId) =>
+    set((state) => {
+      // Already on this project
+      if (state._currentProjectId === projectId) return state
+
+      // Save current project's layout state
+      const saved = { ...state._projectState }
+      if (state._currentProjectId) {
+        saved[state._currentProjectId] = {
+          groups: state.groups,
+          layout: state.layout,
+          focusedGroupId: state.focusedGroupId,
+          activeTerminalId: state.activeTerminalId,
+        }
+      }
+
+      // Restore target project's state if it exists
+      const restored = saved[projectId]
+      if (restored) {
+        return {
+          _projectState: saved,
+          _currentProjectId: projectId,
+          groups: restored.groups,
+          layout: restored.layout,
+          focusedGroupId: restored.focusedGroupId,
+          activeTerminalId: restored.activeTerminalId,
+        }
+      }
+
+      // No saved state — build from project's terminals
+      const projectTerminals = state.terminals.filter((t) => t.projectId === projectId)
+      if (projectTerminals.length === 0) {
+        return {
+          _projectState: saved,
+          _currentProjectId: projectId,
+          groups: [],
+          layout: null,
+          focusedGroupId: null,
+          activeTerminalId: null,
+        }
+      }
+
+      // Create a single group for all project terminals
+      const gId = newGroupId()
+      const group: TerminalGroup = {
+        id: gId,
+        terminalIds: projectTerminals.map((t) => t.id),
+        activeTerminalId: projectTerminals[0].id,
+      }
+      return {
+        _projectState: saved,
+        _currentProjectId: projectId,
+        groups: [group],
+        layout: { type: "leaf" as const, groupId: gId },
+        focusedGroupId: gId,
+        activeTerminalId: projectTerminals[0].id,
+      }
+    }),
 }))

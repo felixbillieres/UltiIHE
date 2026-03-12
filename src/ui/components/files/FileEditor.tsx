@@ -1,11 +1,22 @@
-import { useEffect, useRef, useCallback } from "react"
+import { useEffect, useRef, useCallback, useMemo } from "react"
 import { useFileStore, type OpenFile } from "../../stores/files"
 import { X, Save, Loader2, AlertCircle } from "lucide-react"
 
 export function FileEditor() {
-  const { openFiles, activeFileId, closeFile, setActiveFile, saveFile } =
-    useFileStore()
+  const allOpenFiles = useFileStore((s) => s.openFiles)
+  const currentProjectId = useFileStore((s) => s._currentProjectId)
+  const closeFile = useFileStore((s) => s.closeFile)
+  const setActiveFile = useFileStore((s) => s.setActiveFile)
+  const saveFile = useFileStore((s) => s.saveFile)
+  const activeFileId = useFileStore((s) => {
+    const pid = s._currentProjectId
+    return pid ? s.activeFileIdByProject[pid] ?? null : null
+  })
 
+  const openFiles = useMemo(
+    () => currentProjectId ? allOpenFiles.filter((f) => f.projectId === currentProjectId) : allOpenFiles,
+    [allOpenFiles, currentProjectId],
+  )
   const activeFile = openFiles.find((f) => f.id === activeFileId) || null
 
   if (openFiles.length === 0) return null

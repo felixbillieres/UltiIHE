@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useMemo } from "react"
 import { type Project } from "../../stores/project"
 import { useSessionStore, type Session } from "../../stores/session"
 import { ChatPanel } from "../chat/ChatPanel"
@@ -26,14 +26,14 @@ function SessionTabBar({
   onToggleSidebar: () => void
   sidebarOpen: boolean
 }) {
-  const {
-    getProjectSessions,
-    activeSessionId,
-    setActiveSession,
-    startNewChat,
-  } = useSessionStore()
-
-  const sessions = getProjectSessions(projectId)
+  const setActiveSession = useSessionStore((s) => s.setActiveSession)
+  const startNewChat = useSessionStore((s) => s.startNewChat)
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
+  const allSessions = useSessionStore((s) => s.sessions)
+  const sessions = useMemo(
+    () => allSessions.filter((s) => s.projectId === projectId).sort((a, b) => b.updatedAt - a.updatedAt),
+    [allSessions, projectId],
+  )
   const tabsRef = useRef<HTMLDivElement>(null)
 
   return (
@@ -48,7 +48,7 @@ function SessionTabBar({
           return (
             <button
               key={s.id}
-              onClick={() => setActiveSession(s.id)}
+              onClick={() => setActiveSession(s.id, projectId)}
               className={`shrink-0 max-w-[160px] px-2.5 py-1 text-[11px] font-sans rounded-md transition-colors truncate ${
                 isActive
                   ? "bg-surface-2 text-text-strong font-medium"
@@ -107,17 +107,18 @@ function SessionSidebar({
   onClose: () => void
   borderSide?: "left" | "right"
 }) {
-  const {
-    getProjectSessions,
-    activeSessionId,
-    setActiveSession,
-    deleteSession,
-    startNewChat,
-    renameSession,
-  } = useSessionStore()
+  const setActiveSession = useSessionStore((s) => s.setActiveSession)
+  const deleteSession = useSessionStore((s) => s.deleteSession)
+  const startNewChat = useSessionStore((s) => s.startNewChat)
+  const renameSession = useSessionStore((s) => s.renameSession)
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
+  const allSessions = useSessionStore((s) => s.sessions)
 
   const [search, setSearch] = useState("")
-  const sessions = getProjectSessions(projectId)
+  const sessions = useMemo(
+    () => allSessions.filter((s) => s.projectId === projectId).sort((a, b) => b.updatedAt - a.updatedAt),
+    [allSessions, projectId],
+  )
   const filtered = search.trim()
     ? sessions.filter((s) =>
         s.title.toLowerCase().includes(search.toLowerCase()),
@@ -177,7 +178,7 @@ function SessionSidebar({
               key={session.id}
               session={session}
               isActive={session.id === activeSessionId}
-              onSelect={() => setActiveSession(session.id)}
+              onSelect={() => setActiveSession(session.id, projectId)}
               onDelete={() => deleteSession(session.id)}
               onRename={(name) => renameSession(session.id, name)}
             />
@@ -274,11 +275,15 @@ function SidebarSessionRow({
 // ─── Past Chats (bottom of chat, collapsed by default) ──────────
 
 function PastChats({ projectId }: { projectId: string }) {
-  const { getProjectSessions, activeSessionId, setActiveSession } =
-    useSessionStore()
+  const setActiveSession = useSessionStore((s) => s.setActiveSession)
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
+  const allSessions = useSessionStore((s) => s.sessions)
   const [expanded, setExpanded] = useState(false)
 
-  const sessions = getProjectSessions(projectId)
+  const sessions = useMemo(
+    () => allSessions.filter((s) => s.projectId === projectId).sort((a, b) => b.updatedAt - a.updatedAt),
+    [allSessions, projectId],
+  )
   const pastSessions = sessions
     .filter((s) => s.id !== activeSessionId)
     .slice(0, expanded ? 20 : 3)
@@ -310,7 +315,7 @@ function PastChats({ projectId }: { projectId: string }) {
           {pastSessions.map((s) => (
             <button
               key={s.id}
-              onClick={() => setActiveSession(s.id)}
+              onClick={() => setActiveSession(s.id, projectId)}
               className="w-full flex items-center justify-between px-4 py-1 text-left hover:bg-surface-1 transition-colors"
             >
               <span className="text-[11px] text-text-weak font-sans truncate flex-1 min-w-0 mr-2">

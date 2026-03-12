@@ -331,7 +331,10 @@ function TreeFile({
   const [renaming, setRenaming] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const openFile = useFileStore((s) => s.openFile)
-  const activeFileId = useFileStore((s) => s.activeFileId)
+  const activeFileId = useFileStore((s) => {
+    const pid = s._currentProjectId
+    return pid ? s.activeFileIdByProject[pid] ?? null : null
+  })
   const openFileTab = useWorkspaceStore((s) => s.openFileTab)
   const isActive = activeFileId === `${container}:${entry.path}`
   const pl = depth * 12 + 4

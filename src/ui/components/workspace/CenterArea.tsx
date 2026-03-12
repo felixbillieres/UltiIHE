@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { type Project } from "../../stores/project"
 import { useWorkspaceStore } from "../../stores/workspace"
 import { useFileStore } from "../../stores/files"
@@ -155,8 +155,16 @@ export function CenterArea({
   onCloseBottomPanel,
   onResizeBottomPanel,
 }: CenterAreaProps) {
-  const tabs = useWorkspaceStore((s) => s.tabs)
-  const activeTabId = useWorkspaceStore((s) => s.activeTabId)
+  const allTabs = useWorkspaceStore((s) => s.tabs)
+  const currentProjectId = useWorkspaceStore((s) => s._currentProjectId)
+  const activeTabId = useWorkspaceStore((s) => {
+    const pid = s._currentProjectId
+    return pid ? s.activeTabIdByProject[pid] ?? null : null
+  })
+  const tabs = useMemo(
+    () => currentProjectId ? allTabs.filter((t) => t.projectId === currentProjectId) : allTabs,
+    [allTabs, currentProjectId],
+  )
   const activeTab = tabs.find((t) => t.id === activeTabId)
 
   const popOuts = usePopOutStore((s) => s.popOuts)

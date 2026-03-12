@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
 import { useSessionStore, type Session } from "../../stores/session"
 import { formatTimeAgo } from "./layoutPersistence"
 import { Plus, MessageSquare, Trash2, X } from "lucide-react"
@@ -10,15 +10,15 @@ interface SessionPanelProps {
 }
 
 export function SessionPanel({ projectId, side, onClose }: SessionPanelProps) {
-  const {
-    getProjectSessions,
-    activeSessionId,
-    setActiveSession,
-    deleteSession,
-    startNewChat,
-  } = useSessionStore()
-
-  const sessions = getProjectSessions(projectId)
+  const setActiveSession = useSessionStore((s) => s.setActiveSession)
+  const deleteSession = useSessionStore((s) => s.deleteSession)
+  const startNewChat = useSessionStore((s) => s.startNewChat)
+  const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
+  const allSessions = useSessionStore((s) => s.sessions)
+  const sessions = useMemo(
+    () => allSessions.filter((s) => s.projectId === projectId).sort((a, b) => b.updatedAt - a.updatedAt),
+    [allSessions, projectId],
+  )
 
   const borderClass = side === "left" ? "border-r" : "border-l"
 
@@ -65,7 +65,7 @@ export function SessionPanel({ projectId, side, onClose }: SessionPanelProps) {
               key={session.id}
               session={session}
               isActive={session.id === activeSessionId}
-              onSelect={() => setActiveSession(session.id)}
+              onSelect={() => setActiveSession(session.id, projectId)}
               onDelete={() => deleteSession(session.id)}
             />
           ))

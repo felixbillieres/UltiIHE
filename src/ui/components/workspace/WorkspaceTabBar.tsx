@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
 import {
   useWorkspaceStore,
   type TabType,
@@ -58,9 +58,18 @@ export function WorkspaceTabBar({
   onAddTerminal,
   onLaunchTool,
 }: WorkspaceTabBarProps) {
-  const tabs = useWorkspaceStore((s) => s.tabs)
-  const activeTabId = useWorkspaceStore((s) => s.activeTabId)
+  const allTabs = useWorkspaceStore((s) => s.tabs)
+  const currentProjectId = useWorkspaceStore((s) => s._currentProjectId)
+  const activeTabId = useWorkspaceStore((s) => {
+    const pid = s._currentProjectId
+    return pid ? s.activeTabIdByProject[pid] ?? null : null
+  })
   const filter = useWorkspaceStore((s) => s.filter)
+  const tabs = useMemo(() => {
+    let filtered = currentProjectId ? allTabs.filter((t) => t.projectId === currentProjectId) : allTabs
+    if (filter) filtered = filtered.filter((t) => t.type === filter)
+    return filtered
+  }, [allTabs, currentProjectId, filter])
   const setFilter = useWorkspaceStore((s) => s.setFilter)
   const setActiveTab = useWorkspaceStore((s) => s.setActiveTab)
   const removeTab = useWorkspaceStore((s) => s.removeTab)
