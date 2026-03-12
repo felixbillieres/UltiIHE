@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { createPortal } from "react-dom"
 import { toast } from "sonner"
 import {
   useSettingsStore,
@@ -191,6 +192,7 @@ export function ControlBar() {
   const agentInfo = AGENTS.find((a) => a.id === activeAgent)
 
   const [showModelPicker, setShowModelPicker] = useState(false)
+  const modelBtnRef = useRef<HTMLButtonElement>(null)
 
   // For local models, show the catalog name
   const localCatalog = useLocalAIStore((s) => s.catalog)
@@ -257,8 +259,9 @@ export function ControlBar() {
       <Separator />
 
       {/* Model selector */}
-      <div className="relative min-w-0 flex-1">
+      <div className="min-w-0 flex-1">
         <button
+          ref={modelBtnRef}
           onClick={() => setShowModelPicker(!showModelPicker)}
           className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-2 transition-colors min-w-0 max-w-full"
           title={`Model: ${modelDisplayName}\nProvider: ${activeProvider}`}
@@ -284,6 +287,7 @@ export function ControlBar() {
             currentModel={activeModel}
             onSelect={handleModelSelect}
             onClose={() => setShowModelPicker(false)}
+            anchorRef={modelBtnRef as React.RefObject<HTMLElement>}
           />
         )}
       </div>
@@ -335,15 +339,37 @@ function ModelPicker({
   currentModel,
   onSelect,
   onClose,
+  anchorRef,
 }: {
   currentProvider: string
   currentModel: string
   onSelect: (providerId: string, modelId: string) => void
   onClose: () => void
+  anchorRef: React.RefObject<HTMLElement>
 }) {
   const providers = useSettingsStore((s) => s.providers)
   const { catalog, server, fetchModels } = useLocalAIStore()
   const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState({ bottom: 0, left: 0, maxWidth: 320 })
+
+  // Position relative to anchor button via portal
+  useEffect(() => {
+    if (!anchorRef.current) return
+    const update = () => {
+      const rect = anchorRef.current!.getBoundingClientRect()
+      const maxW = Math.min(320, window.innerWidth - 16)
+      // Open above the button; clamp left so it doesn't overflow right
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - maxW - 8))
+      setPos({
+        bottom: window.innerHeight - rect.top + 4,
+        left,
+        maxWidth: maxW,
+      })
+    }
+    update()
+    window.addEventListener("resize", update)
+    return () => window.removeEventListener("resize", update)
+  }, [anchorRef])
 
   // Fetch local model catalog when picker opens
   useEffect(() => {
@@ -352,16 +378,19 @@ function ModelPicker({
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (
+        ref.current && !ref.current.contains(e.target as Node) &&
+        anchorRef.current && !anchorRef.current.contains(e.target as Node)
+      ) {
         onClose()
       }
     }
     window.addEventListener("mousedown", close)
     return () => window.removeEventListener("mousedown", close)
-  }, [onClose])
+  }, [onClose, anchorRef])
 
   const configuredProviderIds = new Set(
-    providers.filter((p) => p.apiKey).map((p) => p.id),
+    providers.filter((p) => p.enabled && p.apiKey).map((p) => p.id),
   )
 
   const catalogProviders = useProviderCatalog((s) => s.providers)
@@ -374,23 +403,21 @@ function ModelPicker({
 
   const hasAnything = availableProviders.length > 0 || installedLocal.length > 0
 
-  if (!hasAnything) {
-    return (
-      <div
-        ref={ref}
-        className="absolute bottom-full left-0 mb-1 z-50 w-64 bg-surface-2 border border-border-base rounded-lg shadow-xl p-3"
-      >
-        <p className="text-xs text-text-weaker font-sans">
-          No providers configured. Go to Settings to add an API key, or install a local model.
-        </p>
-      </div>
-    )
-  }
-
-  return (
+  const content = !hasAnything ? (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 mb-1 z-50 w-80 max-h-[400px] overflow-y-auto bg-surface-2 border border-border-base rounded-xl shadow-xl py-1"
+      className="fixed z-[9999] bg-surface-2 border border-border-base rounded-lg shadow-xl p-3"
+      style={{ bottom: pos.bottom, left: pos.left, width: Math.min(256, pos.maxWidth) }}
+    >
+      <p className="text-xs text-text-weaker font-sans">
+        No providers configured. Go to Settings to add an API key, or install a local model.
+      </p>
+    </div>
+  ) : (
+    <div
+      ref={ref}
+      className="fixed z-[9999] max-h-[400px] overflow-y-auto bg-surface-2 border border-border-base rounded-xl shadow-xl py-1"
+      style={{ bottom: pos.bottom, left: pos.left, width: pos.maxWidth }}
     >
       {/* Local models — shown first if any are installed */}
       {installedLocal.length > 0 && (
@@ -420,7 +447,7 @@ function ModelPicker({
                     <span className="text-xs font-sans font-medium truncate">{model.name}</span>
                     <span className="text-[10px] text-text-weaker font-mono">{model.quantization}</span>
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-[10px] text-text-weaker font-mono">
                       {model.contextWindow >= 128_000 ? "128k" : `${(model.contextWindow / 1024).toFixed(0)}k`} ctx
                     </span>
@@ -502,4 +529,6 @@ function ModelPicker({
       ))}
     </div>
   )
+
+  return createPortal(content, document.body)
 }
