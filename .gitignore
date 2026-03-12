@@ -22,5 +22,9 @@ Thumbs.db
 # Bun
 bun.lockb
 
-# Old project references — not part of UltiIHE
+# Old project references
 oldversions/
+
+# Internal dev notes & AI instructions
+CLAUDE.md
+docs/
