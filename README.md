@@ -1,4 +1,4 @@
-# UltiIHE — Ultimate Interactive Hacking Environment
+# Exegol IHE — Interactive Hacking Environment
 
 AI-native pentest IDE built around [Exegol](https://exegol.readthedocs.io/) containers. Terminals are first-class citizens — the AI copilot sees, understands, and interacts with your shells in real time.
 
