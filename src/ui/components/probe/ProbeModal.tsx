@@ -291,7 +291,7 @@ export function ProbeModal({
           Selection preview
         </button>
         {!previewCollapsed && (
-          <pre className="px-3.5 py-2 text-[10px] font-mono text-text-weak/70 bg-[#101010] max-h-[120px] overflow-y-auto overflow-x-auto scrollbar-thin leading-relaxed">
+          <pre className="px-3.5 py-2 text-[10px] font-mono text-text-weak/70 bg-surface-0 max-h-[120px] overflow-y-auto overflow-x-auto scrollbar-thin leading-relaxed">
             {ctx.selection.text}
           </pre>
         )}

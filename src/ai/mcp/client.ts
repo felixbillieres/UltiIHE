@@ -98,7 +98,7 @@ export async function connectServer(config: MCPServerConfig): Promise<MCPServerS
   } catch (err) {
     state.status = "error"
     state.error = (err as Error).message
-    servers.set(config.id, { client: null as any, transport: null, state })
+    servers.set(config.id, { client: null!, transport: null, state })
     console.error(`[MCP] Failed to connect ${config.name}:`, (err as Error).message)
     return state
   }
@@ -137,7 +137,7 @@ export function getMCPTools(): Record<string, Tool<any, any>> {
     for (const mcpTool of entry.state.tools) {
       const toolName = `mcp_${entry.state.config.id}_${mcpTool.name}`
       const zodSchema = jsonSchemaToZod(mcpTool.inputSchema)
-      const client = entry.client
+      const serverId = entry.state.config.id
       const mcpToolName = mcpTool.name
 
       tools[toolName] = {
@@ -145,7 +145,12 @@ export function getMCPTools(): Record<string, Tool<any, any>> {
         inputSchema: zodSchema,
         execute: async (args: any) => {
           try {
-            const result = await client.callTool({
+            // Re-check connection status at execution time (may have disconnected since tool list was built)
+            const current = servers.get(serverId)
+            if (!current || current.state.status !== "connected" || !current.client) {
+              return `MCP server "${entry.state.config.name}" is not connected`
+            }
+            const result = await current.client.callTool({
               name: mcpToolName,
               arguments: args as Record<string, unknown>,
             })

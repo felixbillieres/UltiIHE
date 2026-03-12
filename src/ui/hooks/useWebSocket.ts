@@ -126,30 +126,30 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   const [connected, setConnected] = useState(s.connected)
 
   useEffect(() => {
-    s.refCount++
-    s.listeners.add(setConnected)
+    const singleton = getSingleton()
+    singleton.refCount++
+    singleton.listeners.add(setConnected)
     // Sync current state
-    setConnected(s.connected)
+    setConnected(singleton.connected)
 
     if (enabled) {
-      s.enabled = true
-      doConnect(s)
+      singleton.enabled = true
+      doConnect(singleton)
     }
 
     return () => {
-      s.refCount--
-      s.listeners.delete(setConnected)
+      singleton.refCount = Math.max(0, singleton.refCount - 1)
+      singleton.listeners.delete(setConnected)
 
-      if (s.refCount <= 0) {
-        s.refCount = 0
-        s.enabled = false
-        if (s.reconnectTimer) {
-          clearTimeout(s.reconnectTimer)
-          s.reconnectTimer = null
+      if (singleton.refCount <= 0) {
+        singleton.enabled = false
+        if (singleton.reconnectTimer) {
+          clearTimeout(singleton.reconnectTimer)
+          singleton.reconnectTimer = null
         }
-        s.ws?.close()
-        s.ws = null
-        s.connected = false
+        singleton.ws?.close()
+        singleton.ws = null
+        singleton.connected = false
       }
     }
   }, [enabled])

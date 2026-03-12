@@ -4,6 +4,7 @@ import { StartPanel } from "./components/start/StartPanel"
 import { Workspace } from "./components/workspace/Workspace"
 import { useSettingsStore, THEMES } from "./stores/settings"
 import { ToastProvider } from "./components/toast/ToastProvider"
+import { ErrorBoundary } from "./components/ErrorBoundary"
 
 /** Apply theme CSS variables to :root whenever the active theme or color scheme changes. */
 function useThemeApplier() {
@@ -52,12 +53,18 @@ export function App() {
   useThemeApplier()
 
   return (
-    <div className="h-screen w-screen bg-surface-0 text-text-base font-mono overflow-hidden">
-      <Routes>
-        <Route path="/" element={<StartPanel />} />
-        <Route path="/project/:projectId" element={<Workspace />} />
-      </Routes>
-      <ToastProvider />
-    </div>
+    <ErrorBoundary name="app">
+      <div className="h-screen w-screen bg-surface-0 text-text-base font-mono overflow-hidden">
+        <Routes>
+          <Route path="/" element={<StartPanel />} />
+          <Route path="/project/:projectId" element={
+            <ErrorBoundary name="workspace">
+              <Workspace />
+            </ErrorBoundary>
+          } />
+        </Routes>
+        <ToastProvider />
+      </div>
+    </ErrorBoundary>
   )
 }

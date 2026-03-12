@@ -142,9 +142,14 @@ async function runExegol(
 
     let stdout = ""
     let stderr = ""
+    let resolved = false
+
     const timer = setTimeout(() => {
-      proc.kill("SIGKILL")
-      resolve(null)
+      if (!resolved) {
+        resolved = true
+        proc.kill("SIGKILL")
+        resolve(null)
+      }
     }, timeout)
 
     proc.stdout?.on("data", (d) => (stdout += d.toString()))
@@ -155,13 +160,19 @@ async function runExegol(
     proc.stdin?.end()
 
     proc.on("close", (code) => {
-      clearTimeout(timer)
-      resolve({ stdout, stderr, code: code ?? 1 })
+      if (!resolved) {
+        resolved = true
+        clearTimeout(timer)
+        resolve({ stdout, stderr, code: code ?? 1 })
+      }
     })
 
     proc.on("error", () => {
-      clearTimeout(timer)
-      resolve(null)
+      if (!resolved) {
+        resolved = true
+        clearTimeout(timer)
+        resolve(null)
+      }
     })
   })
 }

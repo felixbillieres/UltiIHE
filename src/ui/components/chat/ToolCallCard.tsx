@@ -179,7 +179,7 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
 
       {/* Expandable output */}
       {expanded && part.output && (
-        <div className="border-t border-border-weak px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-[#0a0a0a]">
+        <div className="border-t border-border-weak px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-surface-0">
           <div className="text-[11px] text-text-weak leading-relaxed">
             <MarkdownContent content={`\`\`\`\n${part.output}\n\`\`\``} />
           </div>

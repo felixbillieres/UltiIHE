@@ -94,7 +94,7 @@ const DiffView = memo(function DiffView({ diff }: { diff: string }) {
   if (html) {
     return (
       <div
-        className="max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin rounded-lg border border-border-weak [&_pre]:!bg-[#0d1117] [&_pre]:px-3 [&_pre]:py-2 [&_pre]:text-[11px] [&_pre]:leading-relaxed [&_code]:!text-[11px] [&_code]:!font-mono"
+        className="max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin rounded-lg border border-border-weak [&_pre]:!bg-surface-0 [&_pre]:px-3 [&_pre]:py-2 [&_pre]:text-[11px] [&_pre]:leading-relaxed [&_code]:!text-[11px] [&_code]:!font-mono"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     )
@@ -102,7 +102,7 @@ const DiffView = memo(function DiffView({ diff }: { diff: string }) {
 
   // Fallback: plain colored diff
   return (
-    <div className="max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin bg-[#0d1117] rounded-lg border border-border-weak">
+    <div className="max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin bg-surface-0 rounded-lg border border-border-weak">
       <pre className="text-[11px] font-mono leading-relaxed">
         {diff.split("\n").map((line, i) => {
           let cls = "px-3 py-0 text-text-weak"
@@ -110,7 +110,7 @@ const DiffView = memo(function DiffView({ diff }: { diff: string }) {
           else if (line.startsWith("@@")) cls = "px-3 py-0.5 text-cyan-400/70 bg-cyan-400/5"
           else if (line.startsWith("+")) cls = "px-3 py-0 text-emerald-400 bg-emerald-400/8"
           else if (line.startsWith("-")) cls = "px-3 py-0 text-red-400 bg-red-400/8"
-          return <div key={i} className={cls}>{line}</div>
+          return <div key={`diff-${i}`} className={cls}>{line}</div>
         })}
       </pre>
     </div>

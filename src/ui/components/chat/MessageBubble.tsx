@@ -77,11 +77,11 @@ function TerminalContextBlock({ block }: { block: TerminalBlock }) {
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-2/50 transition-colors"
       >
-        <div className="w-4 h-4 rounded bg-cyan-400/15 flex items-center justify-center shrink-0">
-          <Terminal className="w-2.5 h-2.5 text-cyan-400" />
+        <div className="w-4 h-4 rounded bg-accent/15 flex items-center justify-center shrink-0">
+          <Terminal className="w-2.5 h-2.5 text-accent" />
         </div>
         <span className="text-[11px] text-text-weak font-sans flex-1 text-left truncate">
-          <span className="text-cyan-400 font-medium">{block.name}</span>
+          <span className="text-accent font-medium">{block.name}</span>
           <span className="text-text-weaker ml-1.5">{block.lines} lines</span>
         </span>
         {block.comment && (
@@ -100,7 +100,7 @@ function TerminalContextBlock({ block }: { block: TerminalBlock }) {
               <span className="text-[11px] text-accent font-sans">{block.comment}</span>
             </div>
           )}
-          <pre className="px-3 py-2 text-[11px] font-mono text-text-weak leading-relaxed max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-thin bg-[#101010]">
+          <pre className="px-3 py-2 text-[11px] font-mono text-text-weak leading-relaxed max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-thin bg-surface-0">
             {block.content}
           </pre>
         </div>
@@ -121,11 +121,11 @@ function FileContextBlock({ block }: { block: FileBlock }) {
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface-2/50 transition-colors"
       >
-        <div className="w-4 h-4 rounded bg-blue-400/15 flex items-center justify-center shrink-0">
-          <FileText className="w-2.5 h-2.5 text-blue-400" />
+        <div className="w-4 h-4 rounded bg-accent/15 flex items-center justify-center shrink-0">
+          <FileText className="w-2.5 h-2.5 text-accent" />
         </div>
         <span className="text-[11px] text-text-weak font-sans flex-1 text-left truncate">
-          <span className="text-blue-400 font-medium">{fileName}</span>
+          <span className="text-accent font-medium">{fileName}</span>
           {block.startLine && (
             <span className="text-text-weaker ml-1">L{block.startLine}</span>
           )}
@@ -150,7 +150,7 @@ function FileContextBlock({ block }: { block: FileBlock }) {
               <span className="text-[11px] text-accent font-sans">{block.comment}</span>
             </div>
           )}
-          <pre className="px-3 py-2 text-[11px] font-mono text-text-weak leading-relaxed max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-thin bg-[#101010]">
+          <pre className="px-3 py-2 text-[11px] font-mono text-text-weak leading-relaxed max-h-[200px] overflow-y-auto overflow-x-auto scrollbar-thin bg-surface-0">
             {block.content}
           </pre>
         </div>
@@ -194,7 +194,7 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
         <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
       {expanded && (
-        <div className="border-t border-purple-500/20 px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-[#0a0a0a]">
+        <div className="border-t border-purple-500/20 px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-surface-0">
           <div className="text-[11px] text-text-weak leading-relaxed whitespace-pre-wrap font-mono">
             {part.content}
           </div>
@@ -212,7 +212,7 @@ function AssistantParts({ parts }: { parts: MessagePart[] }) {
       {parts.map((part, i) => {
         if (part.type === "text") {
           return part.content ? (
-            <div key={i} className="break-words">
+            <div key={`text-${i}`} className="break-words">
               <MarkdownContent content={part.content} />
             </div>
           ) : null
@@ -333,9 +333,9 @@ export function MessageBubble({
             <>
               {parsed.blocks.map((b, i) =>
                 b.type === "terminal" ? (
-                  <TerminalContextBlock key={i} block={b} />
+                  <TerminalContextBlock key={`ctx-${i}-${b.type}`} block={b} />
                 ) : (
-                  <FileContextBlock key={i} block={b} />
+                  <FileContextBlock key={`ctx-${i}-${b.type}`} block={b} />
                 ),
               )}
             </>

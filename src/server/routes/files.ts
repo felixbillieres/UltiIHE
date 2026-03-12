@@ -1,7 +1,29 @@
 import { Hono } from "hono"
-import { execAsync } from "../utils/exec"
 
 export const filesRoutes = new Hono()
+
+// ── Docker exec helper (no shell interpolation) ────────────────
+
+async function dockerExec(
+  container: string,
+  args: string[],
+  timeout = 30000,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+  const proc = Bun.spawn(["docker", "exec", container, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+
+  const timer = setTimeout(() => proc.kill(), timeout)
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  clearTimeout(timer)
+  await proc.exited
+
+  return { stdout, stderr, exitCode: proc.exitCode ?? 1 }
+}
 
 // ── Validation ──────────────────────────────────────────────────
 
@@ -31,9 +53,9 @@ filesRoutes.get("/files/:container/list", async (c) => {
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
 
   try {
-    const result = await execAsync(
-      `docker exec ${container} find "${path}" -maxdepth 1 -mindepth 1 -printf "%y %s %T@ %p\\n" 2>/dev/null | sort -k1,1r -k4`,
-    )
+    const result = await dockerExec(container, [
+      "find", path, "-maxdepth", "1", "-mindepth", "1", "-printf", "%y %s %T@ %p\\n",
+    ])
     const entries = result.stdout
       .trim()
       .split("\n")
@@ -68,7 +90,7 @@ filesRoutes.get("/files/:container/read", async (c) => {
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
 
   try {
-    const sizeResult = await execAsync(`docker exec ${container} stat -c %s "${path}"`)
+    const sizeResult = await dockerExec(container, ["stat", "-c", "%s", path])
     const size = parseInt(sizeResult.stdout.trim())
     if (size > 5 * 1024 * 1024) {
       return c.json({ error: "File too large (> 5MB)" }, 413)
@@ -77,7 +99,7 @@ filesRoutes.get("/files/:container/read", async (c) => {
     // Base64 mode for binary files (images dragged to chat)
     const base64 = c.req.query("base64")
     if (base64 === "true") {
-      const result = await execAsync(`docker exec ${container} base64 -w0 "${path}"`)
+      const result = await dockerExec(container, ["base64", "-w0", path])
       const ext = path.split(".").pop()?.toLowerCase() || ""
       const mimeMap: Record<string, string> = {
         png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
@@ -86,7 +108,7 @@ filesRoutes.get("/files/:container/read", async (c) => {
       return c.json({ base64: result.stdout.trim(), mime: mimeMap[ext] || "application/octet-stream", size })
     }
 
-    const result = await execAsync(`docker exec ${container} cat "${path}"`)
+    const result = await dockerExec(container, ["cat", path])
     return c.json({ content: result.stdout, size })
   } catch (e) {
     return c.json({ error: (e as Error).message }, 500)
@@ -135,8 +157,8 @@ filesRoutes.post("/files/:container/create-file", async (c) => {
 
   try {
     const dir = path.substring(0, path.lastIndexOf("/"))
-    if (dir) await execAsync(`docker exec ${container} mkdir -p "${dir}"`)
-    await execAsync(`docker exec ${container} touch "${path}"`)
+    if (dir) await dockerExec(container, ["mkdir", "-p", dir])
+    await dockerExec(container, ["touch", path])
     return c.json({ ok: true })
   } catch (e) {
     return c.json({ error: (e as Error).message }, 500)
@@ -153,7 +175,7 @@ filesRoutes.post("/files/:container/create-dir", async (c) => {
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
 
   try {
-    await execAsync(`docker exec ${container} mkdir -p "${path}"`)
+    await dockerExec(container, ["mkdir", "-p", path])
     return c.json({ ok: true })
   } catch (e) {
     return c.json({ error: (e as Error).message }, 500)
@@ -171,7 +193,7 @@ filesRoutes.post("/files/:container/delete", async (c) => {
   if (PROTECTED_ROOTS.has(path)) return c.json({ error: "Cannot delete protected path" }, 403)
 
   try {
-    await execAsync(`docker exec ${container} rm -rf "${path}"`)
+    await dockerExec(container, ["rm", "-rf", path])
     return c.json({ ok: true })
   } catch (e) {
     return c.json({ error: (e as Error).message }, 500)
@@ -189,8 +211,8 @@ filesRoutes.post("/files/:container/rename", async (c) => {
 
   try {
     const dir = newPath.substring(0, newPath.lastIndexOf("/"))
-    if (dir) await execAsync(`docker exec ${container} mkdir -p "${dir}"`)
-    await execAsync(`docker exec ${container} mv "${oldPath}" "${newPath}"`)
+    if (dir) await dockerExec(container, ["mkdir", "-p", dir])
+    await dockerExec(container, ["mv", oldPath, newPath])
     return c.json({ ok: true })
   } catch (e) {
     return c.json({ error: (e as Error).message }, 500)
@@ -217,24 +239,22 @@ filesRoutes.post("/files/transfer", async (c) => {
     // Same container: use cp/mv directly
     if (srcContainer === dstContainer) {
       const dir = dstPath.substring(0, dstPath.lastIndexOf("/"))
-      if (dir) await execAsync(`docker exec ${srcContainer} mkdir -p "${dir}"`)
+      if (dir) await dockerExec(srcContainer, ["mkdir", "-p", dir])
 
       if (operation === "copy") {
-        await execAsync(`docker exec ${srcContainer} cp -r "${srcPath}" "${dstPath}"`)
+        await dockerExec(srcContainer, ["cp", "-r", srcPath, dstPath])
       } else {
-        await execAsync(`docker exec ${srcContainer} mv "${srcPath}" "${dstPath}"`)
+        await dockerExec(srcContainer, ["mv", srcPath, dstPath])
       }
       return c.json({ ok: true })
     }
 
     // Cross-container: check if file or dir
-    const typeResult = await execAsync(
-      `docker exec ${srcContainer} test -d "${srcPath}" && echo DIR || echo FILE`,
-    )
-    const isDir = typeResult.stdout.trim() === "DIR"
+    const typeResult = await dockerExec(srcContainer, ["test", "-d", srcPath])
+    const isDir = typeResult.exitCode === 0
 
     const dstDir = dstPath.substring(0, dstPath.lastIndexOf("/"))
-    if (dstDir) await execAsync(`docker exec ${dstContainer} mkdir -p "${dstDir}"`)
+    if (dstDir) await dockerExec(dstContainer, ["mkdir", "-p", dstDir])
 
     if (isDir) {
       // Tar pipe for directories
@@ -260,7 +280,7 @@ filesRoutes.post("/files/transfer", async (c) => {
       // Rename if destination name differs
       const dstName = dstPath.split("/").pop()!
       if (srcName !== dstName) {
-        await execAsync(`docker exec ${dstContainer} mv "${dstParent}/${srcName}" "${dstPath}"`)
+        await dockerExec(dstContainer, ["mv", `${dstParent}/${srcName}`, dstPath])
       }
     } else {
       // File: read then write via stdin
@@ -282,7 +302,7 @@ filesRoutes.post("/files/transfer", async (c) => {
 
     // Delete source if move
     if (operation === "move") {
-      await execAsync(`docker exec ${srcContainer} rm -rf "${srcPath}"`)
+      await dockerExec(srcContainer, ["rm", "-rf", srcPath])
     }
 
     return c.json({ ok: true })

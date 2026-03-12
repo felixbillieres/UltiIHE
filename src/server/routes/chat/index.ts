@@ -215,6 +215,12 @@ chatRoutes.post("/chat", async (c) => {
   if (!messages || !providerId || !modelId) {
     return c.json({ error: "Missing required fields" }, 400)
   }
+  if (messages.length > 500) {
+    return c.json({ error: "Message history too large (max 500)" }, 413)
+  }
+  if (images.length > 20) {
+    return c.json({ error: "Too many images (max 20)" }, 413)
+  }
   if (providerId !== "local" && providerId !== "custom" && !apiKey) {
     return c.json({ error: "Missing API key" }, 400)
   }

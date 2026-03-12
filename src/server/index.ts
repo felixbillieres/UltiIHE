@@ -16,7 +16,11 @@ import { reconnectAll } from "../ai/mcp/client"
 
 const app = new Hono()
 
-app.use("*", cors())
+app.use("*", cors({
+  origin: ["http://localhost:3000", "http://localhost:5173"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true,
+}))
 app.route("/api", containerRoutes)
 app.route("/api", filesRoutes)
 app.route("/api", chatRoutes)
@@ -132,6 +136,22 @@ const server = Bun.serve({
 
 console.log(`[Exegol IHE] Server running on http://localhost:${server.port}`)
 console.log(`[Exegol IHE] WebSocket available at ws://localhost:${server.port}/ws`)
+
+// Check Docker availability at startup
+import { spawn as spawnChild } from "child_process"
+;(() => {
+  const proc = spawnChild("docker", ["info"], { stdio: "ignore" })
+  proc.on("error", () => {
+    console.warn("[Exegol IHE] WARNING: Docker is not available. Container features will not work.")
+  })
+  proc.on("close", (code) => {
+    if (code !== 0) {
+      console.warn("[Exegol IHE] WARNING: Docker daemon is not running. Container features will not work.")
+    } else {
+      console.log("[Exegol IHE] Docker is available")
+    }
+  })
+})()
 
 // Auto-reconnect MCP servers from saved config
 import { readFile } from "fs/promises"

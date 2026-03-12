@@ -103,7 +103,7 @@ const HighlightedCode = memo(function HighlightedCode({
       <CopyButton text={code} />
       {html ? (
         <div
-          className="[&_pre]:!bg-[#0d1117] [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-relaxed [&_code]:!text-xs [&_code]:!font-mono"
+          className="[&_pre]:!bg-surface-0 [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-relaxed [&_code]:!text-xs [&_code]:!font-mono"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (

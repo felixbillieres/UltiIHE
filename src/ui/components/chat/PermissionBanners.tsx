@@ -65,7 +65,7 @@ export function PermissionBanner({
           </span>
         </div>
 
-        <div className="ml-6 rounded-lg bg-[#101010] border border-border-weak overflow-hidden">
+        <div className="ml-6 rounded-lg bg-surface-0 border border-border-weak overflow-hidden">
           <pre className="px-3 py-2.5 text-xs font-mono text-text-base leading-relaxed overflow-x-auto max-h-[120px] overflow-y-auto scrollbar-thin">
             <span className="text-text-weaker select-none">$ </span>
             {displayCmd}
@@ -131,7 +131,7 @@ export function ToolPermissionBanner({
           </span>
         </div>
 
-        <div className="ml-6 rounded-lg bg-[#101010] border border-border-weak overflow-hidden">
+        <div className="ml-6 rounded-lg bg-surface-0 border border-border-weak overflow-hidden">
           <pre className="px-3 py-2.5 text-xs font-mono text-text-base leading-relaxed overflow-x-auto">
             <span className="text-text-weaker select-none">{">"} </span>
             {toolSummary(tool.toolName, tool.args)}

@@ -39,6 +39,7 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
   const saveFile = useFileStore((s) => s.saveFile)
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null)
@@ -119,7 +120,7 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
       editorDom.removeEventListener("mouseup", handleMouseUp)
       selectionDisposable.dispose()
     }
-    ;(ed as any)._ultiCleanup = cleanup
+    cleanupRef.current = cleanup
   }
 
   useEffect(() => {
@@ -127,7 +128,7 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
       const ed = editorRef.current
       if (!ed) return
       // Run cleanup for event listeners
-      if ((ed as any)._ultiCleanup) (ed as any)._ultiCleanup()
+      if (cleanupRef.current) cleanupRef.current()
       // Dispose Monaco editor instance to free memory
       ed.dispose()
       editorRef.current = null
