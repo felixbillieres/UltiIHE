@@ -655,6 +655,20 @@ export function ChatPanel({ projectId }: Props) {
               flushToStore()
               break
             }
+            case "usage": {
+              // Real token usage from the provider
+              if (sid && assistantId) {
+                useSessionStore.getState().updateMessageUsage(sid, assistantId, {
+                  inputTokens: evt.data.inputTokens ?? 0,
+                  outputTokens: evt.data.outputTokens ?? 0,
+                  reasoningTokens: evt.data.reasoningTokens || undefined,
+                  cacheReadTokens: evt.data.cacheReadTokens || undefined,
+                  cacheWriteTokens: evt.data.cacheWriteTokens || undefined,
+                  totalSteps: evt.data.totalSteps || undefined,
+                })
+              }
+              break
+            }
             case "done":
               break
           }

@@ -302,6 +302,45 @@ export function supportsPromptCaching(providerId: string): boolean {
   return ["anthropic", "openrouter", "amazon-bedrock"].includes(providerId)
 }
 
+/**
+ * Apply cache hints to the last 2 conversation messages.
+ *
+ * OpenCode pattern: cache the first 2 system messages + last 2 conversation messages.
+ * System prompt caching is handled via providerOptions (applied to the whole system message).
+ * This function handles the last 2 NON-system messages — so subsequent steps
+ * pay only 10% for the cached prefix (Anthropic pricing).
+ *
+ * Mutates messages in-place.
+ */
+export function applyCacheHints(messages: any[], providerId: string): void {
+  if (!supportsPromptCaching(providerId)) return
+
+  const cacheOptions = getPromptCacheOptions(providerId)
+  if (!cacheOptions || Object.keys(cacheOptions).length === 0) return
+
+  // Find last 2 non-system messages with substantial content
+  let cached = 0
+  for (let i = messages.length - 1; i >= 0 && cached < 2; i--) {
+    const msg = messages[i]
+    if (msg.role === "system") continue
+
+    // Only cache messages with meaningful content (avoid caching empty/tiny messages)
+    const contentLen = typeof msg.content === "string"
+      ? msg.content.length
+      : Array.isArray(msg.content)
+        ? msg.content.reduce((sum: number, p: any) => sum + (p.text?.length || 0), 0)
+        : 0
+    if (contentLen < 100) continue // Skip tiny messages (not worth caching)
+
+    // Apply provider-specific cache options
+    msg.providerOptions = {
+      ...(msg.providerOptions || {}),
+      ...cacheOptions,
+    }
+    cached++
+  }
+}
+
 // ── Temperature / sampling defaults ──────────────────────────────
 
 /**

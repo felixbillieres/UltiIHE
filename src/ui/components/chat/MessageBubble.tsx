@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react"
-import { type Message, type MessagePart, type ReasoningPart } from "../../stores/session"
+import { type Message, type MessagePart, type ReasoningPart, type MessageUsage } from "../../stores/session"
 import {
   Bot,
   User,
@@ -302,6 +302,40 @@ function MessageActions({
   )
 }
 
+// ── Usage badge (hover-only, non-intrusive) ─────────────────────
+
+function formatTokens(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return String(n)
+}
+
+function UsageBadge({ usage }: { usage: MessageUsage }) {
+  const total = usage.inputTokens + usage.outputTokens
+  if (total === 0) return null
+
+  const cacheRead = usage.cacheReadTokens ?? 0
+  const cachePercent = usage.inputTokens > 0 && cacheRead > 0
+    ? Math.round((cacheRead / usage.inputTokens) * 100)
+    : 0
+
+  return (
+    <span
+      className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-text-weaker/60 font-sans tabular-nums"
+      title={[
+        `Input: ${usage.inputTokens}`,
+        `Output: ${usage.outputTokens}`,
+        cacheRead > 0 ? `Cache read: ${cacheRead} (${cachePercent}%)` : null,
+        (usage.cacheWriteTokens ?? 0) > 0 ? `Cache write: ${usage.cacheWriteTokens}` : null,
+        (usage.reasoningTokens ?? 0) > 0 ? `Reasoning: ${usage.reasoningTokens}` : null,
+        (usage.totalSteps ?? 0) > 1 ? `Steps: ${usage.totalSteps}` : null,
+      ].filter(Boolean).join(" | ")}
+    >
+      {formatTokens(usage.inputTokens)} in · {formatTokens(usage.outputTokens)} out
+      {cachePercent > 0 && <span className="text-emerald-400/60"> · {cachePercent}% cached</span>}
+    </span>
+  )
+}
+
 // ── Message bubble ───────────────────────────────────────────────
 
 export function MessageBubble({
@@ -387,14 +421,17 @@ export function MessageBubble({
             )}
           </div>
         )}
-        {/* Actions — visible on hover, not during streaming */}
+        {/* Actions + usage — visible on hover, not during streaming */}
         {!isStreaming && (
-          <div className="mt-1 ml-1">
+          <div className="mt-1 ml-1 flex items-center gap-2">
             <MessageActions
               message={message}
               onFork={onFork}
               onRetry={isLastAssistant ? onRetry : undefined}
             />
+            {message.usage && (
+              <UsageBadge usage={message.usage} />
+            )}
           </div>
         )}
       </div>

@@ -30,6 +30,23 @@ export interface ReasoningPart {
 
 export type MessagePart = TextPart | ToolCallPart | ReasoningPart
 
+// ─── Usage tracking ─────────────────────────────────────────
+
+export interface MessageUsage {
+  /** Input tokens (prompt) */
+  inputTokens: number
+  /** Output tokens (completion) */
+  outputTokens: number
+  /** Reasoning/thinking tokens (Claude Thinking, O1) */
+  reasoningTokens?: number
+  /** Tokens read from prompt cache (90% cheaper) */
+  cacheReadTokens?: number
+  /** Tokens written to prompt cache (25% more expensive) */
+  cacheWriteTokens?: number
+  /** Number of tool-call steps in this response */
+  totalSteps?: number
+}
+
 // ─── Message & Session ───────────────────────────────────────
 
 export interface Message {
@@ -38,6 +55,8 @@ export interface Message {
   content: string
   parts: MessagePart[]
   createdAt: number
+  /** Real token usage from the provider (assistant messages only) */
+  usage?: MessageUsage
 }
 
 export interface Session {
@@ -69,6 +88,7 @@ interface SessionStore {
   addMessage: (sessionId: string, message: Message) => void
   updateMessageContent: (sessionId: string, messageId: string, content: string) => void
   updateMessage: (sessionId: string, messageId: string, updates: { content?: string; parts?: MessagePart[] }) => void
+  updateMessageUsage: (sessionId: string, messageId: string, usage: MessageUsage) => void
   getActiveMessages: (projectId: string) => Message[]
 
   // Undo/Redo/Fork
@@ -190,6 +210,21 @@ export const useSessionStore = create<SessionStore>()(
                     m.id === messageId ? { ...m, ...updates } : m,
                   ),
                   updatedAt: Date.now(),
+                }
+              : sess,
+          ),
+        }))
+      },
+
+      updateMessageUsage: (sessionId, messageId, usage) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) =>
+            sess.id === sessionId
+              ? {
+                  ...sess,
+                  messages: sess.messages.map((m) =>
+                    m.id === messageId ? { ...m, usage } : m,
+                  ),
                 }
               : sess,
           ),

@@ -18,8 +18,8 @@ import {
   buildCompactionRequest,
   applyCompaction,
 } from "../../../ai/context"
-import { resolveContextWindow, preWarmModel } from "./contextResolver"
-import { normalizeMessages, getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withProviderTransforms, sanitizeSchema } from "./providerTransforms"
+import { resolveContextWindow, resolveMaxOutput, preWarmModel } from "./contextResolver"
+import { normalizeMessages, getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withProviderTransforms, sanitizeSchema, applyCacheHints } from "./providerTransforms"
 import { invalidTool, buildRepairCallback, createDoomLoopTracker } from "./toolResilience"
 import { getMCPTools } from "../../../ai/mcp/client"
 
@@ -230,7 +230,8 @@ chatRoutes.post("/chat", async (c) => {
 
   // ── Context budget ────────────────────────────────────────
   const contextWindow = resolveContextWindow(providerId, modelId)
-  const budget = calculateBudget(contextWindow)
+  const maxOutput = resolveMaxOutput(providerId, modelId)
+  const budget = calculateBudget(contextWindow, maxOutput)
 
   // ── Terminal context ──────────────────────────────────────
   let terminalContext = ""
@@ -345,12 +346,15 @@ chatRoutes.post("/chat", async (c) => {
       ...getReasoningOptions(providerId, mode, thinkingEffort),
     }
 
-    // Merge prompt cache hints into providerOptions
+    // Merge prompt cache hints into providerOptions (for system prompt)
     if (supportsPromptCaching(providerId)) {
       const cacheOpts = getPromptCacheOptions(providerId)
       for (const [key, value] of Object.entries(cacheOpts)) {
         providerOptions[key] = { ...providerOptions[key], ...value }
       }
+      // Also apply cache hints on last 2 conversation messages
+      // This makes the conversation prefix cacheable across steps
+      applyCacheHints(processedMessages, providerId)
     }
 
     // ── Build repair callback ─────────────────────────────
@@ -377,9 +381,13 @@ chatRoutes.post("/chat", async (c) => {
         tools,
         // Hide InvalidTool from model's active tools
         activeTools: Object.keys(tools).filter((t) => t !== "invalid"),
-        // Limit to 10 steps (each step = 1 API call). OpenCode uses 1 with manual loop.
-        // 10 covers 99% of pentest workflows without runaway cost.
-        stopWhen: stepCountIs(10),
+        // Adaptive steps based on context budget tier:
+        // minimal (≤8K): 3 steps — small models shouldn't do many tool calls
+        // medium (8-32K): 5 steps — balanced
+        // full (>32K): 8 steps — covers complex multi-tool pentest workflows
+        stopWhen: stepCountIs(
+          budget.promptTier === "minimal" ? 3 : budget.promptTier === "medium" ? 5 : 8,
+        ),
         // No automatic retries — errors bubble up immediately to the user.
         // AI SDK defaults to 2 retries (3 total attempts), which silently burns quota.
         maxRetries: 0,
@@ -648,6 +656,26 @@ chatRoutes.post("/chat", async (c) => {
         }
         if (toolCallCount > 0) {
           console.log(`[Chat] Stream done | ${toolCallCount} tool calls`)
+        }
+        // Extract real usage from AI SDK result (resolves when stream completes)
+        try {
+          const usage = await result.usage
+          const usageInfo = {
+            inputTokens: usage?.inputTokens ?? 0,
+            outputTokens: usage?.outputTokens ?? 0,
+            reasoningTokens: usage?.outputTokenDetails?.reasoningTokens ?? 0,
+            cacheReadTokens: usage?.inputTokenDetails?.cacheReadTokens ?? 0,
+            cacheWriteTokens: usage?.inputTokenDetails?.cacheWriteTokens ?? 0,
+            totalSteps: (await result.steps)?.length ?? 1,
+          }
+          controller.enqueue(encoder.encode(sse("usage", usageInfo)))
+          const totalTokens = usageInfo.inputTokens + usageInfo.outputTokens
+          const cacheHit = usageInfo.cacheReadTokens > 0
+            ? ` | cache: ${usageInfo.cacheReadTokens} read, ${usageInfo.cacheWriteTokens} write`
+            : ""
+          console.log(`[Usage] ${usageInfo.inputTokens} in + ${usageInfo.outputTokens} out = ${totalTokens} total${cacheHit}`)
+        } catch {
+          // Usage extraction is best-effort — don't fail the stream
         }
         controller.enqueue(encoder.encode(sse("done", {})))
         controller.close()
