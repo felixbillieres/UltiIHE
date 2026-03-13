@@ -6,8 +6,10 @@ const CONTAINER_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 const RING_BUFFER_MAX_LINES = 1000
 const MAX_AI_POOL = 4
 
-// Prompt patterns for Exegol and common shells
-const PROMPT_RE = /[\$#>]\s*$/
+// Prompt patterns — matches Exegol format: [date] container /path #
+// Also matches generic shells ending with $, #, >, or %
+const EXEGOL_PROMPT_RE = /^\[.*?\]\s+\S+\s+\S+\s+#/
+const GENERIC_PROMPT_RE = /[\$#>%]\s*$/
 
 export interface Terminal {
   id: string
@@ -15,6 +17,8 @@ export interface Terminal {
   container: string
   process: IPty
   ringBuffer: string[]
+  /** Accumulator for the current incomplete line (before \n) */
+  _currentLine: string
   subscribers: Set<WebSocket>
   alive: boolean
   /** Whether a command is currently executing */
@@ -174,6 +178,7 @@ class TerminalManager {
       container,
       process: ptyProcess,
       ringBuffer: [],
+      _currentLine: "",
       subscribers: new Set(),
       alive: true,
       busy: false,
@@ -187,24 +192,33 @@ class TerminalManager {
     ptyProcess.onData((chunk: string) => {
       if (!terminal.alive) return
 
-      // Store stripped output in ring buffer for AI context
+      // Store stripped output in ring buffer for AI context.
+      // Uses a line accumulator (_currentLine) so partial PTY chunks
+      // are joined into complete lines before being pushed.
       const stripped = stripAnsi(chunk)
-      const lines = stripped.split("\n")
-      for (const line of lines) {
-        if (line.length > 0) {
-          terminal.ringBuffer.push(line)
+      terminal._currentLine += stripped
+      const parts = terminal._currentLine.split("\n")
+      // All parts except the last are complete lines
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (parts[i].length > 0) {
+          terminal.ringBuffer.push(parts[i])
         }
       }
+      // Last part is the current incomplete line (or "" if chunk ended with \n)
+      terminal._currentLine = parts[parts.length - 1]
+
       while (terminal.ringBuffer.length > RING_BUFFER_MAX_LINES) {
         terminal.ringBuffer.shift()
       }
 
-      // Prompt detection: after output stops for 300ms, check for prompt
+      // Prompt detection: after output stops for 300ms, check for prompt.
+      // Checks _currentLine (the visible line where the cursor sits),
+      // not the ring buffer, since the prompt typically has no trailing \n.
       if (terminal._idleTimer) clearTimeout(terminal._idleTimer)
       terminal._idleTimer = setTimeout(() => {
-        const lastLine = terminal.ringBuffer[terminal.ringBuffer.length - 1] || ""
-        if (PROMPT_RE.test(lastLine)) {
-          // Mark terminal as ready on first prompt (shell finished sourcing rc files)
+        const curLine = terminal._currentLine
+        const isPrompt = EXEGOL_PROMPT_RE.test(curLine) || GENERIC_PROMPT_RE.test(curLine)
+        if (isPrompt) {
           if (!terminal.ready) {
             terminal.ready = true
             console.log(`[Terminal] ${terminal.name} (${terminal.id}) ready`)
@@ -258,7 +272,13 @@ class TerminalManager {
     return new Promise((resolve) => {
       const start = Date.now()
       const check = () => {
-        if (terminal.ready || !terminal.alive || Date.now() - start > timeout) {
+        if (terminal.ready || !terminal.alive) {
+          resolve()
+          return
+        }
+        if (Date.now() - start > timeout) {
+          console.warn(`[Terminal] waitForReady timed out for ${terminal.name} (${terminal.id}) after ${timeout}ms — forcing ready`)
+          terminal.ready = true
           resolve()
           return
         }
@@ -272,12 +292,18 @@ class TerminalManager {
    * Wait until the terminal is no longer busy (command finished, prompt returned).
    * Times out after `timeout` ms to avoid blocking forever on hung commands.
    */
-  private waitForIdle(terminal: Terminal, timeout = 120_000): Promise<void> {
+  private waitForIdle(terminal: Terminal, timeout = 30_000): Promise<void> {
     if (!terminal.busy) return Promise.resolve()
     return new Promise((resolve) => {
       const start = Date.now()
       const check = () => {
-        if (!terminal.busy || !terminal.alive || Date.now() - start > timeout) {
+        if (!terminal.busy || !terminal.alive) {
+          resolve()
+          return
+        }
+        if (Date.now() - start > timeout) {
+          console.warn(`[Terminal] waitForIdle timed out for ${terminal.name} (${terminal.id}) after ${timeout}ms — forcing idle`)
+          terminal.busy = false
           resolve()
           return
         }

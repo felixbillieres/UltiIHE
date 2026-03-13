@@ -46,6 +46,7 @@ Rules:
 
     let title = result.text
       .replace(/<think>[\s\S]*?<\/think>\s*/g, "") // Strip reasoning tags
+      .replace(/<[^>]+>/g, "") // Strip any remaining XML/HTML tags
       .split("\n")[0] // First line only
       .replace(/^["']|["']$/g, "") // Strip wrapping quotes
       .trim()

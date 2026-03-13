@@ -67,7 +67,9 @@ class CommandQueue {
 
     // Auto-run: execute immediately with typing effect
     if (this.mode === "auto-run" || this.mode === "allow-all-session") {
-      terminalManager.markBusy(targetId)
+      // NOTE: do NOT call markBusy here — writeTyping sets busy=true AFTER writing
+      // the command. Calling markBusy before writeTyping deadlocks: writeTyping
+      // starts with waitForIdle() which blocks because busy was just set to true.
       opsTracker.start({ id, command: opts.command, terminalId: targetId, terminalName: targetName })
       await terminalManager.writeTyping(targetId, opts.command)
       // Notify frontend that a command was auto-executed
@@ -133,8 +135,7 @@ class CommandQueue {
       this.mode = "allow-all-session"
     }
 
-    // Track operation + mark busy
-    terminalManager.markBusy(entry.terminalId)
+    // Track operation (writeTyping handles busy flag internally)
     opsTracker.start({
       id: entry.id,
       command: entry.command,
@@ -164,7 +165,6 @@ class CommandQueue {
 
     this.pending.delete(entry.id)
     clearTimeout(entry.timeoutId)
-    terminalManager.markBusy(entry.terminalId)
     opsTracker.start({
       id: entry.id,
       command: newCommand,

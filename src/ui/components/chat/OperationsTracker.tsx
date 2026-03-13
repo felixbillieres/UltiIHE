@@ -125,7 +125,7 @@ export function OperationsTracker() {
   const running = useMemo(() => operations.filter((o) => o.status === "running"), [operations])
   const done = useMemo(() => operations.filter((o) => o.status !== "running"), [operations])
 
-  // Focus a terminal by its ID
+  // Focus a terminal by its ID — update store state + DOM focus
   function focusTerminal(terminalId: string) {
     const store = useTerminalStore.getState()
     const group = store.groups.find((g) => g.terminalIds.includes(terminalId))
@@ -133,6 +133,11 @@ export function OperationsTracker() {
       store.setActiveInGroup(group.id, terminalId)
       store.focusGroup(group.id)
     }
+    // After React re-renders with the new active terminal, focus the xterm element
+    requestAnimationFrame(() => {
+      const textarea = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement
+      textarea?.focus()
+    })
   }
 
   function handleStopOne(opId: string) {
