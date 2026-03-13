@@ -196,7 +196,13 @@ export function buildRepairCallback(tools: Record<string, any>) {
 const DOOM_LOOP_THRESHOLD = 3
 
 // Tools that legitimately poll with identical args (output changes between calls)
-const POLLING_TOOLS = new Set(["terminal_read", "terminal_list"])
+// These are completely exempt from doom loop detection.
+const EXEMPT_TOOLS = new Set(["terminal_read", "terminal_list"])
+
+// Tools that may retry the same args in complex workflows (e.g. AI retrying
+// a command after reading output). These get a higher threshold.
+const HIGH_THRESHOLD_TOOLS = new Set(["terminal_write", "terminal_create"])
+const HIGH_THRESHOLD = 6
 
 interface ToolCallRecord {
   toolName: string
@@ -208,20 +214,26 @@ export function createDoomLoopTracker() {
 
   return {
     check(toolName: string, args: any): boolean {
-      // Polling tools read changing state — same args != same result
-      if (POLLING_TOOLS.has(toolName)) return false
+      // Exempt tools: same args != same result (polling changing state)
+      if (EXEMPT_TOOLS.has(toolName)) return false
 
       const argsHash = JSON.stringify(args)
       recent.push({ toolName, argsHash })
 
-      if (recent.length > DOOM_LOOP_THRESHOLD) {
+      // Use higher threshold for terminal action tools
+      const threshold = HIGH_THRESHOLD_TOOLS.has(toolName) ? HIGH_THRESHOLD : DOOM_LOOP_THRESHOLD
+
+      // Keep enough history for the highest threshold
+      while (recent.length > HIGH_THRESHOLD) {
         recent.shift()
       }
 
-      if (recent.length < DOOM_LOOP_THRESHOLD) return false
+      if (recent.length < threshold) return false
 
-      const first = recent[0]
-      return recent.every(
+      // Check the last `threshold` entries
+      const window = recent.slice(-threshold)
+      const first = window[0]
+      return window.every(
         (r) => r.toolName === first.toolName && r.argsHash === first.argsHash,
       )
     },
@@ -231,10 +243,23 @@ export function createDoomLoopTracker() {
     },
 
     getLoopTool(): string | null {
-      if (recent.length < DOOM_LOOP_THRESHOLD) return null
-      const first = recent[0]
-      if (recent.every((r) => r.toolName === first.toolName && r.argsHash === first.argsHash)) {
-        return first.toolName
+      // Check with standard threshold first
+      if (recent.length >= DOOM_LOOP_THRESHOLD) {
+        const window = recent.slice(-DOOM_LOOP_THRESHOLD)
+        const first = window[0]
+        if (!HIGH_THRESHOLD_TOOLS.has(first.toolName) && !EXEMPT_TOOLS.has(first.toolName)) {
+          if (window.every((r) => r.toolName === first.toolName && r.argsHash === first.argsHash)) {
+            return first.toolName
+          }
+        }
+      }
+      // Check with high threshold for terminal tools
+      if (recent.length >= HIGH_THRESHOLD) {
+        const window = recent.slice(-HIGH_THRESHOLD)
+        const first = window[0]
+        if (window.every((r) => r.toolName === first.toolName && r.argsHash === first.argsHash)) {
+          return first.toolName
+        }
       }
       return null
     },
