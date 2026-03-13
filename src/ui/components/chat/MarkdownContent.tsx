@@ -134,7 +134,7 @@ const mdComponents: ComponentProps<typeof Markdown>["components"] = {
   ol: ({ children }) => (
     <ol className="my-0.5 ml-4 list-decimal list-outside">{children}</ol>
   ),
-  li: ({ children }) => <li className="text-text-base my-0 [&>p]:my-0 [&>p]:inline">{children}</li>,
+  li: ({ children }) => <li className="text-text-base my-0 [&>p]:my-0 [&>p]:leading-relaxed">{children}</li>,
   strong: ({ children }) => (
     <strong className="font-semibold text-text-strong">{children}</strong>
   ),
@@ -181,10 +181,39 @@ const mdComponents: ComponentProps<typeof Markdown>["components"] = {
   hr: () => <hr className="my-2 border-border-weak" />,
 }
 
+/**
+ * Normalize markdown to fix loose lists and excessive blank lines.
+ *
+ * LLMs often produce "loose" markdown lists (items separated by blank lines),
+ * which react-markdown renders with <p> inside <li>, causing doubled spacing.
+ * This converts them to tight lists by collapsing blank lines between list items.
+ */
+function normalizeMarkdown(md: string): string {
+  // 1. Collapse multiple blank lines into a single blank line everywhere
+  let result = md.replace(/\n{3,}/g, "\n\n")
+
+  // 2. Convert loose lists to tight lists:
+  //    Remove blank lines between consecutive list items (- or * or 1.)
+  //    A loose list has: "- item\n\n- item" → make it "- item\n- item"
+  result = result.replace(
+    /^([ \t]*[-*+][ \t]+.+)\n\n(?=[ \t]*[-*+][ \t])/gm,
+    "$1\n",
+  )
+  result = result.replace(
+    /^([ \t]*\d+\.[ \t]+.+)\n\n(?=[ \t]*\d+\.[ \t])/gm,
+    "$1\n",
+  )
+
+  // 3. Remove blank line between heading and immediately following content
+  result = result.replace(/^(#{1,6}[ \t]+.+)\n\n(?=\S)/gm, "$1\n")
+
+  return result
+}
+
 export function MarkdownContent({ content }: { content: string }) {
   return (
     <Markdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-      {content}
+      {normalizeMarkdown(content)}
     </Markdown>
   )
 }

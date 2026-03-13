@@ -1051,21 +1051,27 @@ export function ChatPanel({ projectId }: Props) {
         ) : (
           messages
             .filter((msg) => !searchResults || searchResults.includes(msg.id))
-            .map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                message={msg}
-                isStreaming={
-                  streaming &&
-                  msg.id === streamingMsgIdRef.current &&
-                  (!msg.parts || msg.parts.length === 0) &&
-                  msg.content === ""
-                }
-                isLastAssistant={msg.id === lastAssistantId}
-                onFork={handleFork}
-                onRetry={handleRetry}
-              />
-            ))
+            .map((msg) => {
+              // Detect compaction summary messages and render them specially
+              if (msg.content.startsWith("[Context Summary")) {
+                return <CompactionMessage key={msg.id} content={msg.content} />
+              }
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  isStreaming={
+                    streaming &&
+                    msg.id === streamingMsgIdRef.current &&
+                    (!msg.parts || msg.parts.length === 0) &&
+                    msg.content === ""
+                  }
+                  isLastAssistant={msg.id === lastAssistantId}
+                  onFork={handleFork}
+                  onRetry={handleRetry}
+                />
+              )
+            })
         )}
       </div>
 

@@ -231,15 +231,39 @@ function AssistantParts({ parts }: { parts: MessagePart[] }) {
 
 // ── Compaction system message ─────────────────────────────────────
 
-export function CompactionMessage() {
+export function CompactionMessage({ content }: { content?: string }) {
+  // Strip the [Context Summary ...] and [End of summary ...] markers
+  const summary = content
+    ? content
+        .replace(/^\[Context Summary[^\]]*\]\s*/i, "")
+        .replace(/\[End of summary[^\]]*\]\s*$/i, "")
+        .trim()
+    : ""
+
+  const [expanded, setExpanded] = useState(false)
+
   return (
-    <div className="flex items-center gap-2 py-2 px-3">
-      <div className="flex-1 h-px bg-border-weak" />
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-2 border border-border-weak">
-        <Archive className="w-3 h-3 text-text-weaker" />
-        <span className="text-[10px] text-text-weaker font-sans">Context compacted — older messages summarized</span>
-      </div>
-      <div className="flex-1 h-px bg-border-weak" />
+    <div className="space-y-0">
+      {/* Divider with badge */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 py-2 px-3 w-full group"
+      >
+        <div className="flex-1 h-px bg-border-weak" />
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-2 border border-border-weak group-hover:border-accent/30 transition-colors">
+          <Archive className="w-3 h-3 text-text-weaker" />
+          <span className="text-[10px] text-text-weaker font-sans">Context compacted — older messages summarized</span>
+          <ChevronDown className={`w-3 h-3 text-text-weaker transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </div>
+        <div className="flex-1 h-px bg-border-weak" />
+      </button>
+
+      {/* Expandable summary */}
+      {expanded && summary && (
+        <div className="mx-3 mb-2 rounded-xl bg-surface-1/60 border border-border-weak/50 px-3.5 py-2.5 text-sm leading-relaxed font-sans text-text-weak max-h-[400px] overflow-y-auto scrollbar-thin">
+          <MarkdownContent content={summary} />
+        </div>
+      )}
     </div>
   )
 }
