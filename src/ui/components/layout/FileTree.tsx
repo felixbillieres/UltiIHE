@@ -247,10 +247,9 @@ function PinnedDir({ pin }: { pin: PinnedPath }) {
 function HostSection() {
   const [collapsed, setCollapsed] = useState(false)
   const [showBrowser, setShowBrowser] = useState(false)
-  const hostDirectories = useFileStore((s) => {
-    const pid = s._currentProjectId || ""
-    return s.hostDirectoriesByProject[pid] ?? EMPTY_STRINGS
-  })
+  const pid = useFileStore((s) => s._currentProjectId) || ""
+  const hostDirMap = useFileStore((s) => s.hostDirectoriesByProject)
+  const hostDirectories = hostDirMap[pid] ?? EMPTY_STRINGS
   const removeHostDirectory = useFileStore((s) => s.removeHostDirectory)
 
   return (
@@ -315,10 +314,9 @@ function HostBrowserModal({ onClose }: { onClose: () => void }) {
   const [loading, setLoading] = useState(false)
   const [manualPath, setManualPath] = useState("")
   const addHostDirectory = useFileStore((s) => s.addHostDirectory)
-  const hostDirectories = useFileStore((s) => {
-    const pid = s._currentProjectId || ""
-    return s.hostDirectoriesByProject[pid] ?? EMPTY_STRINGS
-  })
+  const browserPid = useFileStore((s) => s._currentProjectId) || ""
+  const browserHostDirMap = useFileStore((s) => s.hostDirectoriesByProject)
+  const hostDirectories = browserHostDirMap[browserPid] ?? EMPTY_STRINGS
 
   const loadDir = useCallback(async (path: string) => {
     setLoading(true)
