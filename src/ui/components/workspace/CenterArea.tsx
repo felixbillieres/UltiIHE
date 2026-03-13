@@ -304,9 +304,14 @@ export function CenterArea({
       let num = 1
       while (usedNumbers.has(num)) num++
       const name = `Terminal ${num}`
+      // Estimate initial PTY size from the content area dimensions.
+      // Uses approximate char metrics for a 14px monospace font.
+      const contentEl = document.querySelector('[data-terminal-content]') as HTMLElement | null
+      const cols = contentEl ? Math.floor(contentEl.clientWidth / 8.4) : 120
+      const rows = contentEl ? Math.floor(contentEl.clientHeight / 17) : 30
       send({
         type: "terminal:create",
-        data: { container: target, name },
+        data: { container: target, name, cols, rows },
       })
     },
     [hasContainers, connected, send, project.containerIds],
@@ -447,6 +452,7 @@ export function CenterArea({
 
         {/* Content area */}
         <div
+          data-terminal-content
           className="flex-1 min-h-0 overflow-hidden relative"
           style={{ backgroundColor: "#101010" }}
         >

@@ -134,6 +134,8 @@ class TerminalManager {
     container: string,
     name: string | undefined,
     broadcast: WsBroadcast,
+    cols?: number,
+    rows?: number,
   ): Promise<Terminal> {
     if (!CONTAINER_NAME_RE.test(container)) {
       throw new Error(`Invalid container name: ${container}`)
@@ -160,6 +162,8 @@ class TerminalManager {
       `stty raw -echo 2>/dev/null; exec ${dockerCmd}`,
     ], {
       name: "xterm-256color",
+      cols: cols || 120,
+      rows: rows || 30,
       cwd: process.cwd(),
       env: { ...process.env, TERM: "xterm-256color" } as Record<string, string>,
     })
@@ -265,11 +269,14 @@ class TerminalManager {
   }
 
   /**
-   * Write input with a typing effect — in chunks with delay.
+   * Inject a command into the terminal (paste-style: whole command at once).
    * Uses a per-terminal lock to prevent concurrent injections from interleaving.
    * Waits for the terminal to be ready (first prompt) before injecting.
+   *
+   * Writes the command text in one shot (like clipboard paste) to avoid readline
+   * wrapping issues that occur with char-by-char or chunk-based injection.
    */
-  async writeTyping(terminalId: string, input: string, chunkSize = 4, chunkDelay = 15): Promise<void> {
+  async writeTyping(terminalId: string, input: string): Promise<void> {
     const terminal = this.terminals.get(terminalId)
     if (!terminal) throw new Error(`Terminal not found: ${terminalId}`)
     if (!terminal.alive) throw new Error(`Terminal is closed: ${terminalId}`)
@@ -287,25 +294,22 @@ class TerminalManager {
 
       if (!terminal.alive) return
 
-      // Split command from its trailing newline — write command in chunks, then newline separately
+      // Split command from its trailing newline
       const hasNewline = input.endsWith("\n")
       const command = hasNewline ? input.slice(0, -1) : input
 
-      // Write command in chunks (not char-by-char — reduces PTY writes, avoids readline confusion)
-      for (let i = 0; i < command.length; i += chunkSize) {
-        if (!terminal.alive) break
-        const chunk = command.slice(i, i + chunkSize)
-        terminal.process.write(chunk)
-        if (chunkDelay > 0 && i + chunkSize < command.length) {
-          await new Promise((r) => setTimeout(r, chunkDelay))
-        }
+      // Write the entire command at once (paste-style).
+      // This lets readline handle the full text in a single pass,
+      // avoiding wrapping/reflow bugs that happen with chunked input.
+      if (command.length > 0) {
+        terminal.process.write(command)
       }
 
-      // Small pause before sending Enter — lets readline finish rendering the full command
       if (hasNewline && terminal.alive) {
-        await new Promise((r) => setTimeout(r, 50))
+        // Brief pause before Enter — lets readline render the full command first
+        await new Promise((r) => setTimeout(r, 30))
         terminal.process.write("\n")
-        // Post-Enter delay: let the shell process the command before any next injection
+        // Post-Enter delay: let the shell start processing before next injection
         await new Promise((r) => setTimeout(r, 200))
       }
     } finally {

@@ -13,6 +13,8 @@ const terminalCreateSchema = z.object({
   data: z.object({
     container: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, "Invalid container name"),
     name: z.string().optional(),
+    cols: z.number().int().min(1).max(500).optional(),
+    rows: z.number().int().min(1).max(200).optional(),
   }),
 })
 
@@ -105,6 +107,13 @@ const toolSetModeSchema = z.object({
   }),
 })
 
+const opsStopOneSchema = z.object({
+  type: z.literal("ops:stop-one"),
+  data: z.object({
+    opId: z.string(),
+  }),
+})
+
 const opsStopAllSchema = z.object({
   type: z.literal("ops:stop-all"),
   data: z.object({}),
@@ -124,6 +133,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   toolApproveAllSchema,
   toolRejectAllSchema,
   toolSetModeSchema,
+  opsStopOneSchema,
   opsStopAllSchema,
 ])
 
@@ -222,6 +232,14 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
       toolApprovalQueue.setMode(msg.data.mode)
       console.log(`[Tool] Approval mode set to: ${msg.data.mode}`)
       break
+    case "ops:stop-one": {
+      const terminalId = opsTracker.cancelOne(msg.data.opId)
+      if (terminalId) {
+        terminalManager.sendInterrupt(terminalId)
+        console.log(`[Ops] Stopped operation ${msg.data.opId} on terminal ${terminalId}`)
+      }
+      break
+    }
     case "ops:stop-all": {
       const count = terminalManager.interruptAllAI()
       opsTracker.cancelAll()
@@ -237,10 +255,10 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
 
 async function handleTerminalCreate(
   ws: ServerWebSocket<unknown>,
-  data: { container: string; name?: string },
+  data: { container: string; name?: string; cols?: number; rows?: number },
 ): Promise<void> {
   try {
-    const terminal = await terminalManager.create(data.container, data.name, broadcast)
+    const terminal = await terminalManager.create(data.container, data.name, broadcast, data.cols, data.rows)
     terminalManager.subscribe(terminal.id, ws as unknown as WebSocket)
 
     sendTo(ws, {

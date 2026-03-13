@@ -58,6 +58,17 @@ class OpsTracker {
     this.broadcast?.({ type: "ops:update", data: { op: { ...op } } })
   }
 
+  /** Cancel a single running operation by ID. Returns the terminalId if found. */
+  cancelOne(opId: string): string | null {
+    const op = this.ops.get(opId)
+    if (!op || op.status !== "running") return null
+    op.status = "cancelled"
+    op.endTime = Date.now()
+    this.activeByTerminal.delete(op.terminalId)
+    this.broadcast?.({ type: "ops:update", data: { op: { ...op } } })
+    return op.terminalId
+  }
+
   /** Cancel all running operations */
   cancelAll(): void {
     for (const op of this.ops.values()) {

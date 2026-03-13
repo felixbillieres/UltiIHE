@@ -34,7 +34,7 @@ function OpStatusIcon({ status }: { status: Operation["status"] }) {
   }
 }
 
-function OpRow({ op, onShow }: { op: Operation; onShow: () => void }) {
+function OpRow({ op, onShow, onStop }: { op: Operation; onShow: () => void; onStop: () => void }) {
   const elapsed = op.endTime
     ? formatDuration(op.endTime - op.startTime)
     : formatDuration(Date.now() - op.startTime)
@@ -54,6 +54,15 @@ function OpRow({ op, onShow }: { op: Operation; onShow: () => void }) {
       <span className="text-[10px] text-text-weaker font-mono tabular-nums shrink-0 w-10 text-right">
         {elapsed}
       </span>
+      {op.status === "running" && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onStop() }}
+          className="p-0.5 rounded hover:bg-status-error/20 text-text-weaker hover:text-status-error transition-colors shrink-0"
+          title="Stop this operation"
+        >
+          <Square className="w-3 h-3" />
+        </button>
+      )}
       <button
         onClick={onShow}
         className="p-0.5 rounded hover:bg-surface-3 text-text-weaker hover:text-text-base transition-colors shrink-0"
@@ -126,6 +135,10 @@ export function OperationsTracker() {
     }
   }
 
+  function handleStopOne(opId: string) {
+    send({ type: "ops:stop-one", data: { opId } })
+  }
+
   function handleStopAll() {
     send({ type: "ops:stop-all", data: {} })
   }
@@ -170,7 +183,7 @@ export function OperationsTracker() {
       {expanded && (
         <div className="px-1 pb-1.5 max-h-[200px] overflow-y-auto scrollbar-thin">
           {operations.map((op) => (
-            <OpRow key={op.id} op={op} onShow={() => focusTerminal(op.terminalId)} />
+            <OpRow key={op.id} op={op} onShow={() => focusTerminal(op.terminalId)} onStop={() => handleStopOne(op.id)} />
           ))}
         </div>
       )}
