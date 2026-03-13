@@ -269,9 +269,30 @@ class TerminalManager {
   }
 
   /**
+   * Wait until the terminal is no longer busy (command finished, prompt returned).
+   * Times out after `timeout` ms to avoid blocking forever on hung commands.
+   */
+  private waitForIdle(terminal: Terminal, timeout = 120_000): Promise<void> {
+    if (!terminal.busy) return Promise.resolve()
+    return new Promise((resolve) => {
+      const start = Date.now()
+      const check = () => {
+        if (!terminal.busy || !terminal.alive || Date.now() - start > timeout) {
+          resolve()
+          return
+        }
+        setTimeout(check, 300)
+      }
+      check()
+    })
+  }
+
+  /**
    * Inject a command into the terminal (paste-style: whole command at once).
    * Uses a per-terminal lock to prevent concurrent injections from interleaving.
    * Waits for the terminal to be ready (first prompt) before injecting.
+   * After sending Enter, waits for the command to finish (prompt returns)
+   * before releasing the lock — so the next queued command doesn't pile up.
    *
    * Writes the command text in one shot (like clipboard paste) to avoid readline
    * wrapping issues that occur with char-by-char or chunk-based injection.
@@ -291,6 +312,8 @@ class TerminalManager {
 
       // Wait for shell to be ready (first prompt after sourcing rc files)
       await this.waitForReady(terminal)
+      // Also wait for any previous command to finish
+      await this.waitForIdle(terminal)
 
       if (!terminal.alive) return
 
@@ -309,8 +332,12 @@ class TerminalManager {
         // Brief pause before Enter — lets readline render the full command first
         await new Promise((r) => setTimeout(r, 30))
         terminal.process.write("\n")
-        // Post-Enter delay: let the shell start processing before next injection
-        await new Promise((r) => setTimeout(r, 200))
+
+        // Mark terminal as busy and wait for the command to finish.
+        // This prevents the next queued writeTyping from firing before
+        // the prompt returns — avoiding command pileup.
+        terminal.busy = true
+        await this.waitForIdle(terminal)
       }
     } finally {
       releaseLock!()
