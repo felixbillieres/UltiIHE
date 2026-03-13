@@ -91,8 +91,9 @@ interface FileStore {
   addVisibleRoot: (container: string, root: string) => void
   removeVisibleRoot: (container: string, root: string) => void
 
-  // Host directories (persisted)
-  hostDirectories: string[]
+  // Host directories per project (persisted)
+  hostDirectoriesByProject: Record<string, string[]>
+  getHostDirectories: () => string[]
   addHostDirectory: (path: string) => void
   removeHostDirectory: (path: string) => void
 
@@ -477,17 +478,25 @@ export const useFileStore = create<FileStore>()(
     }
   },
 
-  // ── Host directories ──────────────────────────────────────────
-  hostDirectories: [],
+  // ── Host directories (per project) ──────────────────────────────
+  hostDirectoriesByProject: {},
+  getHostDirectories: () => {
+    const pid = get()._currentProjectId || ""
+    return get().hostDirectoriesByProject[pid] ?? []
+  },
   addHostDirectory: (path) =>
     set((s) => {
-      if (s.hostDirectories.includes(path)) return s
-      return { hostDirectories: [...s.hostDirectories, path] }
+      const pid = s._currentProjectId || ""
+      const current = s.hostDirectoriesByProject[pid] ?? []
+      if (current.includes(path)) return s
+      return { hostDirectoriesByProject: { ...s.hostDirectoriesByProject, [pid]: [...current, path] } }
     }),
   removeHostDirectory: (path) =>
-    set((s) => ({
-      hostDirectories: s.hostDirectories.filter((d) => d !== path),
-    })),
+    set((s) => {
+      const pid = s._currentProjectId || ""
+      const current = s.hostDirectoriesByProject[pid] ?? []
+      return { hostDirectoriesByProject: { ...s.hostDirectoriesByProject, [pid]: current.filter((d) => d !== path) } }
+    }),
 
   fetchHostDirectory: async (path) => {
     const key = `host:${path}`
@@ -661,7 +670,7 @@ export const useFileStore = create<FileStore>()(
       pinnedPaths: state.pinnedPaths,
       showHidden: state.showHidden,
       visibleRootsByContainer: state.visibleRootsByContainer,
-      hostDirectories: state.hostDirectories,
+      hostDirectoriesByProject: state.hostDirectoriesByProject,
     }),
   },
 ))
