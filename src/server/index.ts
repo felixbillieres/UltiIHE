@@ -102,6 +102,19 @@ app.post("/api/fetch-url", async (c) => {
 
 app.get("/api/terminals", (c) => c.json({ terminals: terminalManager.listTerminals() }))
 
+// Cleanup ghost terminals — frontend sends its known active IDs, server closes the rest
+app.post("/api/terminals/cleanup", async (c) => {
+  const { activeIds } = (await c.req.json()) as { activeIds: string[] }
+  if (!Array.isArray(activeIds)) {
+    return c.json({ error: "activeIds must be an array" }, 400)
+  }
+  const count = terminalManager.closeExcept(new Set(activeIds))
+  if (count > 0) {
+    console.log(`[Terminal] Cleanup: closed ${count} ghost terminal(s)`)
+  }
+  return c.json({ closed: count })
+})
+
 app.get("/api/terminals/:id/output", (c) => {
   const id = c.req.param("id")
   try {

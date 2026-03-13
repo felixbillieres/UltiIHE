@@ -3,17 +3,31 @@ import {
   useTerminalStore,
   type LayoutNode,
 } from "../../stores/terminal"
+import { useWorkspaceStore } from "../../stores/workspace"
+import { usePopOutStore } from "../../stores/popout"
 import { TerminalView } from "./TerminalView"
-import {
-  Terminal,
-  X,
-  SplitSquareHorizontal,
-  SplitSquareVertical,
-} from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
-import { ContainerBadge } from "./terminalConstants"
 import { NewTerminalButton } from "./NewTerminalButton"
+import { TerminalTab } from "./TerminalTab"
 import { ContextMenu } from "./TerminalContextMenu"
+
+// ─── Drag data encoding (supports cross-group) ──────────────
+
+const DRAG_MIME = "application/x-terminal-drag"
+
+function encodeDragData(terminalId: string, sourceGroupId: string) {
+  return JSON.stringify({ terminalId, sourceGroupId })
+}
+
+function decodeDragData(e: React.DragEvent): { terminalId: string; sourceGroupId: string } | null {
+  try {
+    const raw = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData("text/plain")
+    const data = JSON.parse(raw)
+    if (data.terminalId && data.sourceGroupId) return data
+  } catch { /* ignore */ }
+  return null
+}
 
 // ─── Recursive layout renderer ───────────────────────────────
 
@@ -169,7 +183,7 @@ function SplitContainer({
   )
 }
 
-// ─── Group pane inside a split (compact but clean tab bar) ───
+// ─── Group pane inside a split ───────────────────────────────
 
 function SplitGroupPane({
   groupId,
@@ -194,11 +208,19 @@ function SplitGroupPane({
   const setNotification = useTerminalStore((s) => s.setNotification)
   const splitTerminal = useTerminalStore((s) => s.splitTerminal)
   const moveTerminalToGroup = useTerminalStore((s) => s.moveTerminalToGroup)
+  const reorderTerminal = useTerminalStore((s) => s.reorderTerminal)
   const groups = useTerminalStore((s) => s.groups)
+  const popOuts = usePopOutStore((s) => s.popOuts)
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  // Drag & drop state
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; side: "before" | "after" } | null>(null)
+  // Drop zone for empty area (cross-group drop onto pane itself)
+  const [paneDropActive, setPaneDropActive] = useState(false)
 
   const [contextMenu, setContextMenu] = useState<{
     x: number
@@ -221,6 +243,10 @@ function SplitGroupPane({
     .filter(Boolean) as typeof terminals
   const otherGroups = groups.filter((g) => g.id !== groupId)
 
+  // Check which terminals in this group are popped out
+  const isTerminalPoppedOut = (terminalId: string) =>
+    popOuts.some((p) => p.terminalId === terminalId)
+
   const handleTabClick = (terminalId: string) => {
     setActiveInGroup(groupId, terminalId)
     setNotification(terminalId, false)
@@ -228,8 +254,17 @@ function SplitGroupPane({
 
   const handleCloseTab = (e: React.MouseEvent, terminalId: string) => {
     e.stopPropagation()
-    send({ type: "terminal:close", data: { terminalId } })
-    removeTerminal(terminalId)
+    // Close via workspace tab (triggers full cleanup cascade including popout)
+    const wsTab = useWorkspaceStore.getState().tabs.find(
+      (t) => t.type === "terminal" && t.terminalId === terminalId,
+    )
+    if (wsTab) {
+      useWorkspaceStore.getState().removeTab(wsTab.id)
+    } else {
+      // Fallback: direct close
+      send({ type: "terminal:close", data: { terminalId } })
+      removeTerminal(terminalId)
+    }
   }
 
   const handleDoubleClick = (id: string, currentName: string) => {
@@ -241,6 +276,13 @@ function SplitGroupPane({
   const commitRename = () => {
     if (editingTabId && editingName.trim()) {
       renameTerminal(editingTabId, editingName.trim())
+      // Also sync workspace tab
+      const wsTab = useWorkspaceStore.getState().tabs.find(
+        (t) => t.type === "terminal" && t.terminalId === editingTabId,
+      )
+      if (wsTab) {
+        useWorkspaceStore.getState().renameTab(wsTab.id, editingName.trim())
+      }
     }
     setEditingTabId(null)
   }
@@ -250,64 +292,149 @@ function SplitGroupPane({
     setContextMenu({ x: e.clientX, y: e.clientY, terminalId })
   }
 
+  // ─── Drag & drop (supports cross-group) ─────────────────────
+
+  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string) => {
+    setDraggingId(terminalId)
+    e.dataTransfer.effectAllowed = "move"
+    const data = encodeDragData(terminalId, groupId)
+    e.dataTransfer.setData(DRAG_MIME, data)
+    e.dataTransfer.setData("text/plain", data)
+  }, [groupId])
+
+  const handleDragOver = useCallback((e: React.DragEvent, terminalId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = "move"
+    const rect = e.currentTarget.getBoundingClientRect()
+    const midX = rect.left + rect.width / 2
+    const side = e.clientX < midX ? "before" : "after"
+    setDropTarget({ id: terminalId, side })
+    setPaneDropActive(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, targetTerminalId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const dragData = decodeDragData(e)
+    if (!dragData || !group) {
+      setDraggingId(null)
+      setDropTarget(null)
+      return
+    }
+
+    const { terminalId: draggedId, sourceGroupId } = dragData
+
+    if (draggedId === targetTerminalId) {
+      setDraggingId(null)
+      setDropTarget(null)
+      return
+    }
+
+    if (sourceGroupId === groupId) {
+      // Same group: reorder
+      const fromIndex = group.terminalIds.indexOf(draggedId)
+      let toIndex = group.terminalIds.indexOf(targetTerminalId)
+      if (fromIndex === -1 || toIndex === -1) return
+
+      const rect = e.currentTarget.getBoundingClientRect()
+      const midX = rect.left + rect.width / 2
+      if (e.clientX >= midX && fromIndex < toIndex) {
+        // noop
+      } else if (e.clientX < midX && fromIndex > toIndex) {
+        // noop
+      } else if (e.clientX >= midX) {
+        toIndex += 1
+      }
+      if (fromIndex < toIndex) toIndex -= 1
+
+      reorderTerminal(groupId, fromIndex, toIndex)
+    } else {
+      // Cross-group: move terminal to this group
+      moveTerminalToGroup(draggedId, groupId)
+    }
+
+    setDraggingId(null)
+    setDropTarget(null)
+    setPaneDropActive(false)
+  }, [group, groupId, reorderTerminal, moveTerminalToGroup])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null)
+    setDropTarget(null)
+    setPaneDropActive(false)
+  }, [])
+
+  // Drop on the pane itself (empty area or content area) — for cross-group
+  const handlePaneDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    setPaneDropActive(true)
+  }, [])
+
+  const handlePaneDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    const dragData = decodeDragData(e)
+    if (!dragData || dragData.sourceGroupId === groupId) {
+      setPaneDropActive(false)
+      return
+    }
+    moveTerminalToGroup(dragData.terminalId, groupId)
+    setPaneDropActive(false)
+    setDraggingId(null)
+    setDropTarget(null)
+  }, [groupId, moveTerminalToGroup])
+
+  const handlePaneDragLeave = useCallback((e: React.DragEvent) => {
+    // Only deactivate if leaving the pane entirely
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setPaneDropActive(false)
+    }
+  }, [])
+
   return (
     <div
       className={`h-full flex flex-col ${
         isFocused ? "ring-1 ring-accent/30 ring-inset" : ""
-      }`}
+      } ${paneDropActive ? "ring-2 ring-accent/50 ring-inset" : ""}`}
       onClick={() => focusGroup(groupId)}
+      onDragOver={handlePaneDragOver}
+      onDrop={handlePaneDrop}
+      onDragLeave={handlePaneDragLeave}
     >
-      {/* Tab bar — same style as the single-group one */}
-      <div className="flex items-center bg-surface-1 shrink-0 border-b border-border-weak min-w-0">
-        {/* Scrollable tab area */}
-        <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 px-2 py-1.5 scrollbar-none">
+      {/* Tab bar */}
+      <div className="flex items-stretch bg-surface-1 shrink-0 border-b border-border-weak min-w-0">
+        <div
+          className="flex-1 min-w-0 overflow-x-auto flex items-end gap-0 scrollbar-none"
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setDropTarget(null)
+            }
+          }}
+        >
           {groupTerminals.map((t) => (
-            <div
+            <TerminalTab
               key={t.id}
-              onClick={() => handleTabClick(t.id)}
+              terminal={t}
+              isActive={t.id === group.activeTerminalId}
+              isEditing={editingTabId === t.id}
+              editName={editingName}
+              containerIds={containerIds}
+              onSelect={() => handleTabClick(t.id)}
+              onClose={(e) => handleCloseTab(e, t.id)}
               onDoubleClick={() => handleDoubleClick(t.id, t.name)}
               onContextMenu={(e) => handleContextMenu(e, t.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
-                t.id === group.activeTerminalId
-                  ? "bg-surface-2 text-text-strong"
-                  : "text-text-weak hover:bg-surface-2/50"
-              }`}
-            >
-              <Terminal className="w-3 h-3 shrink-0" />
-
-              {t.hasNotification && t.id !== group.activeTerminalId && (
-                <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-              )}
-
-              {editingTabId === t.id ? (
-                <input
-                  ref={editInputRef}
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename()
-                    if (e.key === "Escape") setEditingTabId(null)
-                  }}
-                  className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
-                  autoFocus
-                />
-              ) : (
-                <>
-                  <span className="truncate max-w-[100px]">{t.name}</span>
-                  {containerIds.length > 1 && (
-                    <ContainerBadge container={t.container} />
-                  )}
-                </>
-              )}
-
-              <button
-                onClick={(e) => handleCloseTab(e, t.id)}
-                className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
+              onEditChange={setEditingName}
+              onEditCommit={commitRename}
+              onEditCancel={() => setEditingTabId(null)}
+              editInputRef={editInputRef}
+              onDragStart={(e) => handleDragStart(e, t.id)}
+              onDragOver={(e) => handleDragOver(e, t.id)}
+              onDrop={(e) => handleDrop(e, t.id)}
+              onDragEnd={handleDragEnd}
+              isDragging={draggingId === t.id}
+              dropIndicator={dropTarget?.id === t.id ? dropTarget.side : null}
+            />
           ))}
         </div>
 
@@ -319,47 +446,50 @@ function SplitGroupPane({
             onAdd={handleAddTerminal}
             compact
           />
-          {group.activeTerminalId && groupTerminals.length >= 2 && (
-            <>
-              <button
-                onClick={() =>
-                  group.activeTerminalId &&
-                  splitTerminal(group.activeTerminalId, "horizontal")
-                }
-                className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
-                title="Split right"
-              >
-                <SplitSquareHorizontal className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() =>
-                  group.activeTerminalId &&
-                  splitTerminal(group.activeTerminalId, "vertical")
-                }
-                className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
-                title="Split down"
-              >
-                <SplitSquareVertical className="w-3.5 h-3.5" />
-              </button>
-            </>
-          )}
         </div>
       </div>
 
       {/* Terminal content */}
       <div className="flex-1 overflow-hidden relative">
-        {groupTerminals.map((t) => (
-          <div
-            key={t.id}
-            className="absolute inset-0"
-            style={{
-              visibility:
-                t.id === group.activeTerminalId ? "visible" : "hidden",
-            }}
-          >
-            <TerminalView serverId={t.id} send={send} subscribe={subscribe} />
-          </div>
-        ))}
+        {groupTerminals.map((t) => {
+          const poppedOut = isTerminalPoppedOut(t.id)
+          if (poppedOut && t.id === group.activeTerminalId) {
+            // Show ghost for popped-out active terminal
+            return (
+              <div key={t.id} className="absolute inset-0 flex items-center justify-center bg-surface-0/80">
+                <div className="text-center">
+                  <ExternalLink className="w-6 h-6 text-text-weaker mx-auto mb-2" />
+                  <p className="text-xs text-text-weak font-sans mb-1">
+                    {t.name} is in a separate window
+                  </p>
+                  <button
+                    onClick={() => {
+                      const wsTab = useWorkspaceStore.getState().tabs.find(
+                        (tab) => tab.type === "terminal" && tab.terminalId === t.id,
+                      )
+                      if (wsTab) usePopOutStore.getState().reattach(wsTab.id)
+                    }}
+                    className="text-xs text-accent hover:text-accent/80 font-sans underline"
+                  >
+                    Re-attach here
+                  </button>
+                </div>
+              </div>
+            )
+          }
+          return (
+            <div
+              key={t.id}
+              className="absolute inset-0"
+              style={{
+                visibility:
+                  t.id === group.activeTerminalId && !poppedOut ? "visible" : "hidden",
+              }}
+            >
+              <TerminalView serverId={t.id} send={send} subscribe={subscribe} />
+            </div>
+          )
+        })}
       </div>
 
       {/* Context menu */}
@@ -383,11 +513,10 @@ function SplitGroupPane({
             setContextMenu(null)
           }}
           onClose={() => {
-            send({
-              type: "terminal:close",
-              data: { terminalId: contextMenu.terminalId },
-            })
-            removeTerminal(contextMenu.terminalId)
+            handleCloseTab(
+              { stopPropagation: () => {} } as React.MouseEvent,
+              contextMenu.terminalId,
+            )
             setContextMenu(null)
           }}
           onRename={() => {

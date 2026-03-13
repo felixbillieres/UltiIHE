@@ -37,6 +37,9 @@ interface WorkspaceStore {
   setTabNotification: (id: string, has: boolean) => void
   togglePin: (id: string) => void
 
+  // Reorder
+  reorderTab: (fromIndex: number, toIndex: number) => void
+
   // Filter
   setFilter: (filter: TabType | null) => void
   getVisibleTabs: () => WorkspaceTab[]
@@ -144,6 +147,15 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
         t.id === id ? { ...t, pinned: !t.pinned } : t,
       ),
     })),
+
+  reorderTab: (fromIndex, toIndex) =>
+    set((s) => {
+      if (fromIndex === toIndex) return s
+      const tabs = [...s.tabs]
+      const [moved] = tabs.splice(fromIndex, 1)
+      tabs.splice(toIndex, 0, moved)
+      return { tabs }
+    }),
 
   setFilter: (filter) => set({ filter }),
 

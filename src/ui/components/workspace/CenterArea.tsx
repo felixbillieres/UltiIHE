@@ -6,6 +6,7 @@ import { useTerminalStore } from "../../stores/terminal"
 import { useWebToolsStore, WEB_TOOLS, toolKey } from "../../stores/webtools"
 import { usePopOutStore } from "../../stores/popout"
 import { TerminalView } from "../terminal/TerminalView"
+import { LayoutRenderer } from "../terminal/SplitLayout"
 import { ExegolManager } from "../exegol/ExegolManager"
 import { BottomPanel } from "./BottomPanel"
 import { WorkspaceTabBar } from "./WorkspaceTabBar"
@@ -196,6 +197,9 @@ export function CenterArea({
   const reattach = usePopOutStore((s) => s.reattach)
 
   const addTerminal = useTerminalStore((s) => s.addTerminal)
+  const terminalGroups = useTerminalStore((s) => s.groups)
+  const terminalLayout = useTerminalStore((s) => s.layout)
+  const isSplit = terminalGroups.length > 1
   const openTerminalTab = useWorkspaceStore((s) => s.openTerminalTab)
   const openToolTab = useWorkspaceStore((s) => s.openToolTab)
 
@@ -204,8 +208,6 @@ export function CenterArea({
 
   const [bottomDragging, setBottomDragging] = useState(false)
   const [pendingToolId, setPendingToolId] = useState<string | null>(null)
-  const terminalCountRef = useRef(0)
-
   const hasContainers = project.containerIds.length > 0
 
   // Sync active file in file store when a file tab is activated
@@ -214,6 +216,21 @@ export function CenterArea({
       useFileStore.getState().setActiveFile(activeTab.fileId)
     }
   }, [activeTab])
+
+  // Clean up ghost terminals on the server (from previous sessions / page reloads)
+  useEffect(() => {
+    if (!connected) return
+    // Wait a moment for the WS connection to stabilize and any terminal:created messages to arrive
+    const timer = setTimeout(() => {
+      const knownIds = useTerminalStore.getState().terminals.map((t) => t.id)
+      fetch("/api/terminals/cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activeIds: knownIds }),
+      }).catch(() => { /* ignore */ })
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [connected])
 
   // Listen for terminal:created from server
   useEffect(() => {
@@ -252,6 +269,10 @@ export function CenterArea({
         if (!currentIds.has(id)) {
           const tab = prevState.tabs.find((t) => t.id === id)
           if (!tab) continue
+          // Close pop-out window if this tab was popped out
+          if (usePopOutStore.getState().isPopedOut(tab.id)) {
+            usePopOutStore.getState().reattach(tab.id)
+          }
           if (tab.type === "terminal" && tab.terminalId) {
             send({ type: "terminal:close", data: { terminalId: tab.terminalId } })
             useTerminalStore.getState().removeTerminal(tab.terminalId)
@@ -272,8 +293,17 @@ export function CenterArea({
     (containerName?: string) => {
       if (!hasContainers || !connected) return
       const target = containerName || project.containerIds[0]
-      terminalCountRef.current += 1
-      const name = `Terminal ${terminalCountRef.current}`
+      // Find next available terminal number (fill gaps)
+      const currentTerminals = useTerminalStore.getState().terminals
+      const usedNumbers = new Set(
+        currentTerminals
+          .map((t) => t.name.match(/^Terminal (\d+)$/))
+          .filter(Boolean)
+          .map((m) => parseInt(m![1], 10)),
+      )
+      let num = 1
+      while (usedNumbers.has(num)) num++
+      const name = `Terminal ${num}`
       send({
         type: "terminal:create",
         data: { container: target, name },
@@ -425,21 +455,42 @@ export function CenterArea({
             <PopOutGhost tabId={activeTab.id} title={activeTab.title} />
           )}
 
-          {/* Terminal views — kept mounted for persistence (excluding popped out) */}
-          {terminalTabIds.map((tid) => (
+          {/* Terminal views — split layout or single terminal */}
+          {isSplit && terminalLayout ? (
             <div
-              key={tid}
               className="absolute inset-0"
               style={{
                 visibility:
-                  activeTab?.type === "terminal" && activeTab.terminalId === tid && !activeTabPoppedOut
+                  activeTab?.type === "terminal" && !activeTabPoppedOut
                     ? "visible"
                     : "hidden",
               }}
             >
-              <TerminalView serverId={tid} send={send} subscribe={subscribe} />
+              <LayoutRenderer
+                node={terminalLayout}
+                path={[]}
+                send={send}
+                subscribe={subscribe}
+                handleAddTerminal={handleAddTerminal}
+                containerIds={project.containerIds}
+              />
             </div>
-          ))}
+          ) : (
+            terminalTabIds.map((tid) => (
+              <div
+                key={tid}
+                className="absolute inset-0"
+                style={{
+                  visibility:
+                    activeTab?.type === "terminal" && activeTab.terminalId === tid && !activeTabPoppedOut
+                      ? "visible"
+                      : "hidden",
+                }}
+              >
+                <TerminalView serverId={tid} send={send} subscribe={subscribe} />
+              </div>
+            ))
+          )}
 
           {/* Tool iframes — kept mounted for persistence (excluding popped out) */}
           {toolTabs.map((tt) => (

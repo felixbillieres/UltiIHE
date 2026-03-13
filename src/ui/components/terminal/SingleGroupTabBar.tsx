@@ -1,20 +1,21 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   useTerminalStore,
   type TerminalGroup,
 } from "../../stores/terminal"
 import { WEB_TOOLS, type RunningToolInfo } from "../../stores/webtools"
 import {
-  Terminal,
   X,
   SplitSquareHorizontal,
   SplitSquareVertical,
   Loader2,
 } from "lucide-react"
 import type { WSMessage } from "../../hooks/useWebSocket"
-import { TOOL_ICONS, ContainerBadge } from "./terminalConstants"
+import { TOOL_ICONS } from "./terminalConstants"
 import { NewTerminalButton } from "./NewTerminalButton"
 import { WebToolsDropdown } from "./WebToolsDropdown"
+import { TerminalTab } from "./TerminalTab"
+import { ContextMenu } from "./TerminalContextMenu"
 
 interface SingleGroupTabBarProps {
   group: TerminalGroup
@@ -51,10 +52,29 @@ export function SingleGroupTabBar({
   const renameTerminal = useTerminalStore((s) => s.renameTerminal)
   const setNotification = useTerminalStore((s) => s.setNotification)
   const splitTerminal = useTerminalStore((s) => s.splitTerminal)
+  const reorderTerminal = useTerminalStore((s) => s.reorderTerminal)
 
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  // Drag & drop state
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; side: "before" | "after" } | null>(null)
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    terminalId: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    window.addEventListener("click", close)
+    return () => window.removeEventListener("click", close)
+  }, [contextMenu])
 
   const groupTerminals = group.terminalIds
     .map((id) => terminals.find((t) => t.id === id))
@@ -63,6 +83,7 @@ export function SingleGroupTabBar({
   const handleTabClick = (terminalId: string) => {
     setActiveInGroup(group.id, terminalId)
     setNotification(terminalId, false)
+    if (activeToolTab) onToolTabClick("")
   }
 
   const handleCloseTab = (e: React.MouseEvent, terminalId: string) => {
@@ -84,60 +105,92 @@ export function SingleGroupTabBar({
     setEditingTabId(null)
   }
 
+  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string) => {
+    setDraggingId(terminalId)
+    e.dataTransfer.effectAllowed = "move"
+    e.dataTransfer.setData("text/plain", terminalId)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, terminalId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    const rect = e.currentTarget.getBoundingClientRect()
+    const midX = rect.left + rect.width / 2
+    const side = e.clientX < midX ? "before" : "after"
+    setDropTarget({ id: terminalId, side })
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, terminalId: string) => {
+    e.preventDefault()
+    const draggedId = e.dataTransfer.getData("text/plain")
+    if (!draggedId || draggedId === terminalId) {
+      setDraggingId(null)
+      setDropTarget(null)
+      return
+    }
+
+    const fromIndex = group.terminalIds.indexOf(draggedId)
+    let toIndex = group.terminalIds.indexOf(terminalId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const midX = rect.left + rect.width / 2
+    if (e.clientX >= midX && fromIndex < toIndex) {
+      // already right of target, keep index
+    } else if (e.clientX < midX && fromIndex > toIndex) {
+      // already left of target, keep index
+    } else if (e.clientX >= midX) {
+      toIndex += 1
+    }
+
+    // Adjust for removal
+    if (fromIndex < toIndex) toIndex -= 1
+
+    reorderTerminal(group.id, fromIndex, toIndex)
+    setDraggingId(null)
+    setDropTarget(null)
+  }, [group.id, group.terminalIds, reorderTerminal])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null)
+    setDropTarget(null)
+  }, [])
+
+  const handleContextMenu = (e: React.MouseEvent, terminalId: string) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, terminalId })
+  }
+
   return (
-    <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0 min-w-0">
+    <div className="flex items-stretch border-b border-border-weak bg-surface-1 shrink-0 min-w-0">
       {/* Scrollable tab area */}
-      <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 px-2 py-1.5 scrollbar-none">
+      <div
+        className="flex-1 min-w-0 overflow-x-auto flex items-end gap-0 scrollbar-none"
+        onDragLeave={() => setDropTarget(null)}
+      >
         {groupTerminals.map((t) => (
-          <div
+          <TerminalTab
             key={t.id}
-            onClick={() => {
-              handleTabClick(t.id)
-              // Clear active tool tab to show the terminal
-              if (activeToolTab) onToolTabClick("")
-            }}
+            terminal={t}
+            isActive={t.id === group.activeTerminalId && !activeToolTab}
+            isEditing={editingTabId === t.id}
+            editName={editingName}
+            containerIds={containerIds}
+            onSelect={() => handleTabClick(t.id)}
+            onClose={(e) => handleCloseTab(e, t.id)}
             onDoubleClick={() => handleDoubleClick(t.id, t.name)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
-              t.id === group.activeTerminalId && !activeToolTab
-                ? "bg-surface-2 text-text-strong"
-                : "text-text-weak hover:bg-surface-2/50"
-            }`}
-          >
-            <Terminal className="w-3 h-3 shrink-0" />
-
-            {t.hasNotification && t.id !== group.activeTerminalId && (
-              <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-            )}
-
-            {editingTabId === t.id ? (
-              <input
-                ref={editInputRef}
-                value={editingName}
-                onChange={(e) => setEditingName(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") commitRename()
-                  if (e.key === "Escape") setEditingTabId(null)
-                }}
-                className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
-                autoFocus
-              />
-            ) : (
-              <>
-                <span className="truncate max-w-[100px]">{t.name}</span>
-                {containerIds.length > 1 && (
-                  <ContainerBadge container={t.container} />
-                )}
-              </>
-            )}
-
-            <button
-              onClick={(e) => handleCloseTab(e, t.id)}
-              className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
+            onContextMenu={(e) => handleContextMenu(e, t.id)}
+            onEditChange={setEditingName}
+            onEditCommit={commitRename}
+            onEditCancel={() => setEditingTabId(null)}
+            editInputRef={editInputRef}
+            onDragStart={(e) => handleDragStart(e, t.id)}
+            onDragOver={(e) => handleDragOver(e, t.id)}
+            onDrop={(e) => handleDrop(e, t.id)}
+            onDragEnd={handleDragEnd}
+            isDragging={draggingId === t.id}
+            dropIndicator={dropTarget?.id === t.id ? dropTarget.side : null}
+          />
         ))}
 
         {/* Open web tool tabs */}
@@ -150,12 +203,16 @@ export function SingleGroupTabBar({
             <div
               key={toolId}
               onClick={() => onToolTabClick(toolId)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
+              className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer transition-colors group shrink-0 -mb-px ${
                 activeToolTab === toolId
-                  ? "bg-surface-2 text-text-strong"
-                  : "text-text-weak hover:bg-surface-2/50"
+                  ? "bg-surface-0 text-text-strong border-b-2 border-b-accent z-10"
+                  : "text-text-weak hover:bg-surface-2/50 border-b border-b-transparent"
               }`}
             >
+              {/* Vertical separator for inactive tabs */}
+              {activeToolTab !== toolId && (
+                <div className="absolute right-0 top-[6px] bottom-[6px] w-px bg-border-weak" />
+              )}
               {isStarting ? (
                 <Loader2 className="w-3 h-3 shrink-0 animate-spin text-accent" />
               ) : (
@@ -187,31 +244,39 @@ export function SingleGroupTabBar({
           compact
         />
 
-        {/* Split actions — only when 2+ terminals */}
-        {groupTerminals.length >= 2 && (
-          <>
-            <button
-              onClick={() =>
-                group.activeTerminalId &&
-                splitTerminal(group.activeTerminalId, "horizontal")
-              }
-              className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
-              title="Split right"
-            >
-              <SplitSquareHorizontal className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() =>
-                group.activeTerminalId &&
-                splitTerminal(group.activeTerminalId, "vertical")
-              }
-              className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
-              title="Split down"
-            >
-              <SplitSquareVertical className="w-3.5 h-3.5" />
-            </button>
-          </>
-        )}
+        {/* Split actions — always visible, disabled when < 2 terminals */}
+        <button
+          onClick={() =>
+            group.activeTerminalId &&
+            groupTerminals.length >= 2 &&
+            splitTerminal(group.activeTerminalId, "horizontal")
+          }
+          disabled={groupTerminals.length < 2}
+          className={`p-1 rounded transition-colors ${
+            groupTerminals.length >= 2
+              ? "text-text-weaker hover:bg-surface-2/50 hover:text-text-weak"
+              : "text-text-weaker/30 cursor-not-allowed"
+          }`}
+          title={groupTerminals.length >= 2 ? "Split right" : "Split right (need 2+ terminals)"}
+        >
+          <SplitSquareHorizontal className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={() =>
+            group.activeTerminalId &&
+            groupTerminals.length >= 2 &&
+            splitTerminal(group.activeTerminalId, "vertical")
+          }
+          disabled={groupTerminals.length < 2}
+          className={`p-1 rounded transition-colors ${
+            groupTerminals.length >= 2
+              ? "text-text-weaker hover:bg-surface-2/50 hover:text-text-weak"
+              : "text-text-weaker/30 cursor-not-allowed"
+          }`}
+          title={groupTerminals.length >= 2 ? "Split down" : "Split down (need 2+ terminals)"}
+        >
+          <SplitSquareVertical className="w-3.5 h-3.5" />
+        </button>
 
         <WebToolsDropdown
           openToolTabs={openToolTabs}
@@ -219,6 +284,39 @@ export function SingleGroupTabBar({
           onSettings={onToolSettings}
         />
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <ContextMenu
+          terminalId={contextMenu.terminalId}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          otherGroups={[]}
+          groupTerminalCount={groupTerminals.length}
+          onSplitRight={() => {
+            splitTerminal(contextMenu.terminalId, "horizontal")
+            setContextMenu(null)
+          }}
+          onSplitDown={() => {
+            splitTerminal(contextMenu.terminalId, "vertical")
+            setContextMenu(null)
+          }}
+          onMoveToGroup={() => {}}
+          onClose={() => {
+            send({
+              type: "terminal:close",
+              data: { terminalId: contextMenu.terminalId },
+            })
+            removeTerminal(contextMenu.terminalId)
+            setContextMenu(null)
+          }}
+          onRename={() => {
+            const t = terminals.find((t) => t.id === contextMenu.terminalId)
+            if (t) handleDoubleClick(t.id, t.name)
+            setContextMenu(null)
+          }}
+        />
+      )}
     </div>
   )
 }

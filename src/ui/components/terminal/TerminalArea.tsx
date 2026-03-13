@@ -199,8 +199,8 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
       {containerPickerModal}
       {closeConfirmModal}
       <div className="h-full flex flex-col bg-surface-0">
-        <div className="flex items-center border-b border-border-weak bg-surface-1 shrink-0 min-w-0">
-          <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-1 px-2 py-1.5 scrollbar-none">
+        <div className="flex items-stretch border-b border-border-weak bg-surface-1 shrink-0 min-w-0">
+          <div className="flex-1 min-w-0 overflow-x-auto flex items-end gap-0 scrollbar-none">
             {/* Tool tabs */}
             {openToolTabs.map((toolId) => {
               const tool = WEB_TOOLS.find((t) => t.id === toolId)
@@ -211,10 +211,10 @@ export function TerminalArea({ send, subscribe, connected, project }: Props) {
                 <div
                   key={toolId}
                   onClick={() => setActiveToolTab(toolId)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 ${
+                  className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer transition-colors group shrink-0 -mb-px ${
                     activeToolTab === toolId
-                      ? "bg-surface-2 text-text-strong"
-                      : "text-text-weak hover:bg-surface-2/50"
+                      ? "bg-surface-0 text-text-strong border-b-2 border-b-accent z-10"
+                      : "text-text-weak hover:bg-surface-2/50 border-b border-b-transparent"
                   }`}
                 >
                   {isStarting ? (

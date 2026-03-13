@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo, useCallback, useEffect } from "react"
 import {
   useWorkspaceStore,
   type TabType,
@@ -15,6 +15,10 @@ import {
   Filter,
   Loader2,
   ExternalLink,
+  PenLine,
+  SplitSquareHorizontal,
+  SplitSquareVertical,
+  Merge,
 } from "lucide-react"
 import { usePopOutStore } from "../../stores/popout"
 import { useWebToolsStore, WEB_TOOLS, toolKey } from "../../stores/webtools"
@@ -42,6 +46,101 @@ const FILTER_LABELS: { type: TabType | null; label: string }[] = [
   { type: "file", label: "Files" },
   { type: "webtool", label: "Tools" },
 ]
+
+// ─── Context Menu ────────────────────────────────────────────
+
+function TabContextMenu({
+  tab,
+  x,
+  y,
+  onClose,
+  onRename,
+  onTogglePin,
+  onPopOut,
+  onCloseTab,
+  onSplitRight,
+  onSplitDown,
+  canSplit,
+}: {
+  tab: WorkspaceTab
+  x: number
+  y: number
+  onClose: () => void
+  onRename: () => void
+  onTogglePin: () => void
+  onPopOut: () => void
+  onCloseTab: () => void
+  onSplitRight: () => void
+  onSplitDown: () => void
+  canSplit: boolean
+}) {
+  return (
+    <div
+      className="fixed z-50 min-w-[180px] bg-surface-2 border border-border-weak rounded-lg shadow-xl py-1 text-xs font-sans"
+      style={{ left: x, top: y }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {tab.type === "terminal" && (
+        <button
+          onClick={() => { onRename(); onClose() }}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+        >
+          <PenLine className="w-3.5 h-3.5 shrink-0" />
+          Rename
+        </button>
+      )}
+      <button
+        onClick={() => { onTogglePin(); onClose() }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+      >
+        <Pin className="w-3.5 h-3.5 shrink-0" />
+        {tab.pinned ? "Unpin" : "Pin"}
+      </button>
+      <button
+        onClick={() => { onPopOut(); onClose() }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+      >
+        <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+        Pop out
+      </button>
+
+      {tab.type === "terminal" && (
+        <>
+          <div className="h-px bg-border-weak my-1" />
+          <button
+            onClick={() => { onSplitRight(); onClose() }}
+            disabled={!canSplit}
+            className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+              canSplit ? "text-text-base hover:bg-surface-3" : "text-text-weaker cursor-not-allowed"
+            }`}
+          >
+            <SplitSquareHorizontal className="w-3.5 h-3.5 shrink-0" />
+            Split Right
+          </button>
+          <button
+            onClick={() => { onSplitDown(); onClose() }}
+            disabled={!canSplit}
+            className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
+              canSplit ? "text-text-base hover:bg-surface-3" : "text-text-weaker cursor-not-allowed"
+            }`}
+          >
+            <SplitSquareVertical className="w-3.5 h-3.5 shrink-0" />
+            Split Down
+          </button>
+        </>
+      )}
+
+      <div className="h-px bg-border-weak my-1" />
+      <button
+        onClick={() => { onCloseTab(); onClose() }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-status-error hover:bg-status-error/10 transition-colors"
+      >
+        <X className="w-3.5 h-3.5 shrink-0" />
+        Close
+      </button>
+    </div>
+  )
+}
 
 // ─── Tab Bar ────────────────────────────────────────────────
 
@@ -75,6 +174,12 @@ export function WorkspaceTabBar({
   const removeTab = useWorkspaceStore((s) => s.removeTab)
   const renameTab = useWorkspaceStore((s) => s.renameTab)
   const togglePin = useWorkspaceStore((s) => s.togglePin)
+  const reorderTab = useWorkspaceStore((s) => s.reorderTab)
+  const splitTerminal = useTerminalStore((s) => s.splitTerminal)
+  const unsplitAll = useTerminalStore((s) => s.unsplitAll)
+  const terminalGroups = useTerminalStore((s) => s.groups)
+  const terminalCount = useTerminalStore((s) => s.terminals.length)
+  const isSplit = terminalGroups.length > 1
 
   // Collect open tool tab IDs for WebToolsDropdown
   const openToolTabIds = tabs
@@ -84,6 +189,24 @@ export function WorkspaceTabBar({
   const [editingTabId, setEditingTabId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  // Drag & drop state
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ id: string; side: "before" | "after" } | null>(null)
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    tab: WorkspaceTab
+  } | null>(null)
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    window.addEventListener("click", close)
+    return () => window.removeEventListener("click", close)
+  }, [contextMenu])
 
   // Filter tabs
   const visibleTabs = filter ? tabs.filter((t) => t.type === filter) : tabs
@@ -111,6 +234,58 @@ export function WorkspaceTabBar({
     setEditingTabId(null)
   }
 
+  // Drag & drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, tabId: string) => {
+    setDraggingId(tabId)
+    e.dataTransfer.effectAllowed = "move"
+    e.dataTransfer.setData("text/plain", tabId)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, tabId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    const rect = e.currentTarget.getBoundingClientRect()
+    const midX = rect.left + rect.width / 2
+    const side = e.clientX < midX ? "before" : "after"
+    setDropTarget({ id: tabId, side })
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, tabId: string) => {
+    e.preventDefault()
+    const draggedId = e.dataTransfer.getData("text/plain")
+    if (!draggedId || draggedId === tabId) {
+      setDraggingId(null)
+      setDropTarget(null)
+      return
+    }
+
+    const allTabsNow = useWorkspaceStore.getState().tabs
+    const fromIndex = allTabsNow.findIndex((t) => t.id === draggedId)
+    let toIndex = allTabsNow.findIndex((t) => t.id === tabId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const midX = rect.left + rect.width / 2
+    if (e.clientX >= midX && fromIndex < toIndex) {
+      // dropping after, already in right position
+    } else if (e.clientX < midX && fromIndex > toIndex) {
+      // dropping before, already in right position
+    } else if (e.clientX >= midX) {
+      toIndex += 1
+    }
+
+    if (fromIndex < toIndex) toIndex -= 1
+
+    reorderTab(fromIndex, toIndex)
+    setDraggingId(null)
+    setDropTarget(null)
+  }, [reorderTab])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null)
+    setDropTarget(null)
+  }, [])
+
   // Count by type (for filter badges)
   const counts = {
     terminal: tabs.filter((t) => t.type === "terminal").length,
@@ -123,9 +298,9 @@ export function WorkspaceTabBar({
     (counts.webtool > 0 ? 1 : 0) > 1
 
   return (
-    <div className="flex flex-col border-b border-border-weak bg-surface-1 shrink-0">
+    <div className="flex flex-col bg-surface-1 shrink-0">
       {/* Tab bar */}
-      <div className="flex items-center min-w-0">
+      <div className="flex items-stretch min-w-0 border-b border-border-weak">
         {/* Filter chips — only show when there are mixed types */}
         {hasMultipleTypes && (
           <div className="shrink-0 flex items-center gap-0.5 pl-2 pr-1 border-r border-border-weak">
@@ -158,7 +333,10 @@ export function WorkspaceTabBar({
         )}
 
         {/* Scrollable tabs */}
-        <div className="flex-1 min-w-0 overflow-x-auto flex items-center gap-0.5 px-1.5 py-1.5 scrollbar-none">
+        <div
+          className="flex-1 min-w-0 overflow-x-auto flex items-end gap-0 scrollbar-none"
+          onDragLeave={() => setDropTarget(null)}
+        >
           {sortedTabs.map((tab) => (
             <TabItem
               key={tab.id}
@@ -168,9 +346,10 @@ export function WorkspaceTabBar({
               editingName={editingName}
               editInputRef={editInputRef}
               containerIds={containerIds}
+              isDragging={draggingId === tab.id}
+              dropIndicator={dropTarget?.id === tab.id ? dropTarget.side : null}
               onClick={() => {
                 setActiveTab(tab.id)
-                // Clear notification on click
                 if (tab.hasNotification) {
                   useWorkspaceStore.getState().setTabNotification(tab.id, false)
                 }
@@ -193,11 +372,19 @@ export function WorkspaceTabBar({
               onEditCommit={commitRename}
               onEditCancel={() => setEditingTabId(null)}
               onTogglePin={() => togglePin(tab.id)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setContextMenu({ x: e.clientX, y: e.clientY, tab })
+              }}
+              onDragStart={(e) => handleDragStart(e, tab.id)}
+              onDragOver={(e) => handleDragOver(e, tab.id)}
+              onDrop={(e) => handleDrop(e, tab.id)}
+              onDragEnd={handleDragEnd}
             />
           ))}
 
           {sortedTabs.length === 0 && (
-            <span className="text-[11px] text-text-weaker font-sans px-2">
+            <span className="text-[11px] text-text-weaker font-sans px-2 py-1.5">
               {filter ? `No ${filter} tabs` : "No open tabs"}
             </span>
           )}
@@ -211,6 +398,43 @@ export function WorkspaceTabBar({
             onAdd={onAddTerminal}
             compact
           />
+
+          {/* Split / Unsplit buttons */}
+          {isSplit ? (
+            <button
+              onClick={unsplitAll}
+              className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+              title="Merge all split panes"
+            >
+              <Merge className="w-3.5 h-3.5" />
+            </button>
+          ) : (
+            terminalCount >= 2 && (
+              <>
+                <button
+                  onClick={() => {
+                    const active = useTerminalStore.getState().activeTerminalId
+                    if (active) splitTerminal(active, "horizontal")
+                  }}
+                  className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+                  title="Split right"
+                >
+                  <SplitSquareHorizontal className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    const active = useTerminalStore.getState().activeTerminalId
+                    if (active) splitTerminal(active, "vertical")
+                  }}
+                  className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors"
+                  title="Split down"
+                >
+                  <SplitSquareVertical className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )
+          )}
+
           <WebToolsDropdown
             openToolTabs={openToolTabIds}
             onLaunch={onLaunchTool}
@@ -218,6 +442,42 @@ export function WorkspaceTabBar({
           />
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <TabContextMenu
+          tab={contextMenu.tab}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onRename={() => handleDoubleClick(contextMenu.tab.id, contextMenu.tab.title)}
+          onTogglePin={() => togglePin(contextMenu.tab.id)}
+          onPopOut={() => {
+            usePopOutStore.getState().popOut({
+              tabId: contextMenu.tab.id,
+              type: contextMenu.tab.type === "webtool" ? "tool" : contextMenu.tab.type,
+              windowRef: null,
+              title: contextMenu.tab.title,
+              terminalId: contextMenu.tab.terminalId,
+              fileId: contextMenu.tab.fileId,
+              toolId: contextMenu.tab.toolId,
+              container: contextMenu.tab.container,
+            })
+          }}
+          onCloseTab={() => removeTab(contextMenu.tab.id)}
+          onSplitRight={() => {
+            if (contextMenu.tab.terminalId) {
+              splitTerminal(contextMenu.tab.terminalId, "horizontal")
+            }
+          }}
+          onSplitDown={() => {
+            if (contextMenu.tab.terminalId) {
+              splitTerminal(contextMenu.tab.terminalId, "vertical")
+            }
+          }}
+          canSplit={contextMenu.tab.type === "terminal" && terminalCount >= 2}
+        />
+      )}
     </div>
   )
 }
@@ -231,6 +491,8 @@ function TabItem({
   editingName,
   editInputRef,
   containerIds,
+  isDragging,
+  dropIndicator,
   onClick,
   onClose,
   onPopOut,
@@ -239,6 +501,11 @@ function TabItem({
   onEditCommit,
   onEditCancel,
   onTogglePin,
+  onContextMenu,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   tab: WorkspaceTab
   isActive: boolean
@@ -246,6 +513,8 @@ function TabItem({
   editingName: string
   editInputRef: React.RefObject<HTMLInputElement>
   containerIds: string[]
+  isDragging: boolean
+  dropIndicator: "before" | "after" | null
   onClick: () => void
   onClose: () => void
   onPopOut: () => void
@@ -254,6 +523,11 @@ function TabItem({
   onEditCommit: () => void
   onEditCancel: () => void
   onTogglePin: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onDragStart: (e: React.DragEvent) => void
+  onDragOver: (e: React.DragEvent) => void
+  onDrop: (e: React.DragEvent) => void
+  onDragEnd: () => void
 }) {
   const isPoppedOut = usePopOutStore((s) => s.isPopedOut(tab.id))
   const fileDirty = useFileStore(
@@ -275,96 +549,114 @@ function TabItem({
 
   return (
     <div
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded text-xs cursor-pointer transition-colors group shrink-0 relative ${
-        isActive
-          ? "bg-surface-2 text-text-strong"
-          : "text-text-weak hover:bg-surface-2/50"
-      }`}
+      className="relative flex items-center shrink-0 -mb-px"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
     >
-      {/* Color accent line at top */}
-      {isActive && (
-        <div
-          className={`absolute top-0 left-1 right-1 h-[2px] rounded-b ${TAB_TYPE_ACCENT[tab.type]}`}
-        />
+      {/* Drop indicator — before */}
+      {dropIndicator === "before" && (
+        <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-accent z-20 -translate-x-px" />
       )}
 
-      {/* Pin indicator */}
-      {tab.pinned && (
-        <Pin className="w-2.5 h-2.5 text-accent/50 shrink-0" />
-      )}
-
-      {/* Icon */}
-      {icon}
-
-      {/* Notification dot */}
-      {tab.hasNotification && !isActive && (
-        <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-      )}
-
-      {/* Dirty indicator for files */}
-      {fileDirty && !fileSaving && (
-        <span className="w-2 h-2 rounded-full bg-accent/60 shrink-0" />
-      )}
-      {fileSaving && (
-        <Loader2 className="w-3 h-3 animate-spin text-accent shrink-0" />
-      )}
-
-      {/* Title + container stacked */}
-      <div className="flex flex-col min-w-0 leading-tight">
-        {isEditing ? (
-          <input
-            ref={editInputRef}
-            value={editingName}
-            onChange={(e) => onEditChange(e.target.value)}
-            onBlur={onEditCommit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onEditCommit()
-              if (e.key === "Escape") onEditCancel()
-            }}
-            className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
-            autoFocus
-          />
-        ) : (
-          <span className="truncate max-w-[120px] text-[11px]">{tab.title}</span>
+      <div
+        draggable={!isEditing}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        onContextMenu={onContextMenu}
+        className={`relative flex items-center gap-1.5 pl-2.5 pr-1 py-1.5 text-xs cursor-pointer transition-colors group shrink-0 ${
+          isActive
+            ? "bg-surface-0 text-text-strong border-b-2 border-b-accent z-10"
+            : "text-text-weak hover:bg-surface-2/50 border-b border-b-transparent"
+        } ${isDragging ? "opacity-50" : ""}`}
+      >
+        {/* Vertical separator — only on inactive tabs */}
+        {!isActive && (
+          <div className="absolute right-0 top-[6px] bottom-[6px] w-px bg-border-weak" />
         )}
-        {showMultiContainer && tab.container && (
-          <span className="truncate max-w-[100px] text-[9px] font-mono text-accent/60">
-            {tab.container.replace(/^exegol-/, "")}
+
+        {/* Pin indicator */}
+        {tab.pinned && (
+          <Pin className="w-2.5 h-2.5 text-accent/50 shrink-0" />
+        )}
+
+        {/* Icon */}
+        {icon}
+
+        {/* Notification dot */}
+        {tab.hasNotification && !isActive && (
+          <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+        )}
+
+        {/* Dirty indicator for files */}
+        {fileDirty && !fileSaving && (
+          <span className="w-2 h-2 rounded-full bg-accent/60 shrink-0" />
+        )}
+        {fileSaving && (
+          <Loader2 className="w-3 h-3 animate-spin text-accent shrink-0" />
+        )}
+
+        {/* Title + container stacked */}
+        <div className="flex flex-col min-w-0 leading-tight">
+          {isEditing ? (
+            <input
+              ref={editInputRef}
+              value={editingName}
+              onChange={(e) => onEditChange(e.target.value)}
+              onBlur={onEditCommit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onEditCommit()
+                if (e.key === "Escape") onEditCancel()
+              }}
+              className="bg-transparent border-b border-accent text-xs text-text-strong outline-none w-20"
+              autoFocus
+            />
+          ) : (
+            <span className="truncate max-w-[120px] text-[11px]">{tab.title}</span>
+          )}
+          {showMultiContainer && tab.container && (
+            <span className="truncate max-w-[100px] text-[9px] font-mono text-accent/60">
+              {tab.container.replace(/^exegol-/, "")}
+            </span>
+          )}
+        </div>
+
+        {/* Pop-out button */}
+        {!isPoppedOut && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onPopOut()
+            }}
+            className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-0.5"
+            title="Pop out to separate window"
+          >
+            <ExternalLink className="w-2.5 h-2.5" />
+          </button>
+        )}
+        {/* Re-attach indicator */}
+        {isPoppedOut && (
+          <span className="text-[8px] text-accent font-sans shrink-0 ml-0.5">
+            ↗
           </span>
         )}
-      </div>
-
-      {/* Pop-out button */}
-      {!isPoppedOut && (
+        {/* Close button */}
         <button
           onClick={(e) => {
             e.stopPropagation()
-            onPopOut()
+            onClose()
           }}
           className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-0.5"
-          title="Pop out to separate window"
         >
-          <ExternalLink className="w-2.5 h-2.5" />
+          <X className="w-3 h-3" />
         </button>
+      </div>
+
+      {/* Drop indicator — after */}
+      {dropIndicator === "after" && (
+        <div className="absolute right-0 top-1 bottom-1 w-0.5 bg-accent z-20 translate-x-px" />
       )}
-      {/* Re-attach indicator */}
-      {isPoppedOut && (
-        <span className="text-[8px] text-accent font-sans shrink-0 ml-0.5">
-          ↗
-        </span>
-      )}
-      {/* Close button */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onClose()
-        }}
-        className="p-0.5 rounded hover:bg-surface-3 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-0.5"
-      >
-        <X className="w-3 h-3" />
-      </button>
     </div>
   )
 }

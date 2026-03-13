@@ -21,8 +21,12 @@ export interface Terminal {
   busy: boolean
   /** Whether this terminal was created by the AI (part of the pool) */
   aiManaged: boolean
+  /** Whether the terminal has shown its first prompt (shell is ready) */
+  ready: boolean
   /** Timer for prompt detection debounce */
   _idleTimer?: ReturnType<typeof setTimeout>
+  /** Per-terminal injection lock — prevents concurrent writeTyping calls */
+  _injectionLock?: Promise<void>
 }
 
 export type WsBroadcast = (terminalId: string, message: object) => void
@@ -170,6 +174,7 @@ class TerminalManager {
       alive: true,
       busy: false,
       aiManaged: false,
+      ready: false,
     }
 
     this.terminals.set(id, terminal)
@@ -190,12 +195,17 @@ class TerminalManager {
         terminal.ringBuffer.shift()
       }
 
-      // Busy detection: after output stops for 300ms, check for prompt
-      if (terminal.busy) {
-        if (terminal._idleTimer) clearTimeout(terminal._idleTimer)
-        terminal._idleTimer = setTimeout(() => {
-          const lastLine = terminal.ringBuffer[terminal.ringBuffer.length - 1] || ""
-          if (PROMPT_RE.test(lastLine)) {
+      // Prompt detection: after output stops for 300ms, check for prompt
+      if (terminal._idleTimer) clearTimeout(terminal._idleTimer)
+      terminal._idleTimer = setTimeout(() => {
+        const lastLine = terminal.ringBuffer[terminal.ringBuffer.length - 1] || ""
+        if (PROMPT_RE.test(lastLine)) {
+          // Mark terminal as ready on first prompt (shell finished sourcing rc files)
+          if (!terminal.ready) {
+            terminal.ready = true
+            console.log(`[Terminal] ${terminal.name} (${terminal.id}) ready`)
+          }
+          if (terminal.busy) {
             terminal.busy = false
             opsTracker.completeByTerminal(terminal.id)
             broadcast(terminal.id, {
@@ -203,8 +213,8 @@ class TerminalManager {
               data: { terminalId: terminal.id },
             })
           }
-        }, 300)
-      }
+        }
+      }, 300)
 
       // Send raw output to WebSocket clients (for xterm.js rendering)
       broadcast(terminal.id, {
@@ -236,20 +246,70 @@ class TerminalManager {
   }
 
   /**
-   * Write input with a typing effect — char by char with a small delay.
-   * Returns a promise that resolves when all chars have been written.
+   * Wait until the terminal shows its first prompt (shell has finished init).
+   * Times out after 10 seconds if no prompt is detected.
    */
-  async writeTyping(terminalId: string, input: string, charDelay = 12): Promise<void> {
+  private waitForReady(terminal: Terminal, timeout = 10_000): Promise<void> {
+    if (terminal.ready) return Promise.resolve()
+    return new Promise((resolve) => {
+      const start = Date.now()
+      const check = () => {
+        if (terminal.ready || !terminal.alive || Date.now() - start > timeout) {
+          resolve()
+          return
+        }
+        setTimeout(check, 200)
+      }
+      check()
+    })
+  }
+
+  /**
+   * Write input with a typing effect — in chunks with delay.
+   * Uses a per-terminal lock to prevent concurrent injections from interleaving.
+   * Waits for the terminal to be ready (first prompt) before injecting.
+   */
+  async writeTyping(terminalId: string, input: string, chunkSize = 4, chunkDelay = 15): Promise<void> {
     const terminal = this.terminals.get(terminalId)
     if (!terminal) throw new Error(`Terminal not found: ${terminalId}`)
     if (!terminal.alive) throw new Error(`Terminal is closed: ${terminalId}`)
 
-    for (const char of input) {
-      if (!terminal.alive) break
-      terminal.process.write(char)
-      if (charDelay > 0) {
-        await new Promise((r) => setTimeout(r, charDelay))
+    // Per-terminal injection lock: queue behind any ongoing injection
+    const prevLock = terminal._injectionLock
+    let releaseLock: () => void
+    terminal._injectionLock = new Promise<void>((r) => { releaseLock = r })
+
+    try {
+      if (prevLock) await prevLock
+
+      // Wait for shell to be ready (first prompt after sourcing rc files)
+      await this.waitForReady(terminal)
+
+      if (!terminal.alive) return
+
+      // Split command from its trailing newline — write command in chunks, then newline separately
+      const hasNewline = input.endsWith("\n")
+      const command = hasNewline ? input.slice(0, -1) : input
+
+      // Write command in chunks (not char-by-char — reduces PTY writes, avoids readline confusion)
+      for (let i = 0; i < command.length; i += chunkSize) {
+        if (!terminal.alive) break
+        const chunk = command.slice(i, i + chunkSize)
+        terminal.process.write(chunk)
+        if (chunkDelay > 0 && i + chunkSize < command.length) {
+          await new Promise((r) => setTimeout(r, chunkDelay))
+        }
       }
+
+      // Small pause before sending Enter — lets readline finish rendering the full command
+      if (hasNewline && terminal.alive) {
+        await new Promise((r) => setTimeout(r, 50))
+        terminal.process.write("\n")
+        // Post-Enter delay: let the shell process the command before any next injection
+        await new Promise((r) => setTimeout(r, 200))
+      }
+    } finally {
+      releaseLock!()
     }
   }
 
@@ -297,6 +357,18 @@ class TerminalManager {
     for (const terminal of this.terminals.values()) {
       terminal.subscribers.delete(ws)
     }
+  }
+
+  /** Close all terminals NOT in the given set of active IDs */
+  closeExcept(activeIds: Set<string>): number {
+    let count = 0
+    for (const id of [...this.terminals.keys()]) {
+      if (!activeIds.has(id)) {
+        this.close(id)
+        count++
+      }
+    }
+    return count
   }
 
   closeAll(): void {

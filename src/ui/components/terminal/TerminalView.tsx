@@ -8,6 +8,10 @@ import { Plus } from "lucide-react"
 import { ProbeModal, type ProbeContext } from "../probe/ProbeModal"
 import { ProbeHistory } from "../probe/ProbeHistory"
 
+// Track terminals whose buffer has already been fetched and written to xterm.
+// Prevents duplicate content when TerminalView remounts (e.g. moving between split groups).
+const initializedTerminals = new Set<string>()
+
 interface Props {
   serverId: string
   send: (msg: WSMessage) => void
@@ -75,34 +79,51 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     term.open(containerRef.current)
     termRef.current = term
 
+    // Debounced fit — prevents rapid reflows that garble xterm content
+    // when split panes are resized continuously
+    let fitTimer: ReturnType<typeof setTimeout> | null = null
+    const debouncedFit = (delay = 100) => {
+      if (fitTimer) clearTimeout(fitTimer)
+      fitTimer = setTimeout(() => {
+        fitTimer = null
+        try {
+          fitAddon.fit()
+        } catch {
+          /* not visible yet */
+        }
+      }, delay)
+    }
+
     // Fit after layout settles — retry with increasing delays for pop-out windows
     // where the container dimensions may not be final on the first frame
     const fitDelays = [0, 50, 150, 400]
     const fitTimers: ReturnType<typeof setTimeout>[] = []
     for (const delay of fitDelays) {
       const timer = setTimeout(() => {
-        requestAnimationFrame(() => {
-          try {
-            fitAddon.fit()
-          } catch {
-            /* not visible yet */
-          }
-        })
+        try {
+          fitAddon.fit()
+        } catch {
+          /* not visible yet */
+        }
       }, delay)
       fitTimers.push(timer)
     }
 
-    // Fetch existing terminal output buffer (needed when remounting, e.g. pop-out)
-    fetch(`/api/terminals/${serverId}/output`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.output && termRef.current) {
-          termRef.current.write(data.output)
-        }
-      })
-      .catch(() => {
-        /* terminal may not have buffer yet */
-      })
+    // Fetch existing terminal output buffer on first mount only.
+    // Skip on remount (e.g. moving between split groups) to prevent duplicate content.
+    if (!initializedTerminals.has(serverId)) {
+      initializedTerminals.add(serverId)
+      fetch(`/api/terminals/${serverId}/output`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.output && termRef.current) {
+            termRef.current.write(data.output)
+          }
+        })
+        .catch(() => {
+          /* terminal may not have buffer yet */
+        })
+    }
 
     const dataDisposable = term.onData((data) => {
       send({
@@ -152,13 +173,7 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     })
 
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        try {
-          fitAddon.fit()
-        } catch {
-          /* ignore */
-        }
-      })
+      debouncedFit(80)
     })
     resizeObserver.observe(el)
 
@@ -167,13 +182,7 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     // container element may not fire when the popup is maximized/restored.
     const ownerWindow = el.ownerDocument.defaultView || window
     const handleWindowResize = () => {
-      requestAnimationFrame(() => {
-        try {
-          fitAddon.fit()
-        } catch {
-          /* ignore */
-        }
-      })
+      debouncedFit(80)
     }
     ownerWindow.addEventListener("resize", handleWindowResize)
 
@@ -196,6 +205,7 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
 
     return () => {
       alive = false
+      if (fitTimer) clearTimeout(fitTimer)
       for (const t of fitTimers) clearTimeout(t)
       el.removeEventListener("mouseup", handleMouseUp)
       ownerWindow.removeEventListener("resize", handleWindowResize)
@@ -206,6 +216,15 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
       unsubscribe()
       term.dispose()
       termRef.current = null
+
+      // If the terminal was truly removed (not just moved between groups),
+      // clear the initialized flag so a future terminal with this ID gets its buffer.
+      setTimeout(() => {
+        const exists = useTerminalStore.getState().terminals.some((t) => t.id === serverId)
+        if (!exists) {
+          initializedTerminals.delete(serverId)
+        }
+      }, 200)
     }
   }, [serverId, send, subscribe])
 

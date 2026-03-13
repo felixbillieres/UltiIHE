@@ -62,6 +62,7 @@ interface TerminalStore {
   setActiveInGroup: (groupId: string, terminalId: string) => void
   splitTerminal: (terminalId: string, direction: SplitDirection) => void
   moveTerminalToGroup: (terminalId: string, targetGroupId: string) => void
+  reorderTerminal: (groupId: string, fromIndex: number, toIndex: number) => void
   unsplitAll: () => void
   setGroupSizes: (parentPath: number[], sizes: number[]) => void
 
@@ -333,6 +334,20 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         layout: newLayout,
         focusedGroupId: newGId,
         activeTerminalId: terminalId,
+      }
+    }),
+
+  reorderTerminal: (groupId, fromIndex, toIndex) =>
+    set((state) => {
+      if (fromIndex === toIndex) return state
+      return {
+        groups: state.groups.map((g) => {
+          if (g.id !== groupId) return g
+          const ids = [...g.terminalIds]
+          const [moved] = ids.splice(fromIndex, 1)
+          ids.splice(toIndex, 0, moved)
+          return { ...g, terminalIds: ids }
+        }),
       }
     }),
 
