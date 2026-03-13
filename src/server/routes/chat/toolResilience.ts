@@ -195,6 +195,9 @@ export function buildRepairCallback(tools: Record<string, any>) {
 
 const DOOM_LOOP_THRESHOLD = 3
 
+// Tools that legitimately poll with identical args (output changes between calls)
+const POLLING_TOOLS = new Set(["terminal_read", "terminal_list"])
+
 interface ToolCallRecord {
   toolName: string
   argsHash: string
@@ -205,6 +208,9 @@ export function createDoomLoopTracker() {
 
   return {
     check(toolName: string, args: any): boolean {
+      // Polling tools read changing state — same args != same result
+      if (POLLING_TOOLS.has(toolName)) return false
+
       const argsHash = JSON.stringify(args)
       recent.push({ toolName, argsHash })
 
