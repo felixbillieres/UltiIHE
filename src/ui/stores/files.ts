@@ -357,6 +357,11 @@ export const useFileStore = create<FileStore>()(
     const file = get().openFiles.find((f) => f.id === id)
     if (!file || !file.isDirty || get().savingFiles.has(id)) return
 
+    // Host files use a different endpoint
+    if (file.container === "__host__") {
+      return get().saveHostFile(id)
+    }
+
     set((s) => ({ savingFiles: new Set(s.savingFiles).add(id) }))
     try {
       const res = await fetch(`/api/files/${file.container}/write`, {
