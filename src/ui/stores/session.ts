@@ -114,7 +114,7 @@ export const useSessionStore = create<SessionStore>()(
         const session: Session = {
           id: crypto.randomUUID(),
           projectId,
-          title: title || `New chat`,
+          title: title || `New session`,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [],

@@ -125,7 +125,7 @@ export function useBuiltinCommands(
     const navigation: CommandOption[] = [
       {
         id: "chat.focus",
-        title: "Focus Chat Input",
+        title: "Focus Assistant Input",
         category: "Navigation",
         keybind: "ctrl+l",
         icon: <MessageCircle className="w-3.5 h-3.5" />,
@@ -156,7 +156,7 @@ export function useBuiltinCommands(
       },
       {
         id: "panel.chat",
-        title: "Toggle Chat Panel",
+        title: "Toggle Assistant Panel",
         category: "Navigation",
         keybind: "mod+shift+b",
         icon: <PanelRight className="w-3.5 h-3.5" />,
@@ -180,7 +180,7 @@ export function useBuiltinCommands(
       {
         id: "panel.swap",
         title: "Swap Side Panels",
-        description: "Switch files and chat positions",
+        description: "Switch files and assistant positions",
         category: "Navigation",
         icon: <ArrowLeftRight className="w-3.5 h-3.5" />,
         onSelect: layout.swapPanels,

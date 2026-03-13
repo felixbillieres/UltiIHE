@@ -128,7 +128,7 @@ export const useSettingsStore = create<SettingsStore>()(
       activeTheme: "exegol-dark",
       colorScheme: "dark",
       fontSize: 14,
-      fontFamily: "IBM Plex Mono",
+      fontFamily: "JetBrains Mono",
       soundEnabled: false,
       soundId: "gentle",
       language: detectLanguage(),

@@ -1,4 +1,6 @@
 import { Hono } from "hono"
+import { readdir, stat, readFile, writeFile, mkdir, rm, rename as fsRename, cp } from "node:fs/promises"
+import { join, resolve, basename, dirname } from "node:path"
 
 export const filesRoutes = new Hono()
 
@@ -43,6 +45,132 @@ const PROTECTED_ROOTS = new Set([
   "/", "/bin", "/sbin", "/lib", "/lib64", "/usr", "/var",
   "/boot", "/dev", "/proc", "/sys",
 ])
+
+function validateHostPath(path: string): boolean {
+  if (!path.startsWith("/")) return false
+  if (path.includes("..")) return false
+  if (path.includes("\0")) return false
+  const resolved = resolve(path)
+  return resolved === path || resolved === path.replace(/\/+$/, "")
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Host filesystem routes — MUST be registered BEFORE :container
+// routes, otherwise Hono matches "host" as a container name.
+// ═══════════════════════════════════════════════════════════════════
+
+filesRoutes.get("/files/host/list", async (c) => {
+  const path = c.req.query("path") || "/"
+  if (!validateHostPath(path)) return c.json({ error: "Invalid path" }, 400)
+
+  try {
+    const dirents = await readdir(path, { withFileTypes: true })
+    const entries = await Promise.all(
+      dirents.map(async (d) => {
+        const fullPath = join(path, d.name)
+        try {
+          const s = await stat(fullPath)
+          return {
+            name: d.name,
+            path: fullPath,
+            type: d.isDirectory() ? "dir" : "file",
+            size: s.size,
+            modified: s.mtimeMs / 1000,
+          }
+        } catch {
+          return { name: d.name, path: fullPath, type: d.isDirectory() ? "dir" : "file", size: 0, modified: 0 }
+        }
+      }),
+    )
+    return c.json({ entries })
+  } catch (e) {
+    return c.json({ entries: [], error: (e as Error).message }, 500)
+  }
+})
+
+filesRoutes.get("/files/host/read", async (c) => {
+  const path = c.req.query("path")
+  if (!path) return c.json({ error: "Missing path" }, 400)
+  if (!validateHostPath(path)) return c.json({ error: "Invalid path" }, 400)
+
+  try {
+    const s = await stat(path)
+    if (s.size > 5 * 1024 * 1024) return c.json({ error: "File too large (> 5MB)" }, 413)
+    const content = await readFile(path, "utf-8")
+    return c.json({ content, size: s.size })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
+filesRoutes.post("/files/host/write", async (c) => {
+  const { path: filePath, content } = (await c.req.json()) as { path: string; content: string }
+  if (!filePath || !validateHostPath(filePath)) return c.json({ error: "Invalid path" }, 400)
+  if (typeof content !== "string") return c.json({ error: "Content must be a string" }, 400)
+
+  try {
+    await mkdir(dirname(filePath), { recursive: true })
+    await writeFile(filePath, content, "utf-8")
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
+filesRoutes.post("/files/host/create-file", async (c) => {
+  const { path: filePath } = (await c.req.json()) as { path: string }
+  if (!validateHostPath(filePath)) return c.json({ error: "Invalid path" }, 400)
+
+  try {
+    await mkdir(dirname(filePath), { recursive: true })
+    await writeFile(filePath, "", "utf-8")
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
+filesRoutes.post("/files/host/create-dir", async (c) => {
+  const { path: dirPath } = (await c.req.json()) as { path: string }
+  if (!validateHostPath(dirPath)) return c.json({ error: "Invalid path" }, 400)
+
+  try {
+    await mkdir(dirPath, { recursive: true })
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
+filesRoutes.post("/files/host/delete", async (c) => {
+  const { path: targetPath } = (await c.req.json()) as { path: string }
+  if (!validateHostPath(targetPath)) return c.json({ error: "Invalid path" }, 400)
+  if (PROTECTED_ROOTS.has(targetPath)) return c.json({ error: "Cannot delete protected path" }, 403)
+
+  try {
+    await rm(targetPath, { recursive: true, force: true })
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
+filesRoutes.post("/files/host/rename", async (c) => {
+  const { oldPath, newPath } = (await c.req.json()) as { oldPath: string; newPath: string }
+  if (!validateHostPath(oldPath) || !validateHostPath(newPath)) return c.json({ error: "Invalid path" }, 400)
+
+  try {
+    await mkdir(dirname(newPath), { recursive: true })
+    await fsRename(oldPath, newPath)
+    return c.json({ ok: true })
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500)
+  }
+})
+
+// ═══════════════════════════════════════════════════════════════════
+// Container filesystem routes (docker exec)
+// ═══════════════════════════════════════════════════════════════════
 
 // ── List directory ──────────────────────────────────────────────
 

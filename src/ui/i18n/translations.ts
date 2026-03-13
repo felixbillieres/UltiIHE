@@ -33,6 +33,7 @@ export type TranslationKey =
   | "settings.keybinds.resetAll"
   | "settings.keybinds.recording"
   | "theme.exegol-dark"
+  | "theme.exegol-light"
   | "theme.midnight"
   | "theme.dracula"
   | "theme.nord"
@@ -99,6 +100,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
     "settings.keybinds.resetAll": "Reset All",
     "settings.keybinds.recording": "Press keys...",
     "theme.exegol-dark": "Exegol Dark",
+    "theme.exegol-light": "Exegol Light",
     "theme.midnight": "Midnight",
     "theme.dracula": "Dracula",
     "theme.nord": "Nord",
@@ -163,6 +165,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
     "settings.keybinds.resetAll": "Tout réinitialiser",
     "settings.keybinds.recording": "Appuyez sur les touches...",
     "theme.exegol-dark": "Exegol Sombre",
+    "theme.exegol-light": "Exegol Clair",
     "theme.midnight": "Minuit",
     "theme.dracula": "Dracula",
     "theme.nord": "Nord",
@@ -227,6 +230,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
     "settings.keybinds.resetAll": "Alle zurücksetzen",
     "settings.keybinds.recording": "Tasten drücken...",
     "theme.exegol-dark": "Exegol Dunkel",
+    "theme.exegol-light": "Exegol Hell",
     "theme.midnight": "Mitternacht",
     "theme.dracula": "Dracula",
     "theme.nord": "Nord",
@@ -291,6 +295,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
     "settings.keybinds.resetAll": "Restablecer todo",
     "settings.keybinds.recording": "Pulse las teclas...",
     "theme.exegol-dark": "Exegol Oscuro",
+    "theme.exegol-light": "Exegol Claro",
     "theme.midnight": "Medianoche",
     "theme.dracula": "Dracula",
     "theme.nord": "Nord",
@@ -355,6 +360,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
     "settings.keybinds.resetAll": "すべてリセット",
     "settings.keybinds.recording": "キーを押してください...",
     "theme.exegol-dark": "Exegol ダーク",
+    "theme.exegol-light": "Exegol ライト",
     "theme.midnight": "ミッドナイト",
     "theme.dracula": "ドラキュラ",
     "theme.nord": "ノルド",
@@ -419,6 +425,7 @@ export const translations: Record<Language, Record<TranslationKey, string>> = {
     "settings.keybinds.resetAll": "全部重置",
     "settings.keybinds.recording": "请按下按键...",
     "theme.exegol-dark": "Exegol 暗色",
+    "theme.exegol-light": "Exegol 浅色",
     "theme.midnight": "午夜",
     "theme.dracula": "德古拉",
     "theme.nord": "北欧",

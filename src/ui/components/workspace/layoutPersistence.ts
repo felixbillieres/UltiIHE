@@ -34,7 +34,7 @@ export const LAYOUT_PRESETS: Record<LayoutPreset, { label: string; description: 
   },
   focus: {
     label: "Focus",
-    description: "Terminals + AI chat (no files)",
+    description: "Terminals + Assistant (no files)",
     panels: { filesPanelOpen: false, chatPanelOpen: true, bottomPanelOpen: false },
   },
   editor: {

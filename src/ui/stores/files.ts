@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { persist } from "zustand/middleware"
 
 // ── Language detection ──────────────────────────────────────────
 
@@ -46,6 +47,17 @@ export interface OpenFile {
   error?: string
 }
 
+// ── Pinned / Hidden / Visible Roots types ────────────────────────
+
+export interface PinnedPath {
+  container: string
+  path: string
+  type: "file" | "dir"
+}
+
+const DEFAULT_VISIBLE_ROOTS = ["/workspace"]
+const ALL_ROOTS = ["/workspace", "/opt/tools", "/root", "/etc", "/tmp"]
+
 // ── Store ───────────────────────────────────────────────────────
 
 interface FileStore {
@@ -58,6 +70,41 @@ interface FileStore {
   // Directory cache: key = "container:path"
   dirCache: Record<string, FileEntry[]>
   loadingDirs: Set<string>
+
+  // Pinned paths (persisted, cross-session)
+  pinnedPaths: PinnedPath[]
+  pinPath: (container: string, path: string, type: "file" | "dir") => void
+  unpinPath: (container: string, path: string) => void
+  isPinned: (container: string, path: string) => boolean
+
+  // Dotfile visibility toggle (persisted)
+  showHidden: boolean
+  toggleShowHidden: () => void
+  // Hide/unhide = rename with/without dot prefix on filesystem
+  hidePath: (container: string, path: string) => Promise<string | null>
+  unhidePath: (container: string, path: string) => Promise<string | null>
+
+  // Visible roots per container (persisted)
+  visibleRootsByContainer: Record<string, string[]>
+  getVisibleRoots: (container: string) => string[]
+  setVisibleRoots: (container: string, roots: string[]) => void
+  addVisibleRoot: (container: string, root: string) => void
+  removeVisibleRoot: (container: string, root: string) => void
+
+  // Host directories (persisted)
+  hostDirectories: string[]
+  addHostDirectory: (path: string) => void
+  removeHostDirectory: (path: string) => void
+
+  // Host file operations
+  fetchHostDirectory: (path: string) => Promise<FileEntry[]>
+  openHostFile: (path: string, projectId?: string) => Promise<void>
+  saveHostFile: (id: string) => Promise<void>
+  createHostFile: (path: string) => Promise<boolean>
+  createHostDir: (path: string) => Promise<boolean>
+  deleteHostPath: (path: string) => Promise<boolean>
+  renameHostPath: (oldPath: string, newPath: string) => Promise<boolean>
+  invalidateHostDir: (path: string) => void
 
   // Editor actions
   openFile: (container: string, path: string, projectId?: string) => Promise<void>
@@ -97,13 +144,89 @@ function parentDir(path: string): string {
   return idx <= 0 ? "/" : path.substring(0, idx)
 }
 
-export const useFileStore = create<FileStore>((set, get) => ({
+export const useFileStore = create<FileStore>()(
+  persist(
+  (set, get) => ({
   openFiles: [],
   activeFileIdByProject: {},
   _currentProjectId: null,
   savingFiles: new Set(),
   dirCache: {},
   loadingDirs: new Set(),
+
+  // ── Pinned paths ────────────────────────────────────────────
+  pinnedPaths: [],
+  pinPath: (container, path, type) =>
+    set((s) => {
+      if (s.pinnedPaths.some((p) => p.container === container && p.path === path)) return s
+      return { pinnedPaths: [...s.pinnedPaths, { container, path, type }] }
+    }),
+  unpinPath: (container, path) =>
+    set((s) => ({
+      pinnedPaths: s.pinnedPaths.filter((p) => !(p.container === container && p.path === path)),
+    })),
+  isPinned: (container, path) =>
+    get().pinnedPaths.some((p) => p.container === container && p.path === path),
+
+  // ── Dotfile visibility ──────────────────────────────────────
+  showHidden: false,
+  toggleShowHidden: () => set((s) => ({ showHidden: !s.showHidden })),
+
+  // Hide = rename to .name, unhide = rename to name (without dot)
+  // After rename, re-fetch parent so the tree updates immediately.
+  hidePath: async (container, path) => {
+    const name = path.split("/").pop() || ""
+    if (name.startsWith(".")) return null // already hidden
+    const parent = path.substring(0, path.lastIndexOf("/")) || "/"
+    const newPath = `${parent}/.${name}`
+    let ok: boolean
+    if (container === "__host__") {
+      ok = await get().renameHostPath(path, newPath)
+      if (ok) await get().fetchHostDirectory(parent)
+    } else {
+      ok = await get().renamePath(container, path, newPath)
+      if (ok) await get().fetchDirectory(container, parent)
+    }
+    return ok ? newPath : null
+  },
+
+  unhidePath: async (container, path) => {
+    const name = path.split("/").pop() || ""
+    if (!name.startsWith(".")) return null // not hidden
+    const parent = path.substring(0, path.lastIndexOf("/")) || "/"
+    const newPath = `${parent}/${name.slice(1)}`
+    let ok: boolean
+    if (container === "__host__") {
+      ok = await get().renameHostPath(path, newPath)
+      if (ok) await get().fetchHostDirectory(parent)
+    } else {
+      ok = await get().renamePath(container, path, newPath)
+      if (ok) await get().fetchDirectory(container, parent)
+    }
+    return ok ? newPath : null
+  },
+
+  // ── Visible roots per container ─────────────────────────────
+  visibleRootsByContainer: {},
+  getVisibleRoots: (container) =>
+    get().visibleRootsByContainer[container] ?? DEFAULT_VISIBLE_ROOTS,
+  setVisibleRoots: (container, roots) =>
+    set((s) => ({
+      visibleRootsByContainer: { ...s.visibleRootsByContainer, [container]: roots },
+    })),
+  addVisibleRoot: (container, root) =>
+    set((s) => {
+      const current = s.visibleRootsByContainer[container] ?? DEFAULT_VISIBLE_ROOTS
+      if (current.includes(root)) return s
+      return { visibleRootsByContainer: { ...s.visibleRootsByContainer, [container]: [...current, root] } }
+    }),
+  removeVisibleRoot: (container, root) =>
+    set((s) => {
+      const current = s.visibleRootsByContainer[container] ?? DEFAULT_VISIBLE_ROOTS
+      const next = current.filter((r) => r !== root)
+      if (next.length === 0) return s // keep at least one
+      return { visibleRootsByContainer: { ...s.visibleRootsByContainer, [container]: next } }
+    }),
 
   // ── Directory loading ───────────────────────────────────────
 
@@ -349,9 +472,191 @@ export const useFileStore = create<FileStore>((set, get) => ({
     }
   },
 
+  // ── Host directories ──────────────────────────────────────────
+  hostDirectories: [],
+  addHostDirectory: (path) =>
+    set((s) => {
+      if (s.hostDirectories.includes(path)) return s
+      return { hostDirectories: [...s.hostDirectories, path] }
+    }),
+  removeHostDirectory: (path) =>
+    set((s) => ({
+      hostDirectories: s.hostDirectories.filter((d) => d !== path),
+    })),
+
+  fetchHostDirectory: async (path) => {
+    const key = `host:${path}`
+    const cached = get().dirCache[key]
+    if (cached) return cached
+
+    set((s) => ({ loadingDirs: new Set(s.loadingDirs).add(key) }))
+    try {
+      const res = await fetch(`/api/files/host/list?path=${encodeURIComponent(path)}`)
+      const data = await res.json()
+      const entries: FileEntry[] = data.entries || []
+      set((s) => ({ dirCache: { ...s.dirCache, [key]: entries } }))
+      return entries
+    } catch {
+      return []
+    } finally {
+      set((s) => {
+        const next = new Set(s.loadingDirs)
+        next.delete(key)
+        return { loadingDirs: next }
+      })
+    }
+  },
+
+  openHostFile: async (path, projectId) => {
+    const id = `host:${path}`
+    const pid = projectId || get()._currentProjectId || ""
+    const existing = get().openFiles.find((f) => f.id === id)
+    if (existing) {
+      set((s) => ({ activeFileIdByProject: { ...s.activeFileIdByProject, [pid]: id } }))
+      return
+    }
+
+    const filename = path.split("/").pop() || path
+    const language = detectLanguage(filename)
+
+    set((s) => ({
+      openFiles: [
+        ...s.openFiles,
+        { id, projectId: pid, container: "__host__", path, filename, content: "", originalContent: "", isDirty: false, language, loading: true },
+      ],
+      activeFileIdByProject: { ...s.activeFileIdByProject, [pid]: id },
+    }))
+
+    try {
+      const res = await fetch(`/api/files/host/read?path=${encodeURIComponent(path)}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      set((s) => ({
+        openFiles: s.openFiles.map((f) =>
+          f.id === id ? { ...f, content: data.content, originalContent: data.content, loading: false } : f,
+        ),
+      }))
+    } catch (err) {
+      set((s) => ({
+        openFiles: s.openFiles.map((f) =>
+          f.id === id ? { ...f, loading: false, error: (err as Error).message } : f,
+        ),
+      }))
+    }
+  },
+
+  saveHostFile: async (id) => {
+    const file = get().openFiles.find((f) => f.id === id)
+    if (!file || !file.isDirty || file.container !== "__host__" || get().savingFiles.has(id)) return
+    set((s) => ({ savingFiles: new Set(s.savingFiles).add(id) }))
+    try {
+      const res = await fetch("/api/files/host/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: file.path, content: file.content }),
+      })
+      if (!res.ok) throw new Error((await res.json()).error)
+      set((s) => ({
+        openFiles: s.openFiles.map((f) =>
+          f.id === id ? { ...f, originalContent: f.content, isDirty: false } : f,
+        ),
+      }))
+    } finally {
+      set((s) => {
+        const next = new Set(s.savingFiles)
+        next.delete(id)
+        return { savingFiles: next }
+      })
+    }
+  },
+
+  createHostFile: async (path) => {
+    try {
+      const res = await fetch("/api/files/host/create-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      })
+      if (!res.ok) return false
+      // Invalidate parent
+      const parent = path.substring(0, path.lastIndexOf("/")) || "/"
+      const key = `host:${parent}`
+      set((s) => { const next = { ...s.dirCache }; delete next[key]; return { dirCache: next } })
+      return true
+    } catch { return false }
+  },
+
+  createHostDir: async (path) => {
+    try {
+      const res = await fetch("/api/files/host/create-dir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      })
+      if (!res.ok) return false
+      const parent = path.substring(0, path.lastIndexOf("/")) || "/"
+      const key = `host:${parent}`
+      set((s) => { const next = { ...s.dirCache }; delete next[key]; return { dirCache: next } })
+      return true
+    } catch { return false }
+  },
+
+  deleteHostPath: async (path) => {
+    try {
+      const res = await fetch("/api/files/host/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      })
+      if (!res.ok) return false
+      const parent = path.substring(0, path.lastIndexOf("/")) || "/"
+      const key = `host:${parent}`
+      set((s) => { const next = { ...s.dirCache }; delete next[key]; return { dirCache: next } })
+      // Close if open
+      const id = `host:${path}`
+      if (get().openFiles.find((f) => f.id === id)) get().closeFile(id)
+      return true
+    } catch { return false }
+  },
+
+  renameHostPath: async (oldPath, newPath) => {
+    try {
+      const res = await fetch("/api/files/host/rename", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oldPath, newPath }),
+      })
+      if (!res.ok) return false
+      const oldParent = oldPath.substring(0, oldPath.lastIndexOf("/")) || "/"
+      const newParent = newPath.substring(0, newPath.lastIndexOf("/")) || "/"
+      set((s) => {
+        const next = { ...s.dirCache }
+        delete next[`host:${oldParent}`]
+        if (oldParent !== newParent) delete next[`host:${newParent}`]
+        return { dirCache: next }
+      })
+      return true
+    } catch { return false }
+  },
+
+  invalidateHostDir: (path) => {
+    const key = `host:${path}`
+    set((s) => { const next = { ...s.dirCache }; delete next[key]; return { dirCache: next } })
+  },
+
   switchProject: (projectId) =>
     set({ _currentProjectId: projectId }),
 
   getProjectFiles: (projectId) =>
     get().openFiles.filter((f) => f.projectId === projectId),
-}))
+}),
+  {
+    name: "ultiIHE-files",
+    partialize: (state) => ({
+      pinnedPaths: state.pinnedPaths,
+      showHidden: state.showHidden,
+      visibleRootsByContainer: state.visibleRootsByContainer,
+      hostDirectories: state.hostDirectories,
+    }),
+  },
+))

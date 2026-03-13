@@ -91,7 +91,7 @@ export const AGENTS: AgentInfo[] = [
   {
     id: "recon",
     name: "Recon",
-    color: "text-cyan-400",
+    color: "text-blue-400",
     description: "Reconnaissance — network discovery, enumeration, scanning",
     canExecute: true,
   },

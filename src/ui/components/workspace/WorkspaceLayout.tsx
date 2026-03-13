@@ -44,7 +44,7 @@ export function WorkspaceLayout({ project }: Props) {
       tabId: `chat-${project.id}`,
       type: "chat",
       windowRef: null,
-      title: "Chat",
+      title: "Assistant",
     })
     // Close the main chat panel to free up space
     setLayout((l) => ({ ...l, chatPanelOpen: false }))
@@ -185,7 +185,7 @@ export function WorkspaceLayout({ project }: Props) {
         {chatPoppedOut && (
           <PopOutPortal
             windowName={`popout-chat-${project.id}`}
-            title="Chat — Exegol IHE"
+            title="Assistant — Exegol IHE"
             width={Math.round(window.screen.width * 0.65)}
             height={Math.round(window.screen.height * 0.8)}
             onClose={handleReattachChat}

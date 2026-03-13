@@ -79,7 +79,7 @@ export function FilesSidePanel({
         </div>
 
         {/* File tree */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto scrollbar-thin">
           <FileTree />
         </div>
       </div>

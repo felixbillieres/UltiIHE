@@ -72,7 +72,7 @@ function SessionTabBar({
         <button
           onClick={() => startNewChat(projectId)}
           className="p-1 rounded hover:bg-surface-2 transition-colors"
-          title="New chat"
+          title="New session"
         >
           <Plus className="w-3.5 h-3.5 text-text-weaker" />
         </button>
@@ -136,7 +136,7 @@ function SessionSidebar({
           <button
             onClick={() => startNewChat(projectId)}
             className="p-1 rounded hover:bg-surface-2 transition-colors"
-            title="New chat"
+            title="New session"
           >
             <Plus className="w-3.5 h-3.5 text-text-weaker" />
           </button>
@@ -303,7 +303,7 @@ function PastChats({ projectId }: { projectId: string }) {
             }`}
           />
           <span className="text-[10px] text-text-weaker font-sans font-medium uppercase tracking-wide">
-            Past Chats
+            Past Sessions
           </span>
         </div>
         <span className="text-[10px] text-text-weaker font-sans">
@@ -427,7 +427,7 @@ export function ChatSidePanel({
         {/* Chat header with close + pop-out */}
         <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-weak bg-surface-1 shrink-0">
           <span className="text-xs text-text-strong font-sans font-medium">
-            Chat
+            Assistant
           </span>
           <div className="flex items-center gap-0.5">
             {onPopOut && (
