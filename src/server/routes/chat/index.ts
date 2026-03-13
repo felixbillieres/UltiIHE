@@ -230,11 +230,12 @@ chatRoutes.post("/chat", async (c) => {
         // Hide InvalidTool from model's active tools
         activeTools: Object.keys(tools).filter((t) => t !== "invalid"),
         // Adaptive steps based on context budget tier:
-        // minimal (≤8K): 3 steps — small models shouldn't do many tool calls
-        // medium (8-32K): 5 steps — balanced
-        // full (>32K): 8 steps — covers complex multi-tool pentest workflows
+        // minimal (≤8K): 5 steps — small models
+        // medium (8-32K): 15 steps — balanced
+        // full (>32K): 25 steps — pentest workflows need many tool rounds
+        //   (nmap → read output → smb enum → read → kerberoast → read → crack → read...)
         stopWhen: stepCountIs(
-          budget.promptTier === "minimal" ? 3 : budget.promptTier === "medium" ? 5 : 8,
+          budget.promptTier === "minimal" ? 5 : budget.promptTier === "medium" ? 15 : 25,
         ),
         // No automatic retries — errors bubble up immediately to the user.
         // AI SDK defaults to 2 retries (3 total attempts), which silently burns quota.

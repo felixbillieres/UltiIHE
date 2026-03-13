@@ -3,6 +3,8 @@ import { toast } from "sonner"
 import { useSettingsStore } from "../../stores/settings"
 import { useLocalAIStore } from "../../stores/localAI"
 import { useContextStore } from "../../stores/context"
+import { useCommandApprovalStore } from "../../stores/commandApproval"
+import { useWebSocket } from "../../hooks/useWebSocket"
 import {
   Brain,
   Eye,
@@ -11,6 +13,7 @@ import {
   Cpu,
   Loader2,
   Gauge,
+  Zap,
 } from "lucide-react"
 import { ModelPicker } from "./ModelPicker"
 
@@ -161,6 +164,9 @@ export function ControlBar() {
     setActiveProvider,
     getActiveModelInfo,
   } = useSettingsStore()
+  const approvalMode = useCommandApprovalStore((s) => s.mode)
+  const setApprovalMode = useCommandApprovalStore((s) => s.setMode)
+  const { send: wsSend } = useWebSocket()
 
   const server = useLocalAIStore((s) => s.server)
   const serverStarting = useLocalAIStore((s) => s.serverStarting)
@@ -285,6 +291,31 @@ export function ControlBar() {
           />
         )}
       </div>
+
+      <Separator />
+
+      {/* YOLO mode toggle — auto-run all commands and tools without asking */}
+      <CapBadge
+        icon={<Zap className="w-3 h-3" />}
+        label="YOLO"
+        active={approvalMode !== "ask"}
+        onClick={() => {
+          if (approvalMode === "ask") {
+            setApprovalMode("auto-run")
+            wsSend({ type: "command:set-mode", data: { mode: "auto-run" } })
+            wsSend({ type: "tool:set-mode", data: { mode: "auto-run" } })
+            toast.success("YOLO mode ON — commands & tools run without approval")
+          } else {
+            setApprovalMode("ask")
+            wsSend({ type: "command:set-mode", data: { mode: "ask" } })
+            wsSend({ type: "tool:set-mode", data: { mode: "ask" } })
+            toast("YOLO mode OFF — back to approval mode")
+          }
+        }}
+        title={approvalMode !== "ask"
+          ? "YOLO mode ON — click to require approval"
+          : "Click to enable YOLO mode (auto-run commands & tools)"}
+      />
 
       <Separator />
 
