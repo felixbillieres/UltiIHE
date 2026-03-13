@@ -29,6 +29,7 @@ import {
 // ── Constants ───────────────────────────────────────────────────
 
 const ALL_ROOTS = ["/workspace", "/opt/tools", "/root", "/etc", "/tmp"]
+const EMPTY_STRINGS: string[] = []
 
 interface DragData {
   sourceContainer: string
@@ -248,7 +249,7 @@ function HostSection() {
   const [showBrowser, setShowBrowser] = useState(false)
   const hostDirectories = useFileStore((s) => {
     const pid = s._currentProjectId || ""
-    return s.hostDirectoriesByProject[pid] ?? []
+    return s.hostDirectoriesByProject[pid] ?? EMPTY_STRINGS
   })
   const removeHostDirectory = useFileStore((s) => s.removeHostDirectory)
 
@@ -316,7 +317,7 @@ function HostBrowserModal({ onClose }: { onClose: () => void }) {
   const addHostDirectory = useFileStore((s) => s.addHostDirectory)
   const hostDirectories = useFileStore((s) => {
     const pid = s._currentProjectId || ""
-    return s.hostDirectoriesByProject[pid] ?? []
+    return s.hostDirectoriesByProject[pid] ?? EMPTY_STRINGS
   })
 
   const loadDir = useCallback(async (path: string) => {
