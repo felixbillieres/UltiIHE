@@ -172,11 +172,17 @@ export const useSessionStore = create<SessionStore>()(
                   ...sess,
                   messages: [...sess.messages, message],
                   updatedAt: Date.now(),
-                  // Auto-title from first user message
+                  // Auto-title from first user message (strip XML context blocks)
                   title:
                     sess.messages.length === 0 && message.role === "user"
-                      ? message.content.slice(0, 50) +
-                        (message.content.length > 50 ? "..." : "")
+                      ? (() => {
+                          const text = message.content
+                            .replace(/<terminal[^>]*>[\s\S]*?<\/terminal>\s*/g, "")
+                            .replace(/<file[^>]*>[\s\S]*?<\/file>\s*/g, "")
+                            .replace(/\[Image:[^\]]*\]\s*/g, "")
+                            .trim() || "New session"
+                          return text.slice(0, 50) + (text.length > 50 ? "..." : "")
+                        })()
                       : sess.title,
                 }
               : sess,
