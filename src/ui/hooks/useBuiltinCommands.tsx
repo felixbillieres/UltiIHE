@@ -113,9 +113,14 @@ export function useBuiltinCommands(
         category: "Session",
         icon: <Trash2 className="w-3.5 h-3.5" />,
         onSelect: () => {
-          const { getActiveSessionId, deleteSession } = useSessionStore.getState()
+          const { getActiveSessionId, deleteSession, sessions } = useSessionStore.getState()
           const sid = getActiveSessionId(projectId)
-          if (sid) deleteSession(sid)
+          if (!sid) return
+          const session = sessions.find((s) => s.id === sid)
+          const title = session?.title ?? "this session"
+          if (window.confirm(`Delete "${title}"?\n\nThis will permanently delete the session and all its messages. This cannot be undone.`)) {
+            deleteSession(sid)
+          }
         },
       },
     ]

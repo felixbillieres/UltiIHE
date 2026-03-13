@@ -12,6 +12,8 @@ import {
   PanelLeft,
   Shield,
 } from "lucide-react"
+import { ConfirmDialog } from "../ConfirmDialog"
+import { useConfirm } from "../../hooks/useConfirm"
 
 // ─── Greeting helper ────────────────────────────────────────
 
@@ -142,6 +144,8 @@ function SessionRow({
   onSelect: () => void
   onDelete: () => void
 }) {
+  const { dialogProps, confirm } = useConfirm()
+
   return (
     <div
       onClick={onSelect}
@@ -158,14 +162,19 @@ function SessionRow({
         {session.title}
       </span>
       <button
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation()
-          onDelete()
+          const ok = await confirm({
+            title: "Delete session?",
+            message: `"${session.title}" will be permanently deleted. This cannot be undone.`,
+          })
+          if (ok) onDelete()
         }}
         className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-3 transition-all shrink-0"
       >
         <Trash2 className="w-2.5 h-2.5 text-text-weaker hover:text-status-error" />
       </button>
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }

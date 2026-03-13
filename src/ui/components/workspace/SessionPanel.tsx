@@ -2,6 +2,8 @@ import { useState, useRef, useMemo } from "react"
 import { useSessionStore, type Session } from "../../stores/session"
 import { formatTimeAgo } from "./layoutPersistence"
 import { Plus, MessageSquare, Trash2, X } from "lucide-react"
+import { ConfirmDialog } from "../ConfirmDialog"
+import { useConfirm } from "../../hooks/useConfirm"
 
 interface SessionPanelProps {
   projectId: string
@@ -90,6 +92,7 @@ function SessionRow({
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const { dialogProps, confirm } = useConfirm()
 
   const msgCount = session.messages?.length ?? 0
   const timeAgo = formatTimeAgo(session.updatedAt)
@@ -156,14 +159,19 @@ function SessionRow({
         </div>
       </div>
       <button
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation()
-          onDelete()
+          const ok = await confirm({
+            title: "Delete session?",
+            message: `"${session.title}" will be permanently deleted. This cannot be undone.`,
+          })
+          if (ok) onDelete()
         }}
         className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-3 transition-all shrink-0 mt-0.5"
       >
         <Trash2 className="w-3 h-3 text-text-weaker hover:text-status-error" />
       </button>
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }

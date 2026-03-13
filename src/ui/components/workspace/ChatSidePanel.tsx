@@ -14,6 +14,8 @@ import {
   ChevronDown,
   ExternalLink,
 } from "lucide-react"
+import { ConfirmDialog } from "../ConfirmDialog"
+import { useConfirm } from "../../hooks/useConfirm"
 
 // ─── Session Tab Bar (Cursor-style) ─────────────────────────────
 
@@ -205,6 +207,7 @@ function SidebarSessionRow({
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const { dialogProps, confirm } = useConfirm()
 
   const timeAgo = formatTimeAgo(session.updatedAt)
 
@@ -260,14 +263,19 @@ function SidebarSessionRow({
         {timeAgo}
       </span>
       <button
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation()
-          onDelete()
+          const ok = await confirm({
+            title: "Delete session?",
+            message: `"${session.title}" will be permanently deleted. This cannot be undone.`,
+          })
+          if (ok) onDelete()
         }}
         className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-surface-3 transition-all shrink-0"
       >
         <Trash2 className="w-2.5 h-2.5 text-text-weaker hover:text-status-error" />
       </button>
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }

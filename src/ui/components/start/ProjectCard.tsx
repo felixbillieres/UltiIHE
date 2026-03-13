@@ -1,6 +1,8 @@
 import { useState, useRef } from "react"
 import { type Project, useProjectStore } from "../../stores/project"
 import { Folder, Trash2, Clock } from "lucide-react"
+import { ConfirmDialog } from "../ConfirmDialog"
+import { useConfirm } from "../../hooks/useConfirm"
 
 interface Props {
   project: Project
@@ -24,6 +26,7 @@ export function ProjectCard({ project, onClick, onDelete }: Props) {
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
+  const { dialogProps, confirm } = useConfirm()
 
   const startEditing = () => {
     setEditName(project.name)
@@ -89,15 +92,20 @@ export function ProjectCard({ project, onClick, onDelete }: Props) {
           {timeAgo(project.updatedAt)}
         </span>
         <button
-          onClick={(e) => {
+          onClick={async (e) => {
             e.stopPropagation()
-            onDelete()
+            const ok = await confirm({
+              title: "Delete project?",
+              message: `"${project.name}" and all its sessions will be permanently deleted. This cannot be undone.`,
+            })
+            if (ok) onDelete()
           }}
           className="p-1.5 rounded hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all"
         >
           <Trash2 className="w-3.5 h-3.5 text-text-weaker hover:text-red-400" />
         </button>
       </div>
+      <ConfirmDialog {...dialogProps} />
     </div>
   )
 }
