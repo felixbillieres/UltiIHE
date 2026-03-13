@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useSessionStore, type Message, type MessagePart, type ToolCallPart, type ReasoningPart } from "../../stores/session"
-import { useSettingsStore, type AgentId } from "../../stores/settings"
+import { useSettingsStore } from "../../stores/settings"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
 import { useWebSocket } from "../../hooks/useWebSocket"
@@ -23,40 +23,7 @@ import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
 import { FileApprovalBanner, ResolvedFilesSummary } from "./FileApprovalBanner"
 import { ImageAttachments } from "./ImageAttachments"
 import { OperationsTracker } from "./OperationsTracker"
-
-// ── SSE parser ────────────────────────────────────────────────
-
-interface SSEEvent {
-  event: string
-  data: any
-}
-
-class SSEParser {
-  private buffer = ""
-
-  feed(chunk: string): SSEEvent[] {
-    this.buffer += chunk
-    const events: SSEEvent[] = []
-    const parts = this.buffer.split("\n\n")
-    this.buffer = parts.pop() || ""
-
-    for (const part of parts) {
-      if (!part.trim()) continue
-      let event = ""
-      let data = ""
-      for (const line of part.split("\n")) {
-        if (line.startsWith("event: ")) event = line.slice(7)
-        else if (line.startsWith("data: ")) data = line.slice(6)
-      }
-      if (event && data) {
-        try {
-          events.push({ event, data: JSON.parse(data) })
-        } catch {}
-      }
-    }
-    return events
-  }
-}
+import { SSEParser } from "./SSEParser"
 
 // Stable reference for empty arrays (avoids infinite re-render loops)
 const EMPTY_MESSAGES: Message[] = []
@@ -91,7 +58,6 @@ export function ChatPanel({ projectId }: Props) {
   const activeModel = useSettingsStore((s) => s.activeModel)
   const activeProvider = useSettingsStore((s) => s.activeProvider)
   const activeMode = useSettingsStore((s) => s.activeMode)
-  const activeAgent = useSettingsStore((s) => s.activeAgent)
   const thinkingEffort = useSettingsStore((s) => s.thinkingEffort)
   const getActiveProvider = useSettingsStore((s) => s.getActiveProvider)
 
@@ -513,7 +479,6 @@ export function ChatPanel({ projectId }: Props) {
             containerIds: project?.containerIds || [],
             activeTerminalId,
             mode: activeMode,
-            agent: activeAgent,
             thinkingEffort,
             images: attachedImages.map((img) => ({
               mime: img.mime,
@@ -766,7 +731,6 @@ export function ChatPanel({ projectId }: Props) {
     setPopover(null)
     cmd.action({
       setInput,
-      setAgent: useSettingsStore.getState().setActiveAgent,
       cycleThinkingEffort: useSettingsStore.getState().cycleThinkingEffort,
       newSession: () => useSessionStore.getState().startNewChat(projectId),
       compact: () => {
@@ -791,10 +755,7 @@ export function ChatPanel({ projectId }: Props) {
 
   function handleAtSelect(option: AtOption) {
     setPopover(null)
-    if (option.type === "agent") {
-      useSettingsStore.getState().setActiveAgent(option.id as AgentId)
-      setInput(input.replace(/@\S*$/, ""))
-    } else if (option.type === "terminal") {
+    if (option.type === "terminal") {
       setInput(input.replace(/@\S*$/, `@${option.display} `))
     } else if (option.id === "__url__") {
       // @url: prompt user for URL, then fetch content

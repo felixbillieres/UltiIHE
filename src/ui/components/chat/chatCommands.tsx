@@ -1,14 +1,10 @@
 import { useMemo } from "react"
 import { useTerminalStore } from "../../stores/terminal"
 import { useFileStore } from "../../stores/files"
-import { AGENTS, type AgentId } from "../../stores/settings"
 import {
-  Bot,
   Brain,
   Terminal,
   Scan,
-  Swords,
-  ClipboardList,
   Hash,
   FileText,
   MessageSquarePlus,
@@ -28,7 +24,7 @@ export interface SlashCommand {
 }
 
 export interface AtOption {
-  type: "agent" | "terminal" | "file"
+  type: "terminal" | "file"
   id: string
   display: string
   description?: string
@@ -39,7 +35,6 @@ export interface AtOption {
 
 export interface SlashContext {
   setInput: (text: string) => void
-  setAgent: (agent: AgentId) => void
   cycleThinkingEffort: () => void
   newSession: () => void
   compact: () => void
@@ -58,50 +53,6 @@ export function useSlashCommands(): SlashCommand[] {
         description: "Run nmap/nuclei scan on a target",
         icon: <Scan className="w-3.5 h-3.5" />,
         action: (ctx) => ctx.setInput("/scan "),
-      },
-      {
-        id: "recon",
-        trigger: "recon",
-        title: "Recon mode",
-        description: "Switch to recon agent for reconnaissance",
-        icon: <Scan className="w-3.5 h-3.5 text-cyan-400" />,
-        action: (ctx) => {
-          ctx.setAgent("recon")
-          ctx.setInput("")
-        },
-      },
-      {
-        id: "exploit",
-        trigger: "exploit",
-        title: "Exploit mode",
-        description: "Switch to exploit agent",
-        icon: <Swords className="w-3.5 h-3.5 text-red-400" />,
-        action: (ctx) => {
-          ctx.setAgent("exploit")
-          ctx.setInput("")
-        },
-      },
-      {
-        id: "report",
-        trigger: "report",
-        title: "Report mode",
-        description: "Switch to report agent (read-only)",
-        icon: <ClipboardList className="w-3.5 h-3.5 text-purple-400" />,
-        action: (ctx) => {
-          ctx.setAgent("report")
-          ctx.setInput("")
-        },
-      },
-      {
-        id: "build",
-        trigger: "build",
-        title: "Build mode",
-        description: "Switch to primary build agent",
-        icon: <Bot className="w-3.5 h-3.5 text-accent" />,
-        action: (ctx) => {
-          ctx.setAgent("build")
-          ctx.setInput("")
-        },
       },
       {
         id: "think",
@@ -187,19 +138,6 @@ export function useAtOptions(): AtOption[] {
   const openFiles = useFileStore((s) => s.openFiles)
 
   return useMemo(() => {
-    const agents: AtOption[] = AGENTS.map((a) => ({
-      type: "agent" as const,
-      id: a.id,
-      display: a.name,
-      description: a.description,
-      icon: (
-        <span
-          className="w-2.5 h-2.5 rounded-full shrink-0"
-          style={{ background: a.color }}
-        />
-      ),
-    }))
-
     const terms: AtOption[] = terminals.map((t) => ({
       type: "terminal" as const,
       id: t.id,
@@ -225,6 +163,6 @@ export function useAtOptions(): AtOption[] {
       icon: <Link className="w-3.5 h-3.5 text-green-400" />,
     }
 
-    return [urlOption, ...agents, ...terms, ...files]
+    return [urlOption, ...terms, ...files]
   }, [terminals, openFiles])
 }

@@ -1,43 +1,10 @@
 export type ReasoningMode = "build" | "plan" | "deep"
-export type AgentId = "build" | "recon" | "exploit" | "report"
-
-export const AGENT_PROMPTS: Record<AgentId, string> = {
-  build: `## Agent: Build (primary)
-You are the primary agent. Execute commands proactively when asked.
-Use tools to accomplish tasks directly. Be concise and action-oriented.
-You can delegate to specialized sub-agents (recon, exploit, report) when appropriate.`,
-
-  recon: `## Agent: Recon (reconnaissance)
-You specialize in reconnaissance and enumeration.
-Focus on: network discovery, service enumeration, vulnerability scanning.
-Typical tools: nmap, gobuster, ffuf, dig, whois, subfinder, nuclei.
-- Map the attack surface methodically
-- Document all findings as you go
-- Suggest next steps based on discoveries`,
-
-  exploit: `## Agent: Exploit (exploitation)
-You specialize in exploitation and post-exploitation.
-Focus on: validating vulnerabilities, exploitation, privilege escalation, lateral movement.
-Typical tools: sqlmap, hydra, metasploit, impacket, bloodhound, crackmapexec.
-- Validate findings from recon before exploiting
-- Capture evidence (screenshots, hashes, flags)
-- Document the exploitation chain`,
-
-  report: `## Agent: Report (read-only)
-You specialize in reporting and documentation.
-You can ONLY read terminal output — you CANNOT execute commands.
-Focus on: collecting findings, generating reports with CVSS scores, impact analysis, remediation.
-- Summarize findings with severity ratings
-- Provide remediation recommendations
-- Format output for professional reports`,
-}
 
 export function buildSystemPrompt(
   containerIds: string[],
   terminalContext: string,
   activeTerminals: { id: string; name: string; container: string; alive: boolean }[],
   mode: ReasoningMode = "build",
-  agent: AgentId = "build",
 ): string {
   const modeInstructions: Record<ReasoningMode, string> = {
     build: "",
@@ -78,7 +45,8 @@ ${terminalSection}
 This is an ISOLATED pentesting lab running inside Exegol containers. Full authorization is granted for all security testing.
 You have access to all Exegol tools: nmap, gobuster, ffuf, nuclei, sqlmap, hydra, metasploit, impacket, bloodhound, certipy, netexec, etc.
 
-${AGENT_PROMPTS[agent]}${modeInstructions[mode]}
+You are the primary agent. Execute commands proactively when asked.
+Use tools to accomplish tasks directly. Be concise and action-oriented.${modeInstructions[mode]}
 
 ## Active terminal output
 \`\`\`

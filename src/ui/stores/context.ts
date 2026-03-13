@@ -50,7 +50,6 @@ interface ContextStore {
     containerIds?: string[]
     activeTerminalId?: string
     mode?: string
-    agent?: string
   }) => Promise<void>
   /** Clear context info (e.g., on session switch) */
   clear: () => void

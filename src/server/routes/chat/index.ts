@@ -1,9 +1,9 @@
 import { Hono } from "hono"
-import { streamText, generateText, stepCountIs } from "ai"
+import { streamText, stepCountIs } from "ai"
 import { terminalManager } from "../../../terminal/manager"
 import { allTools, readOnlyTools } from "../../../ai/tool"
 import { createRegistry } from "./registry"
-import type { ReasoningMode, AgentId } from "./systemPrompt"
+import type { ReasoningMode } from "./systemPrompt"
 import { getReasoningOptions } from "./reasoning"
 import type { ThinkingEffort } from "./reasoning"
 import { extractErrorMessage, extractStatusCode } from "./errors"
@@ -15,172 +15,23 @@ import {
   shouldPrune,
   shouldCompact,
   pruneMessages,
-  buildCompactionRequest,
-  applyCompaction,
 } from "../../../ai/context"
 import { resolveContextWindow, resolveMaxOutput, preWarmModel } from "./contextResolver"
-import { normalizeMessages, getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withProviderTransforms, sanitizeSchema, applyCacheHints } from "./providerTransforms"
+import { getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withProviderTransforms, applyCacheHints } from "./providerTransforms"
 import { invalidTool, buildRepairCallback, createDoomLoopTracker } from "./toolResilience"
 import { getMCPTools } from "../../../ai/mcp/client"
 
+// Sub-routes
+import { contextRoute } from "./contextRoute"
+import { compactRoute } from "./compactRoute"
+import { titleRoute } from "./titleRoute"
+
 export const chatRoutes = new Hono()
 
-// ── Context info endpoint ─────────────────────────────────────
-
-chatRoutes.post("/context", async (c) => {
-  const body = await c.req.json()
-  const {
-    messages = [],
-    providerId,
-    modelId,
-    containerIds,
-    activeTerminalId,
-    mode = "build",
-    agent = "build",
-  } = body as {
-    messages: Array<{ role: string; content: string }>
-    providerId: string
-    modelId: string
-    containerIds?: string[]
-    activeTerminalId?: string
-    mode?: ReasoningMode
-    agent?: AgentId
-  }
-
-  const contextWindow = resolveContextWindow(providerId, modelId)
-  const budget = calculateBudget(contextWindow)
-
-  let terminalContext = ""
-  if (activeTerminalId) {
-    try {
-      terminalContext = terminalManager.getOutput(activeTerminalId)
-      const lines = terminalContext.split("\n")
-      const maxLines = budget.promptTier === "minimal" ? 30 : budget.promptTier === "medium" ? 60 : 100
-      if (lines.length > maxLines) {
-        terminalContext = lines.slice(-maxLines).join("\n")
-      }
-    } catch {}
-  }
-  const activeTerminals = terminalManager.listTerminals()
-
-  const systemPrompt = buildAdaptivePrompt({
-    containerIds: containerIds || [],
-    terminalContext,
-    activeTerminals,
-    mode,
-    agent,
-    tier: budget.promptTier,
-  })
-
-  const tools = agent === "report" || mode === "plan" ? readOnlyTools : allTools
-  const toolCount = Math.min(Object.keys(tools).length, budget.maxTools)
-  const breakdown = buildContextBreakdown(systemPrompt, toolCount, messages, budget.inputBudget)
-
-  return c.json({
-    ...breakdown,
-    contextWindow,
-    outputReserve: budget.outputReserve,
-    promptTier: budget.promptTier,
-    maxTools: budget.maxTools,
-    pruneNeeded: shouldPrune(breakdown.total, budget),
-  })
-})
-
-// ── Compaction endpoint ───────────────────────────────────────
-// The frontend calls this when context is near-full. It generates
-// an LLM summary and returns compacted messages.
-
-chatRoutes.post("/compact", async (c) => {
-  const body = await c.req.json()
-  const { messages, providerId, modelId, apiKey, baseUrl } = body as {
-    messages: Array<{ role: string; content: string }>
-    providerId: string
-    modelId: string
-    apiKey: string
-    baseUrl?: string
-  }
-
-  if (!messages || messages.length < 5) {
-    return c.json({ error: "Not enough messages to compact" }, 400)
-  }
-
-  try {
-    const registry = await createRegistry(providerId, apiKey, modelId, baseUrl)
-    const model = registry.languageModel(`${providerId}:${modelId}`)
-
-    const { system, messages: compactionMessages } = buildCompactionRequest(messages)
-    const result = streamText({
-      model,
-      system,
-      messages: compactionMessages as any,
-      maxRetries: 0,
-    })
-
-    const summary = await result.text
-    const compacted = applyCompaction(messages, summary)
-
-    return c.json({ compacted, summary })
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    return c.json({ error: `Compaction failed: ${msg}` }, 500)
-  }
-})
-
-// ── Title generation endpoint ─────────────────────────────────
-// Generates a short, descriptive title for a chat session.
-// Called by the frontend after the first assistant response.
-
-chatRoutes.post("/title", async (c) => {
-  const body = await c.req.json()
-  const { messages, providerId, modelId, apiKey, baseUrl } = body as {
-    messages: Array<{ role: string; content: string }>
-    providerId: string
-    modelId: string
-    apiKey: string
-    baseUrl?: string
-  }
-
-  if (!messages || messages.length < 2) {
-    return c.json({ error: "Need at least 2 messages" }, 400)
-  }
-
-  try {
-    const registry = await createRegistry(providerId, apiKey, modelId, baseUrl)
-    const model = registry.languageModel(`${providerId}:${modelId}`)
-
-    const result = await generateText({
-      model,
-      system: `Generate a short title (max 50 characters) for this conversation.
-Rules:
-- Single line, no quotes, no punctuation at the end
-- Same language as the user's message
-- Describe the topic/intent, not the tools used
-- No meta descriptions like "Chat about..." or "Discussion of..."
-- Be specific and concise`,
-      messages: [
-        {
-          role: "user" as const,
-          content: messages.map((m) => `[${m.role}]: ${m.content.slice(0, 300)}`).join("\n"),
-        },
-      ],
-      maxRetries: 0,
-    })
-
-    let title = result.text
-      .replace(/<think>[\s\S]*?<\/think>\s*/g, "") // Strip reasoning tags
-      .split("\n")[0] // First line only
-      .replace(/^["']|["']$/g, "") // Strip wrapping quotes
-      .trim()
-
-    if (title.length > 60) title = title.slice(0, 57) + "..."
-    if (!title) title = "New chat"
-
-    return c.json({ title })
-  } catch (err) {
-    const msg = extractErrorMessage(err)
-    return c.json({ error: msg }, 500)
-  }
-})
+// Mount sub-routes
+chatRoutes.route("/", contextRoute)
+chatRoutes.route("/", compactRoute)
+chatRoutes.route("/", titleRoute)
 
 // ── Chat endpoint ─────────────────────────────────────────────
 
@@ -195,7 +46,6 @@ chatRoutes.post("/chat", async (c) => {
     activeTerminalId,
     baseUrl,
     mode = "build",
-    agent = "build",
     thinkingEffort = "off",
     images = [],
   } = body as {
@@ -207,7 +57,6 @@ chatRoutes.post("/chat", async (c) => {
     activeTerminalId?: string
     baseUrl?: string
     mode?: ReasoningMode
-    agent?: AgentId
     thinkingEffort?: ThinkingEffort
     images?: Array<{ mime: string; dataUrl: string }>
   }
@@ -254,12 +103,11 @@ chatRoutes.post("/chat", async (c) => {
     terminalContext,
     activeTerminals,
     mode,
-    agent,
     tier: budget.promptTier,
   })
 
   // ── Tool selection ────────────────────────────────────────
-  const baseTools = agent === "report" || mode === "plan" ? readOnlyTools : allTools
+  const baseTools = mode === "plan" ? readOnlyTools : allTools
 
   let tools: Record<string, any> = baseTools
   if (budget.maxTools < Object.keys(baseTools).length) {

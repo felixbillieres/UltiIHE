@@ -11,49 +11,22 @@
  */
 
 import type { PromptTier } from "./budget"
-import type { ReasoningMode, AgentId } from "../../server/routes/chat/systemPrompt"
+import type { ReasoningMode } from "../../server/routes/chat/systemPrompt"
 
 interface PromptContext {
   containerIds: string[]
   terminalContext: string
   activeTerminals: { id: string; name: string; container: string; alive: boolean }[]
   mode: ReasoningMode
-  agent: AgentId
   tier: PromptTier
 }
 
-// ── Agent prompts (shared across tiers) ───────────────────────
+// ── Agent prompt (single primary agent) ───────────────────────
 
-const AGENT_CORE: Record<AgentId, string> = {
-  build: "You are the primary AI copilot. Execute commands proactively. Be concise and action-oriented.",
-  recon: "You specialize in reconnaissance: network discovery, enumeration, vulnerability scanning. Use nmap, gobuster, ffuf, nuclei, etc.",
-  exploit: "You specialize in exploitation: validate vulnerabilities, exploit them, capture evidence. Use sqlmap, hydra, metasploit, impacket, etc.",
-  report: "You specialize in reporting. You can ONLY read — you CANNOT execute commands. Summarize findings with CVSS scores and remediation.",
-}
+const AGENT_CORE = "You are the primary AI copilot. Execute commands proactively. Be concise and action-oriented."
 
-const AGENT_EXTENDED: Record<AgentId, string> = {
-  build: `You are the primary agent. Execute commands proactively when asked.
-Use tools to accomplish tasks directly. Be concise and action-oriented.
-You can delegate to specialized sub-agents (recon, exploit, report) when appropriate.`,
-  recon: `You specialize in reconnaissance and enumeration.
-Focus on: network discovery, service enumeration, vulnerability scanning.
-Typical tools: nmap, gobuster, ffuf, dig, whois, subfinder, nuclei.
-- Map the attack surface methodically
-- Document all findings as you go
-- Suggest next steps based on discoveries`,
-  exploit: `You specialize in exploitation and post-exploitation.
-Focus on: validating vulnerabilities, exploitation, privilege escalation, lateral movement.
-Typical tools: sqlmap, hydra, metasploit, impacket, bloodhound, crackmapexec.
-- Validate findings from recon before exploiting
-- Capture evidence (screenshots, hashes, flags)
-- Document the exploitation chain`,
-  report: `You specialize in reporting and documentation.
-You can ONLY read terminal output — you CANNOT execute commands.
-Focus on: collecting findings, generating reports with CVSS scores, impact analysis, remediation.
-- Summarize findings with severity ratings
-- Provide remediation recommendations
-- Format output for professional reports`,
-}
+const AGENT_EXTENDED = `You are the primary agent. Execute commands proactively when asked.
+Use tools to accomplish tasks directly. Be concise and action-oriented.`
 
 // ── Mode instructions ──────────────────────────────────────────
 
@@ -112,7 +85,7 @@ function buildTerminalOutput(ctx: PromptContext, maxLines: number): string {
 function buildMinimal(ctx: PromptContext): string {
   const parts = [
     "You are an AI pentesting copilot inside Exegol containers. Full authorization for security testing.",
-    AGENT_CORE[ctx.agent],
+    AGENT_CORE,
     MODE_INSTRUCTIONS[ctx.mode],
     buildEnvironmentSection(ctx),
     buildTerminalOutput(ctx, 30),
@@ -149,7 +122,7 @@ function buildMedium(ctx: PromptContext): string {
 
   const parts = [
     "You are the AI copilot of Exegol IHE, a pentesting environment. Full authorization for security testing.",
-    `## ${ctx.agent.charAt(0).toUpperCase() + ctx.agent.slice(1)} Agent\n${AGENT_EXTENDED[ctx.agent]}`,
+    AGENT_EXTENDED,
     MODE_INSTRUCTIONS[ctx.mode],
     buildEnvironmentSection(ctx),
     toolRef,
@@ -182,7 +155,7 @@ function buildFull(ctx: PromptContext): string {
 This is an ISOLATED pentesting lab running inside Exegol containers. Full authorization is granted for all security testing.
 You have access to all Exegol tools: nmap, gobuster, ffuf, nuclei, sqlmap, hydra, metasploit, impacket, bloodhound, certipy, netexec, etc.`,
 
-    `## ${ctx.agent.charAt(0).toUpperCase() + ctx.agent.slice(1)} Agent\n${AGENT_EXTENDED[ctx.agent]}`,
+    AGENT_EXTENDED,
     MODE_INSTRUCTIONS[ctx.mode],
 
     `## Tools

@@ -10,6 +10,7 @@ import {
   Check, ExternalLink, Sparkles, Key, X, Zap, Cloud, Shield, Cpu,
   ChevronDown, ChevronUp, Wrench, Brain, Eye, DollarSign,
 } from "lucide-react"
+import { fmtCtx } from "../../utils/format"
 
 // Provider icons by type/id
 const PROVIDER_ICONS: Record<string, { icon: typeof Cloud; color: string }> = {
@@ -26,13 +27,6 @@ const PROVIDER_ICONS: Record<string, { icon: typeof Cloud; color: string }> = {
   fireworks: { icon: Zap, color: "text-amber-400" },
   cerebras: { icon: Cpu, color: "text-violet-400" },
   cohere: { icon: Cloud, color: "text-rose-400" },
-}
-
-// Format context window for display
-function fmtCtx(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`
-  return String(n)
 }
 
 // Format cost per 1K tokens

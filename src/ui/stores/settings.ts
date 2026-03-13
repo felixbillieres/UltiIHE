@@ -11,10 +11,8 @@ export type {
   ReasoningMode,
   ThinkingEffort,
   AgentId,
-  AgentInfo,
   Language,
 } from "./settingsTypes"
-export { AGENTS } from "./settingsTypes"
 
 export type { MonoFont } from "./settingsCatalogs"
 export { THEMES, DEFAULT_KEYBINDS, MONO_FONTS } from "./settingsCatalogs"
@@ -24,11 +22,9 @@ import type {
   ProviderConfig,
   ModelInfo,
   ReasoningMode,
-  AgentId,
   ThinkingEffort,
   Language,
 } from "./settingsTypes"
-import { AGENTS } from "./settingsTypes"
 import { THEMES, DEFAULT_KEYBINDS } from "./settingsCatalogs"
 import { useProviderCatalog } from "./providerCatalog"
 
@@ -69,7 +65,6 @@ interface SettingsStore {
   activeProvider: string
   activeModel: string
   activeMode: ReasoningMode
-  activeAgent: AgentId
   thinkingEffort: ThinkingEffort
 
   // Recent models
@@ -101,9 +96,7 @@ interface SettingsStore {
   setActiveProvider: (id: string) => void
   setActiveModel: (model: string) => void
   setActiveMode: (mode: ReasoningMode) => void
-  setActiveAgent: (agent: AgentId) => void
   setThinkingEffort: (effort: ThinkingEffort) => void
-  cycleAgent: () => void
   cycleThinkingEffort: () => void
 
   // Actions - Keybindings
@@ -136,7 +129,6 @@ export const useSettingsStore = create<SettingsStore>()(
       activeProvider: "anthropic",
       activeModel: "claude-sonnet-4-20250514",
       activeMode: "build",
-      activeAgent: "build" as AgentId,
       thinkingEffort: "off" as ThinkingEffort,
       recentModels: [],
       customKeybinds: {},
@@ -204,16 +196,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setActiveMode: (mode) => set({ activeMode: mode }),
 
-      setActiveAgent: (agent) => set({ activeAgent: agent }),
-
       setThinkingEffort: (effort) => set({ thinkingEffort: effort }),
-
-      cycleAgent: () => {
-        const current = get().activeAgent
-        const ids = AGENTS.map((a) => a.id)
-        const idx = ids.indexOf(current)
-        set({ activeAgent: ids[(idx + 1) % ids.length] })
-      },
 
       cycleThinkingEffort: () => {
         const model = get().getActiveModelInfo()
@@ -270,7 +253,6 @@ export const useSettingsStore = create<SettingsStore>()(
         activeProvider: state.activeProvider,
         activeModel: state.activeModel,
         activeMode: state.activeMode,
-        activeAgent: state.activeAgent,
         thinkingEffort: state.thinkingEffort,
         customKeybinds: state.customKeybinds,
         recentModels: state.recentModels,

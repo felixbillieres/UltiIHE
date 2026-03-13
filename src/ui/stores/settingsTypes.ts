@@ -70,45 +70,7 @@ export type ReasoningMode = "build" | "plan" | "deep"
 
 export type ThinkingEffort = "off" | "low" | "medium" | "high"
 
-export type AgentId = "build" | "recon" | "exploit" | "report"
-
-export interface AgentInfo {
-  id: AgentId
-  name: string
-  color: string
-  description: string
-  canExecute: boolean
-}
-
-export const AGENTS: AgentInfo[] = [
-  {
-    id: "build",
-    name: "Build",
-    color: "text-accent",
-    description: "Primary agent — full access to all tools",
-    canExecute: true,
-  },
-  {
-    id: "recon",
-    name: "Recon",
-    color: "text-blue-400",
-    description: "Reconnaissance — network discovery, enumeration, scanning",
-    canExecute: true,
-  },
-  {
-    id: "exploit",
-    name: "Exploit",
-    color: "text-red-400",
-    description: "Exploitation — validate vulnerabilities, capture evidence",
-    canExecute: true,
-  },
-  {
-    id: "report",
-    name: "Report",
-    color: "text-purple-400",
-    description: "Reporting — read-only, generates findings and reports",
-    canExecute: false,
-  },
-]
+// Single primary agent — no multi-agent system
+export type AgentId = "build"
 
 export type Language = "en" | "fr" | "de" | "es" | "ja" | "zh"

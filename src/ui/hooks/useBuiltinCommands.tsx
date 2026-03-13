@@ -16,7 +16,6 @@ import {
   Terminal,
   Plus,
   MessageCircle,
-  Bot,
   Cpu,
   Brain,
   RotateCcw,
@@ -234,50 +233,8 @@ export function useBuiltinCommands(
       },
     ]
 
-    // ── Model & Agent ────────────────────────────────────
+    // ── Model ────────────────────────────────────────────
     const modelAgent: CommandOption[] = [
-      {
-        id: "agent.cycle",
-        title: "Cycle Agent",
-        description: "Switch between build/recon/exploit/report",
-        category: "Model & Agent",
-        keybind: "mod+.",
-        icon: <Bot className="w-3.5 h-3.5" />,
-        onSelect: () => {
-          const store = useSettingsStore.getState()
-          const agents: Array<"build" | "recon" | "exploit" | "report"> = ["build", "recon", "exploit", "report"]
-          const idx = agents.indexOf(store.activeAgent)
-          store.setActiveAgent(agents[(idx + 1) % agents.length])
-        },
-      },
-      {
-        id: "agent.build",
-        title: "Switch to Build Agent",
-        category: "Model & Agent",
-        icon: <Bot className="w-3.5 h-3.5" />,
-        onSelect: () => useSettingsStore.getState().setActiveAgent("build"),
-      },
-      {
-        id: "agent.recon",
-        title: "Switch to Recon Agent",
-        category: "Model & Agent",
-        icon: <Bot className="w-3.5 h-3.5" />,
-        onSelect: () => useSettingsStore.getState().setActiveAgent("recon"),
-      },
-      {
-        id: "agent.exploit",
-        title: "Switch to Exploit Agent",
-        category: "Model & Agent",
-        icon: <Bot className="w-3.5 h-3.5" />,
-        onSelect: () => useSettingsStore.getState().setActiveAgent("exploit"),
-      },
-      {
-        id: "agent.report",
-        title: "Switch to Report Agent",
-        category: "Model & Agent",
-        icon: <Bot className="w-3.5 h-3.5" />,
-        onSelect: () => useSettingsStore.getState().setActiveAgent("report"),
-      },
       {
         id: "thinking.toggle",
         title: "Toggle Thinking",

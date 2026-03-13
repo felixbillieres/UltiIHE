@@ -194,9 +194,85 @@ async function fetchFromNetwork(): Promise<ModelsDevData | null> {
 
 // ── Provider Filtering ───────────────────────────────────────
 
+// ── Blacklist & filtering ────────────────────────────────────
+
+/** Models known to be broken or unusable */
+const MODEL_BLACKLIST = new Set([
+  "gpt-5-chat-latest",
+])
+
 // Models released within this window are considered "recent"
 const RECENT_MONTHS = 6
 const MS_PER_MONTH = 30.44 * 24 * 60 * 60 * 1000
+const PREVIEW_EXPIRY_MONTHS = 3
+
+/**
+ * Check if a preview model has an expired date in its ID.
+ * Matches patterns like "preview-09-2025" or "preview-2025-09".
+ */
+function isExpiredPreview(modelId: string): boolean {
+  if (!modelId.includes("preview")) return false
+
+  // Match MM-YYYY or YYYY-MM patterns
+  const mmYyyy = modelId.match(/(\d{2})-(\d{4})/)
+  const yyyyMm = modelId.match(/(\d{4})-(\d{2})/)
+
+  let previewDate: Date | null = null
+  if (mmYyyy) {
+    const month = parseInt(mmYyyy[1], 10)
+    const year = parseInt(mmYyyy[2], 10)
+    if (month >= 1 && month <= 12 && year >= 2020) {
+      previewDate = new Date(year, month - 1) // month is 0-indexed
+    }
+  } else if (yyyyMm) {
+    const year = parseInt(yyyyMm[1], 10)
+    const month = parseInt(yyyyMm[2], 10)
+    if (month >= 1 && month <= 12 && year >= 2020) {
+      previewDate = new Date(year, month - 1)
+    }
+  }
+
+  if (!previewDate) return false
+
+  const cutoff = new Date()
+  cutoff.setMonth(cutoff.getMonth() - PREVIEW_EXPIRY_MONTHS)
+  return previewDate < cutoff
+}
+
+/**
+ * Shared model cleanup: removes deprecated, alpha, expired previews,
+ * blacklisted, embeddings, guard, TTS, and other non-chat models.
+ * @param models Raw models from models.dev
+ * @param strict If true, also filters -image models without tool_call (used in getFilteredProviders)
+ */
+function cleanModels(
+  models: Record<string, ModelsDevModel>,
+  strict = false,
+): Record<string, ModelsDevModel> {
+  const result: Record<string, ModelsDevModel> = {}
+  for (const [modelId, model] of Object.entries(models)) {
+    // Status filters
+    if (model.status === "deprecated") continue
+    if (model.status === "alpha") continue
+    // Blacklist
+    if (MODEL_BLACKLIST.has(modelId)) continue
+    // Expired previews (date > 3 months in the past)
+    if (isExpiredPreview(modelId)) continue
+    // Non-chat model types
+    if (modelId.includes("embed") || modelId.includes("embedding")) continue
+    if (modelId.includes("guard") || modelId.includes("safeguard")) continue
+    if (modelId.includes("-tts")) continue
+    if (modelId.includes("-live-")) continue
+    if (modelId.includes("whisper") || modelId.includes("transcrib")) continue
+    if (modelId.includes("moderation") || modelId.includes("omni-moderation")) continue
+    // Image-only models (strict mode)
+    if (strict && modelId.includes("-image") && !model.tool_call) continue
+    // Models without output limit are probably not chat models
+    if (!model.limit.output) continue
+    result[modelId] = model
+  }
+  return result
+}
 
 // Aggregator providers that host models from many different providers.
 // These need stricter filtering (tool_call required) to avoid 90+ model lists.
@@ -258,36 +334,23 @@ export async function getFilteredProviders(): Promise<ModelsDevProvider[]> {
     // Map provider ID if needed
     const mappedId = PROVIDER_ID_MAP[provId] || provId
 
-    // Step 1: Remove junk models (deprecated, embeddings, guard, TTS, etc.)
-    const cleanModels: Record<string, ModelsDevModel> = {}
-    for (const [modelId, model] of Object.entries(provider.models)) {
-      if (model.status === "deprecated") continue
-      if (modelId.includes("embed") || modelId.includes("embedding")) continue
-      if (modelId.includes("guard") || modelId.includes("safeguard")) continue
-      if (modelId.includes("-image") && !model.tool_call) continue
-      if (modelId.includes("-tts")) continue
-      if (modelId.includes("-live-")) continue
-      // Skip transcription/audio-only models
-      if (modelId.includes("whisper") || modelId.includes("transcrib")) continue
-      // Skip moderation models
-      if (modelId.includes("moderation") || modelId.includes("omni-moderation")) continue
-      cleanModels[modelId] = model
-    }
+    // Step 1: Remove junk models (deprecated, alpha, expired previews, etc.)
+    const cleaned = cleanModels(provider.models, true)
 
-    if (Object.keys(cleanModels).length === 0) continue
+    if (Object.keys(cleaned).length === 0) continue
 
     // Step 2: For aggregator providers (openrouter, bedrock, azure),
     // require tool_call support — they have too many models otherwise
     if (AGGREGATOR_PROVIDERS.has(provId)) {
-      for (const [modelId, model] of Object.entries(cleanModels)) {
-        if (!model.tool_call) delete cleanModels[modelId]
+      for (const [modelId, model] of Object.entries(cleaned)) {
+        if (!model.tool_call) delete cleaned[modelId]
       }
     }
 
     // Step 3: Select only "latest" models per family (like OpenCode)
-    const latestIds = selectLatestModels(cleanModels)
+    const latestIds = selectLatestModels(cleaned)
     const filteredModels: Record<string, ModelsDevModel> = {}
-    for (const [modelId, model] of Object.entries(cleanModels)) {
+    for (const [modelId, model] of Object.entries(cleaned)) {
       if (latestIds.has(modelId)) {
         filteredModels[modelId] = model
       }
@@ -321,20 +384,10 @@ export async function getAllProviderModels(
   const provider = data[devId]
   if (!provider) return null
 
-  const cleanModels: Record<string, ModelsDevModel> = {}
-  for (const [modelId, model] of Object.entries(provider.models)) {
-    if (model.status === "deprecated") continue
-    if (modelId.includes("embed") || modelId.includes("embedding")) continue
-    if (modelId.includes("guard") || modelId.includes("safeguard")) continue
-    if (modelId.includes("-tts")) continue
-    if (modelId.includes("-live-")) continue
-    if (modelId.includes("whisper") || modelId.includes("transcrib")) continue
-    if (modelId.includes("moderation") || modelId.includes("omni-moderation")) continue
-    cleanModels[modelId] = model
-  }
+  const cleaned = cleanModels(provider.models)
 
   const mappedId = PROVIDER_ID_MAP[devId] || devId
-  return { ...provider, id: mappedId, models: cleanModels }
+  return { ...provider, id: mappedId, models: cleaned }
 }
 
 /**

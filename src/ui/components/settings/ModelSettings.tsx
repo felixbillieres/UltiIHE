@@ -9,6 +9,7 @@ import { useLocalAIStore } from "../../stores/localAI"
 import { t, type TranslationKey } from "../../i18n/translations"
 import { Check, Brain, Eye, Wrench, Search, Zap, DollarSign, Cpu, CheckCircle2 } from "lucide-react"
 import { Section } from "./SettingsSection"
+import { fmtCtx } from "../../utils/format"
 
 export const MODE_COLORS: Record<ReasoningMode, string> = {
   build: "text-status-success",
@@ -187,9 +188,7 @@ export function ModelSettings() {
                   {/* Context & output */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] text-text-weaker font-mono">
-                      {model.contextWindow >= 1_000_000
-                        ? `${(model.contextWindow / 1_000_000).toFixed(0)}M ctx`
-                        : `${(model.contextWindow / 1_000).toFixed(0)}k ctx`}
+                      {fmtCtx(model.contextWindow)} ctx
                     </span>
                     {isLocal && (
                       <span className="text-[10px] text-text-weaker font-sans">Free</span>
