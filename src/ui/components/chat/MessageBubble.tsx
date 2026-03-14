@@ -410,11 +410,11 @@ export function MessageBubble({
   const parsed = isUser ? parseContextBlocks(message.content) : null
   const hasBlocks = parsed && parsed.blocks.length > 0
 
-  // ── User message ────────────────────────────────────────────
+  // ── User message — sticky bubble (Cursor-style) ─────────────
   if (isUser) {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] flex flex-col items-end gap-1.5">
+      <div data-user-message>
+        <div className="flex flex-col gap-1.5">
           {hasBlocks && (
             <>
               {parsed.blocks.map((b, i) =>
@@ -427,7 +427,7 @@ export function MessageBubble({
             </>
           )}
           {(hasBlocks ? parsed.text : message.content) && (
-            <div className="bg-accent/10 text-text-strong px-3.5 py-2 rounded-2xl rounded-br-md text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-left">
+            <div className="bg-surface-1 border border-border-weak rounded-xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-text-strong text-left">
               <MarkdownContent content={hasBlocks ? parsed.text : message.content} />
             </div>
           )}
@@ -436,37 +436,26 @@ export function MessageBubble({
     )
   }
 
-  // ── Assistant message ───────────────────────────────────────
+  // ── Assistant message — no avatar, no bubble (Cursor-style) ─
   return (
-    <div className="group flex gap-2.5">
-      <div
-        className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mt-1 ${
-          isError ? "bg-status-error/15" : "bg-surface-2"
-        }`}
-      >
-        {isError ? (
-          <AlertTriangle className="w-3 h-3 text-status-error" />
-        ) : (
-          <Bot className="w-3 h-3 text-text-weak" />
-        )}
-      </div>
-      <div className="flex-1 min-w-0 max-w-[92%]">
+    <div className="group">
+      <div className="px-1">
         {hasParts ? (
-          <div className="bg-surface-1/60 border border-border-weak/50 rounded-2xl rounded-tl-md px-3.5 py-2.5">
+          <div className="text-sm leading-relaxed font-sans text-text-base">
             <AssistantParts parts={message.parts} />
           </div>
         ) : (
           <div
-            className={`rounded-2xl rounded-tl-md px-3.5 py-2.5 text-sm leading-relaxed break-words font-sans ${
+            className={`text-sm leading-relaxed break-words font-sans ${
               isError
-                ? "bg-status-error/8 border border-status-error/20 text-status-error"
-                : "bg-surface-1/60 border border-border-weak/50 text-text-base"
+                ? "bg-status-error/8 border border-status-error/20 text-status-error rounded-xl px-3.5 py-2.5"
+                : "text-text-base"
             }`}
           >
             {isStreaming ? (
               <span className="inline-flex items-center gap-1.5 text-text-weaker">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Thinking...
+                Planning next moves
               </span>
             ) : (
               <MarkdownContent content={message.content} />
@@ -475,7 +464,7 @@ export function MessageBubble({
         )}
         {/* Actions + usage — visible on hover, not during streaming */}
         {!isStreaming && (
-          <div className="mt-1 ml-1 flex items-center gap-2">
+          <div className="mt-1 flex items-center gap-2">
             <MessageActions
               message={message}
               onFork={onFork}

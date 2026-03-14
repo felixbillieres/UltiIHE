@@ -14,6 +14,8 @@ import { useToolApprovalStore } from "../../stores/toolApproval"
 import { SettingsDialog } from "../settings/SettingsDialog"
 import { type LayoutState, type LayoutPreset, loadLayout, saveLayout, LAYOUT_PRESETS } from "./layoutPersistence"
 import { TopBar } from "./TopBar"
+import { ActivityBar } from "./ActivityBar"
+import { StatusBar } from "./StatusBar"
 import { ChatSidePanel } from "./ChatSidePanel"
 import { FilesSidePanel } from "./FilesSidePanel"
 import { CenterArea } from "./CenterArea"
@@ -23,6 +25,7 @@ import { CommandPaletteProvider } from "../../hooks/useCommandPalette"
 import { CommandPaletteDialog } from "../CommandPaletteDialog"
 import { UnifiedSearchDialog } from "../search/UnifiedSearchDialog"
 import { SearchMiniPanel } from "../search/SearchMiniPanel"
+import { useSearchStore } from "../../stores/search"
 import { useBuiltinCommands, type LayoutActions } from "../../hooks/useBuiltinCommands"
 
 // ─── Main component ──────────────────────────────────────────
@@ -204,7 +207,7 @@ export function WorkspaceLayout({ project }: Props) {
           </PopOutPortal>
         )}
 
-        {/* Top bar — replaces the vertical IconRail */}
+        {/* Top bar — single 35px row */}
         <TopBar
           project={project}
           projects={projects}
@@ -214,21 +217,25 @@ export function WorkspaceLayout({ project }: Props) {
             navigate(`/project/${id}`)
           }}
           onOpenSettings={() => setShowSettings(true)}
-          onOpenContainers={() => setShowContainerManager(true)}
           containerCount={project.containerIds.length}
           filesPanelOpen={layout.filesPanelOpen}
           chatPanelOpen={layout.chatPanelOpen}
           bottomPanelOpen={layout.bottomPanelOpen}
-          swapped={layout.swapped}
           onToggleFilesPanel={toggleFilesPanel}
           onToggleChatPanel={toggleChatPanel}
           onToggleBottomPanel={toggleBottomPanel}
-          onSwapPanels={swapPanels}
-          activePreset={layout.activePreset}
-          onApplyPreset={applyPreset}
         />
 
         <div className="flex-1 flex overflow-hidden">
+          {/* Activity bar — 36px vertical */}
+          <ActivityBar
+            filesPanelOpen={layout.filesPanelOpen}
+            onToggleFilesPanel={toggleFilesPanel}
+            onOpenSearch={() => useSearchStore.getState().open()}
+            onOpenContainers={() => setShowContainerManager(true)}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+
           {/* Left side panel */}
           {filesOnLeft ? filesPanel : chatPanel}
 
@@ -249,6 +256,12 @@ export function WorkspaceLayout({ project }: Props) {
           {/* Right side panel */}
           {filesOnLeft ? chatPanel : filesPanel}
         </div>
+
+        {/* Status bar — 22px at bottom */}
+        <StatusBar
+          project={project}
+          containerCount={project.containerIds.length}
+        />
 
         {showSettings && (
           <SettingsDialog onClose={() => setShowSettings(false)} />

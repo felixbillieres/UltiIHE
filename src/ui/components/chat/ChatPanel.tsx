@@ -141,13 +141,24 @@ export function ChatPanel({ projectId }: Props) {
   )
 
   // Smart auto-scroll
-  const { containerRef, showScrollButton, scrollToBottom, onContentUpdate } =
+  const { containerRef, showScrollButton, scrollToBottom, scrollToLastUserMessage, onContentUpdate } =
     useAutoScroll(streaming)
 
-  // Trigger scroll on message changes (for non-streaming updates)
+  // On new user message: scroll so it's at the top (clean context). Otherwise follow streaming.
+  const prevMsgCountRef = useRef(messages.length)
   useEffect(() => {
+    const prev = prevMsgCountRef.current
+    prevMsgCountRef.current = messages.length
+    if (messages.length > prev) {
+      const last = messages[messages.length - 1]
+      if (last?.role === "user") {
+        // Delay to let React render the message + spacer first
+        requestAnimationFrame(() => scrollToLastUserMessage())
+        return
+      }
+    }
     onContentUpdate()
-  }, [messages.length, onContentUpdate])
+  }, [messages.length, onContentUpdate, scrollToLastUserMessage])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -944,6 +955,7 @@ export function ChatPanel({ projectId }: Props) {
     return null
   }, [messages])
 
+
   // No active session — empty state
   if (!activeSession) {
     return (
@@ -1034,6 +1046,8 @@ export function ChatPanel({ projectId }: Props) {
               )
             })
         )}
+        {/* Spacer — lets the last user message scroll to top for clean context */}
+        {messages.length > 0 && <div style={{ minHeight: "50vh" }} />}
       </div>
 
       {/* Scroll to bottom button */}

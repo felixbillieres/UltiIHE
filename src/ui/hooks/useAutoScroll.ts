@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback, useState } from "react"
  * Smart auto-scroll hook.
  *
  * - Auto-scrolls to bottom during streaming
+ * - On new user message, scrolls so the message is at the TOP (clean context)
  * - Pauses on manual scroll up (wheel/touch)
  * - Shows "scroll to bottom" indicator when paused
  * - Resumes on click or when new message starts
@@ -33,7 +34,6 @@ export function useAutoScroll(streaming: boolean) {
       if (!streaming) return
       const el = containerRef.current
       if (!el) return
-      // If not at bottom, user scrolled up
       const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
       if (!atBottom) {
         userScrolledRef.current = true
@@ -61,7 +61,6 @@ export function useAutoScroll(streaming: boolean) {
     }
   }, [streaming])
 
-  // Auto-scroll on content change during streaming
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current
     if (!el) return
@@ -78,10 +77,33 @@ export function useAutoScroll(streaming: boolean) {
     el.scrollTop = el.scrollHeight
   }, [])
 
+  /**
+   * Scroll so the last user message is at the top of the viewport.
+   * Creates the Cursor-style "clean context" effect.
+   */
+  const scrollToLastUserMessage = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return
+    // Find the last sticky user message element
+    const userMessages = el.querySelectorAll("[data-user-message]")
+    const last = userMessages[userMessages.length - 1] as HTMLElement | null
+    if (last) {
+      // Scroll so user message is at top with small offset
+      const offset = last.offsetTop - el.offsetTop
+      el.scrollTop = offset - 4
+      userScrolledRef.current = false
+      setShowScrollButton(false)
+    } else {
+      // Fallback: scroll to bottom
+      el.scrollTop = el.scrollHeight
+    }
+  }, [])
+
   return {
     containerRef,
     showScrollButton,
     scrollToBottom,
+    scrollToLastUserMessage,
     onContentUpdate,
   }
 }

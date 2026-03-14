@@ -16,9 +16,9 @@ export interface LayoutState {
 
 export const DEFAULT_LAYOUT: LayoutState = {
   chatPanelOpen: true,
-  chatPanelWidth: 420,
+  chatPanelWidth: 360,
   filesPanelOpen: true,
-  filesPanelWidth: 260,
+  filesPanelWidth: 280,
   sessionSidebarOpen: false,
   swapped: false,
   bottomPanelOpen: false,
