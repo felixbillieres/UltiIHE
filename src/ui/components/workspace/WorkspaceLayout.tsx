@@ -152,6 +152,8 @@ export function WorkspaceLayout({ project }: Props) {
       side={filesOnLeft ? "left" : "right"}
       onClose={toggleFilesPanel}
       onResize={(w) => setLayout((l) => ({ ...l, filesPanelWidth: w }))}
+      containerIds={project.containerIds}
+      onOpenContainers={() => setShowContainerManager(true)}
     />
   )
 

@@ -29,6 +29,7 @@ function SessionTabBar({
   sidebarOpen: boolean
 }) {
   const setActiveSession = useSessionStore((s) => s.setActiveSession)
+  const renameSession = useSessionStore((s) => s.renameSession)
   const startNewChat = useSessionStore((s) => s.startNewChat)
   const activeSessionId = useSessionStore((s) => s.activeSessionIdByProject[projectId] ?? null)
   const allSessions = useSessionStore((s) => s.sessions)
@@ -37,6 +38,22 @@ function SessionTabBar({
     [allSessions, projectId],
   )
   const tabsRef = useRef<HTMLDivElement>(null)
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editTabName, setEditTabName] = useState("")
+  const tabInputRef = useRef<HTMLInputElement>(null)
+
+  const startTabEdit = (session: Session) => {
+    setEditTabName(session.title)
+    setEditingTabId(session.id)
+    setTimeout(() => tabInputRef.current?.select(), 0)
+  }
+
+  const commitTabRename = () => {
+    if (editingTabId && editTabName.trim() && editTabName.trim() !== sessions.find((s) => s.id === editingTabId)?.title) {
+      renameSession(editingTabId, editTabName.trim())
+    }
+    setEditingTabId(null)
+  }
 
   return (
     <div className="flex items-center border-b border-border-weak bg-surface-0 shrink-0 h-9">
@@ -47,10 +64,29 @@ function SessionTabBar({
       >
         {sessions.map((s) => {
           const isActive = s.id === activeSessionId
-          return (
+          const isEditing = editingTabId === s.id
+          return isEditing ? (
+            <input
+              key={s.id}
+              ref={tabInputRef}
+              value={editTabName}
+              onChange={(e) => setEditTabName(e.target.value)}
+              onBlur={commitTabRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitTabRename()
+                if (e.key === "Escape") setEditingTabId(null)
+              }}
+              className="shrink-0 max-w-[160px] px-2.5 py-1 text-[11px] font-sans rounded-md bg-surface-2 text-text-strong border border-accent outline-none"
+              autoFocus
+            />
+          ) : (
             <button
               key={s.id}
               onClick={() => setActiveSession(s.id, projectId)}
+              onDoubleClick={(e) => {
+                e.stopPropagation()
+                startTabEdit(s)
+              }}
               className={`shrink-0 max-w-[160px] px-2.5 py-1 text-[11px] font-sans rounded-md transition-colors truncate ${
                 isActive
                   ? "bg-surface-2 text-text-strong font-medium"

@@ -132,6 +132,16 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
         })
     }
 
+    // Prevent the browser from stealing Tab (focus navigation) so it reaches
+    // the PTY for shell autocompletion (zsh/bash Tab completion).
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.key === "Tab") {
+        // Let xterm handle it (sends \t to PTY) — don't let the browser use it for focus
+        return true
+      }
+      return true
+    })
+
     const dataDisposable = term.onData((data) => {
       send({
         type: "terminal:input",
