@@ -142,6 +142,28 @@ function TabContextMenu({
         <X className="w-3.5 h-3.5 shrink-0" />
         Close
       </button>
+      <button
+        onClick={() => {
+          const tabs = useWorkspaceStore.getState().tabs
+          tabs.filter((t) => t.id !== tab.id).forEach((t) => useWorkspaceStore.getState().removeTab(t.id))
+          onClose()
+        }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+      >
+        <X className="w-3.5 h-3.5 shrink-0" />
+        Close Others
+      </button>
+      <button
+        onClick={() => {
+          const tabs = useWorkspaceStore.getState().tabs
+          tabs.forEach((t) => useWorkspaceStore.getState().removeTab(t.id))
+          onClose()
+        }}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-text-base hover:bg-surface-3 transition-colors"
+      >
+        <X className="w-3.5 h-3.5 shrink-0" />
+        Close All
+      </button>
     </div>
   )
 }

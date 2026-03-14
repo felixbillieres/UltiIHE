@@ -25,7 +25,9 @@ import {
   Plus,
   HardDrive,
   FolderMinus,
+  Copy,
 } from "lucide-react"
+import { toast } from "sonner"
 
 // ── Constants ───────────────────────────────────────────────────
 
@@ -1041,6 +1043,11 @@ function TreeDir({
           } ${isDotfile ? "opacity-40" : ""}`}
           style={{ paddingLeft: `${pl}px` }}
           onClick={toggle}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            navigator.clipboard.writeText(path)
+            toast.success("Path copied")
+          }}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -1078,6 +1085,7 @@ function TreeDir({
               title={isDotfile ? "Unhide" : "Hide"}
               onClick={(e) => { e.stopPropagation(); isDotfile ? unhidePath(container, path) : hidePath(container, path) }}
             />
+            <ActionBtn icon={Copy} title="Copy path" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(path); toast.success("Path copied") }} />
             <ActionBtn icon={FilePlus} title="New file" onClick={(e) => { e.stopPropagation(); setExpanded(true); setCreating("file") }} />
             <ActionBtn icon={FolderPlus} title="New folder" onClick={(e) => { e.stopPropagation(); setExpanded(true); setCreating("dir") }} />
             <ActionBtn icon={Pencil} title="Rename" onClick={(e) => { e.stopPropagation(); setRenaming(true) }} />
@@ -1211,6 +1219,11 @@ function TreeFile({
         openFile(container, entry.path)
         openFileTab(`${container}:${entry.path}`, entry.name, container)
       }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        navigator.clipboard.writeText(entry.path)
+        toast.success("Path copied")
+      }}
       draggable
       onDragStart={(e) => {
         const data: DragData = {
@@ -1237,6 +1250,7 @@ function TreeFile({
           title={isDotfile ? "Unhide" : "Hide"}
           onClick={(e) => { e.stopPropagation(); isDotfile ? unhidePath(container, entry.path) : hidePath(container, entry.path) }}
         />
+        <ActionBtn icon={Copy} title="Copy path" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(entry.path); toast.success("Path copied") }} />
         <ActionBtn icon={Pencil} title="Rename" onClick={(e) => { e.stopPropagation(); setRenaming(true) }} />
         <ActionBtn icon={Trash2} title="Delete" onClick={(e) => {
           e.stopPropagation()

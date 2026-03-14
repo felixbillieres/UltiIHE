@@ -761,5 +761,5 @@ function startAutoRefresh() {
         }
       }
     }
-  }, 10_000)
+  }, 5_000)
 }

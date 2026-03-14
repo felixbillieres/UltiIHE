@@ -14,7 +14,6 @@ import { useToolApprovalStore } from "../../stores/toolApproval"
 import { SettingsDialog } from "../settings/SettingsDialog"
 import { type LayoutState, type LayoutPreset, loadLayout, saveLayout, LAYOUT_PRESETS } from "./layoutPersistence"
 import { TopBar } from "./TopBar"
-import { ActivityBar } from "./ActivityBar"
 import { StatusBar } from "./StatusBar"
 import { ChatSidePanel } from "./ChatSidePanel"
 import { FilesSidePanel } from "./FilesSidePanel"
@@ -87,6 +86,11 @@ export function WorkspaceLayout({ project }: Props) {
     }
     prevProjectIdRef.current = project.id
   }, [project.id])
+
+  // Dynamic window title
+  useEffect(() => {
+    document.title = `Exegol IHE — ${project.name}`
+  }, [project.name])
 
   useEffect(() => {
     fetchContainers()
@@ -227,15 +231,6 @@ export function WorkspaceLayout({ project }: Props) {
         />
 
         <div className="flex-1 flex overflow-hidden">
-          {/* Activity bar — 36px vertical */}
-          <ActivityBar
-            filesPanelOpen={layout.filesPanelOpen}
-            onToggleFilesPanel={toggleFilesPanel}
-            onOpenSearch={() => useSearchStore.getState().open()}
-            onOpenContainers={() => setShowContainerManager(true)}
-            onOpenSettings={() => setShowSettings(true)}
-          />
-
           {/* Left side panel */}
           {filesOnLeft ? filesPanel : chatPanel}
 

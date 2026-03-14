@@ -269,6 +269,10 @@ function SidebarSessionRow({
         e.stopPropagation()
         startEditing()
       }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        startEditing()
+      }}
       className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer group transition-colors ${
         isActive
           ? "bg-accent/8 text-text-strong"

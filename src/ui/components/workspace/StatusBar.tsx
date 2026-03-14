@@ -2,11 +2,13 @@
  * StatusBar — 22px horizontal bar at the very bottom.
  */
 
+import { useState } from "react"
 import { type Project } from "../../stores/project"
 import { useTerminalStore } from "../../stores/terminal"
 import { useExhStore } from "../../stores/exh"
 import { useContextStore } from "../../stores/context"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
+import { AboutDialog } from "../settings/AboutDialog"
 
 interface StatusBarProps {
   project: Project
@@ -14,6 +16,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ project, containerCount }: StatusBarProps) {
+  const [showAbout, setShowAbout] = useState(false)
   const terminals = useTerminalStore((s) => s.terminals)
   const followAssistant = useTerminalStore((s) => s.followAssistant)
   const aiTerminalMode = useTerminalStore((s) => s.aiTerminalMode)
@@ -27,8 +30,17 @@ export function StatusBar({ project, containerCount }: StatusBarProps) {
 
   return (
     <div className="shrink-0 h-[22px] bg-surface-1 border-t border-border-weak flex items-center px-2 text-xs text-text-weaker select-none">
+      {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       {/* Left items */}
       <div className="flex items-center gap-3">
+        {/* Version */}
+        <span
+          className="text-text-weaker cursor-pointer hover:text-text-weak"
+          onClick={() => setShowAbout(true)}
+          title="About Exegol IHE"
+        >
+          v0.1.0
+        </span>
         {/* Container */}
         <span className="flex items-center gap-1">
           {containerCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-status-success inline-block" />}
