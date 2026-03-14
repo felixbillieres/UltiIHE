@@ -13,7 +13,7 @@ import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
 import { SettingsDialog } from "../settings/SettingsDialog"
 import { type LayoutState, type LayoutPreset, loadLayout, saveLayout, LAYOUT_PRESETS } from "./layoutPersistence"
-import { IconRail } from "./IconRail"
+import { TopBar } from "./TopBar"
 import { ChatSidePanel } from "./ChatSidePanel"
 import { FilesSidePanel } from "./FilesSidePanel"
 import { CenterArea } from "./CenterArea"
@@ -202,32 +202,31 @@ export function WorkspaceLayout({ project }: Props) {
           </PopOutPortal>
         )}
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Icon rail */}
-          <IconRail
-            project={project}
-            projects={projects}
-            onNavigateHome={() => navigate("/")}
-            onSwitchProject={(id) => {
-              // Switch project — orchestrator resets all per-project stores at once
-              orchestratorSwitchProject(id)
-              navigate(`/project/${id}`)
-            }}
-            onOpenSettings={() => setShowSettings(true)}
-            onOpenContainers={() => setShowContainerManager(true)}
-            containerCount={project.containerIds.length}
-            filesPanelOpen={layout.filesPanelOpen}
-            chatPanelOpen={layout.chatPanelOpen}
-            bottomPanelOpen={layout.bottomPanelOpen}
-            swapped={layout.swapped}
-            onToggleFilesPanel={toggleFilesPanel}
-            onToggleChatPanel={toggleChatPanel}
-            onToggleBottomPanel={toggleBottomPanel}
-            onSwapPanels={swapPanels}
-            activePreset={layout.activePreset}
-            onApplyPreset={applyPreset}
-          />
+        {/* Top bar — replaces the vertical IconRail */}
+        <TopBar
+          project={project}
+          projects={projects}
+          onNavigateHome={() => navigate("/")}
+          onSwitchProject={(id) => {
+            orchestratorSwitchProject(id)
+            navigate(`/project/${id}`)
+          }}
+          onOpenSettings={() => setShowSettings(true)}
+          onOpenContainers={() => setShowContainerManager(true)}
+          containerCount={project.containerIds.length}
+          filesPanelOpen={layout.filesPanelOpen}
+          chatPanelOpen={layout.chatPanelOpen}
+          bottomPanelOpen={layout.bottomPanelOpen}
+          swapped={layout.swapped}
+          onToggleFilesPanel={toggleFilesPanel}
+          onToggleChatPanel={toggleChatPanel}
+          onToggleBottomPanel={toggleBottomPanel}
+          onSwapPanels={swapPanels}
+          activePreset={layout.activePreset}
+          onApplyPreset={applyPreset}
+        />
 
+        <div className="flex-1 flex overflow-hidden">
           {/* Left side panel */}
           {filesOnLeft ? filesPanel : chatPanel}
 
