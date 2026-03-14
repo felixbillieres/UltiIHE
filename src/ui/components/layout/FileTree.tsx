@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { useProjectStore } from "../../stores/project"
 import { useFileStore, type FileEntry, type PinnedPath } from "../../stores/files"
 import { useWorkspaceStore } from "../../stores/workspace"
+import { FileIcon, DirIcon } from "../files/fileIcons"
 import {
   ChevronRight,
   ChevronDown,
@@ -140,7 +141,7 @@ function PinnedSection({ pins }: { pins: PinnedPath[] }) {
                   openFileTab(`${pin.container}:${pin.path}`, name, pin.container)
                 }}
               >
-                <File className="w-3.5 h-3.5 shrink-0 text-text-weaker" />
+                <FileIcon filename={name} size="sm" />
                 <span className="truncate font-sans text-text-weak flex-1">{name}</span>
                 <span className="text-[9px] text-text-weaker font-sans mr-1">{pin.container}</span>
                 <button
@@ -531,13 +532,18 @@ function HostDir({ path, onRemove }: { path: string; onRemove: () => void }) {
               onCancel={() => setCreating(null)}
             />
           )}
-          {children.map((entry) =>
-            entry.type === "dir" ? (
-              <HostTreeDir key={entry.path} path={entry.path} name={entry.name} depth={1} />
-            ) : (
-              <HostTreeFile key={entry.path} entry={entry} depth={1} />
-            ),
-          )}
+          {[...children]
+            .sort((a, b) => {
+              if (a.type !== b.type) return a.type === "dir" ? -1 : 1
+              return a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+            })
+            .map((entry) =>
+              entry.type === "dir" ? (
+                <HostTreeDir key={entry.path} path={entry.path} name={entry.name} depth={1} />
+              ) : (
+                <HostTreeFile key={entry.path} entry={entry} depth={1} />
+              ),
+            )}
         </div>
       )}
     </div>
@@ -658,13 +664,18 @@ function HostTreeDir({ path, name, depth }: { path: string; name: string; depth:
               onCancel={() => setCreating(null)}
             />
           )}
-          {children.map((entry) =>
-            entry.type === "dir" ? (
-              <HostTreeDir key={entry.path} path={entry.path} name={entry.name} depth={depth + 1} />
-            ) : (
-              <HostTreeFile key={entry.path} entry={entry} depth={depth + 1} />
-            ),
-          )}
+          {[...children]
+            .sort((a, b) => {
+              if (a.type !== b.type) return a.type === "dir" ? -1 : 1
+              return a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+            })
+            .map((entry) =>
+              entry.type === "dir" ? (
+                <HostTreeDir key={entry.path} path={entry.path} name={entry.name} depth={depth + 1} />
+              ) : (
+                <HostTreeFile key={entry.path} entry={entry} depth={depth + 1} />
+              ),
+            )}
         </div>
       )}
     </div>
@@ -715,7 +726,7 @@ function HostTreeFile({ entry, depth }: { entry: FileEntry; depth: number }) {
           openFileTab(`host:${entry.path}`, entry.name, "__host__")
         }}
       >
-        <File className="w-3.5 h-3.5 shrink-0 text-text-weaker" />
+        <FileIcon filename={entry.name} size="sm" />
         <span className="truncate font-sans flex-1">{entry.name}</span>
 
         <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
@@ -1052,11 +1063,7 @@ function TreeDir({
           ) : (
             <ChevronRight className="w-3 h-3 shrink-0 text-text-weaker" />
           )}
-          {expanded ? (
-            <FolderOpen className="w-3.5 h-3.5 shrink-0 text-text-weak" />
-          ) : (
-            <Folder className="w-3.5 h-3.5 shrink-0 text-text-weak" />
-          )}
+          <DirIcon name={name} expanded={expanded} size="sm" />
           <span className="truncate font-sans text-text-weak flex-1">{name}</span>
 
           {/* Hover actions */}
@@ -1093,7 +1100,7 @@ function TreeDir({
       )}
 
       {expanded && (
-        <div>
+        <div className="ml-[7px] border-l border-border-weak/30">
           {/* Inline create input */}
           {creating && (
             <InlineInput
@@ -1114,24 +1121,29 @@ function TreeDir({
             />
           )}
 
-          {children.map((entry) =>
-            entry.type === "dir" ? (
-              <TreeDir
-                key={entry.path}
-                container={container}
-                path={entry.path}
-                name={entry.name}
-                depth={depth + 1}
-              />
-            ) : (
-              <TreeFile
-                key={entry.path}
-                container={container}
-                entry={entry}
-                depth={depth + 1}
-              />
-            ),
-          )}
+          {[...children]
+            .sort((a, b) => {
+              if (a.type !== b.type) return a.type === "dir" ? -1 : 1
+              return a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+            })
+            .map((entry) =>
+              entry.type === "dir" ? (
+                <TreeDir
+                  key={entry.path}
+                  container={container}
+                  path={entry.path}
+                  name={entry.name}
+                  depth={depth + 1}
+                />
+              ) : (
+                <TreeFile
+                  key={entry.path}
+                  container={container}
+                  entry={entry}
+                  depth={depth + 1}
+                />
+              ),
+            )}
         </div>
       )}
     </div>
@@ -1211,7 +1223,7 @@ function TreeFile({
         e.dataTransfer.effectAllowed = "copyMove"
       }}
     >
-      <File className="w-3.5 h-3.5 shrink-0 text-text-weaker" />
+      <FileIcon filename={entry.name} size="sm" />
       <span className="truncate font-sans flex-1">{entry.name}</span>
 
       <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">

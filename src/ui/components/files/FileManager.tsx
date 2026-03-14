@@ -2,25 +2,15 @@ import { useState, useEffect, useCallback } from "react"
 import { useFileStore, type FileEntry } from "../../stores/files"
 import { useProjectStore } from "../../stores/project"
 import { useWorkspaceStore } from "../../stores/workspace"
+import { FileIcon, DirIcon } from "./fileIcons"
 import {
   ChevronRight,
   Home,
   FolderOpen,
   Folder,
   File,
-  FileText,
-  FileCode,
-  FileImage,
-  FileVideo,
-  FileAudio,
-  FileArchive,
-  FileSpreadsheet,
-  FileJson,
-  Shield,
   Terminal as TerminalIcon,
-  Database,
   Settings,
-  Key,
   LayoutGrid,
   List,
   ArrowLeft,
@@ -30,84 +20,10 @@ import {
   ChevronDown,
   Star,
   Clock,
-  Download,
-  HardDrive,
   Loader2,
 } from "lucide-react"
 
-// ─── File type icon mapping ─────────────────────────────────────
-
-function getFileIcon(name: string, type: "file" | "dir") {
-  if (type === "dir") return <Folder className="w-4 h-4 text-amber-400" />
-
-  const ext = name.split(".").pop()?.toLowerCase() || ""
-  const lower = name.toLowerCase()
-
-  // Images
-  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico"].includes(ext))
-    return <FileImage className="w-4 h-4 text-purple-400" />
-
-  // Video
-  if (["mp4", "mkv", "avi", "mov", "webm"].includes(ext))
-    return <FileVideo className="w-4 h-4 text-pink-400" />
-
-  // Audio
-  if (["mp3", "wav", "ogg", "flac", "aac"].includes(ext))
-    return <FileAudio className="w-4 h-4 text-green-400" />
-
-  // Archives
-  if (["zip", "tar", "gz", "bz2", "xz", "7z", "rar", "deb", "rpm"].includes(ext))
-    return <FileArchive className="w-4 h-4 text-amber-500" />
-
-  // Code
-  if (["js", "jsx", "ts", "tsx", "py", "rb", "rs", "go", "java", "c", "cpp", "h", "cs", "php", "swift", "kt"].includes(ext))
-    return <FileCode className="w-4 h-4 text-blue-400" />
-
-  // Markdown / text
-  if (["md", "mdx", "rst", "txt", "log"].includes(ext))
-    return <FileText className="w-4 h-4 text-text-weak" />
-
-  // JSON / YAML / TOML
-  if (["json", "jsonl"].includes(ext))
-    return <FileJson className="w-4 h-4 text-yellow-400" />
-  if (["yaml", "yml", "toml", "ini", "cfg"].includes(ext))
-    return <Settings className="w-4 h-4 text-text-weaker" />
-
-  // Shell / scripts
-  if (["sh", "bash", "zsh", "fish", "ps1"].includes(ext))
-    return <TerminalIcon className="w-4 h-4 text-green-400" />
-
-  // Database
-  if (["sql", "sqlite", "db"].includes(ext))
-    return <Database className="w-4 h-4 text-cyan-400" />
-
-  // Spreadsheet / CSV
-  if (["csv", "tsv", "xls", "xlsx"].includes(ext))
-    return <FileSpreadsheet className="w-4 h-4 text-green-500" />
-
-  // Security / pentest
-  if (["pem", "crt", "key", "pub", "ovpn", "conf"].includes(ext))
-    return <Key className="w-4 h-4 text-red-400" />
-  if (["nse", "xml"].includes(ext) || lower.includes("nmap"))
-    return <Shield className="w-4 h-4 text-cyan-400" />
-
-  // Binaries / executables
-  if (["bin", "exe", "elf", "so", "dll", "o"].includes(ext))
-    return <HardDrive className="w-4 h-4 text-text-weaker" />
-
-  return <File className="w-4 h-4 text-text-weaker" />
-}
-
-function getDirIcon(name: string) {
-  const lower = name.toLowerCase()
-  if (lower === "workspace") return <FolderOpen className="w-4 h-4 text-accent" />
-  if (lower === ".git") return <Folder className="w-4 h-4 text-orange-400" />
-  if (["node_modules", "venv", "__pycache__", ".cache"].includes(lower))
-    return <Folder className="w-4 h-4 text-text-weaker" />
-  if (["tools", "bin", "sbin"].includes(lower))
-    return <Folder className="w-4 h-4 text-green-400" />
-  return <Folder className="w-4 h-4 text-amber-400" />
-}
+// File icons provided by shared fileIcons module (material-file-icons, 377 icons)
 
 // ─── Sidebar shortcuts ──────────────────────────────────────────
 
@@ -524,7 +440,7 @@ function ListView({
             className={`w-full grid grid-cols-[1fr_80px_120px] gap-2 px-3 py-1 items-center hover:bg-surface-1 transition-colors group text-left ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
           >
             <div className="flex items-center gap-2 min-w-0">
-              {entry.type === "dir" ? getDirIcon(entry.name) : getFileIcon(entry.name, entry.type)}
+              {entry.type === "dir" ? <DirIcon name={entry.name} size="md" /> : <FileIcon filename={entry.name} size="md" />}
               <span className="text-[12px] font-sans text-text-base truncate group-hover:text-text-strong">
                 {entry.name}
               </span>
@@ -578,7 +494,7 @@ function GridView({
                 <Folder className="w-8 h-8 text-amber-400" />
               ) : (
                 <div className="scale-[2]">
-                  {getFileIcon(entry.name, entry.type)}
+                  {<FileIcon filename={entry.name} size="md" />}
                 </div>
               )}
             </div>
