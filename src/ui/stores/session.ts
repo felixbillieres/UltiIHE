@@ -345,7 +345,10 @@ export const useSessionStore = create<SessionStore>()(
     {
       name: "ultiIHE-sessions",
       partialize: (state) => ({
-        sessions: state.sessions.slice(0, 50),
+        sessions: state.sessions.slice(0, 50).map(s => ({
+          ...s,
+          messages: s.messages.slice(-100), // keep last 100 messages per session
+        })),
         activeSessionIdByProject: state.activeSessionIdByProject,
         // _undoBuffer is intentionally excluded (ephemeral)
       }),

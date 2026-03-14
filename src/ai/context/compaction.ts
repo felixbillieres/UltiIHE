@@ -62,7 +62,7 @@ Be thorough but concise. Include ALL technical details (IPs, ports, credentials,
  * @returns System prompt and messages for the compaction LLM call
  */
 export function buildCompactionRequest(
-  conversationMessages: Array<{ role: string; content: string }>,
+  conversationMessages: Array<{ role: string; content: string | any[] }>,
 ): {
   system: string
   messages: Array<{ role: string; content: string }>
@@ -71,10 +71,26 @@ export function buildCompactionRequest(
   const condensed = conversationMessages
     .map((msg) => {
       const role = msg.role === "assistant" ? "Assistant" : msg.role === "user" ? "User" : "System"
+      // Flatten array content to text for compaction
+      let text: string
+      if (typeof msg.content === "string") {
+        text = msg.content
+      } else if (Array.isArray(msg.content)) {
+        text = msg.content
+          .map((part: any) => {
+            if (part.type === "text" && typeof part.text === "string") return part.text
+            if (part.type === "image") return "[image]"
+            return ""
+          })
+          .filter(Boolean)
+          .join("\n")
+      } else {
+        text = String(msg.content ?? "")
+      }
       // Truncate very long messages for the compaction input
-      const content = msg.content.length > 2000
-        ? msg.content.slice(0, 1000) + "\n[...truncated...]\n" + msg.content.slice(-800)
-        : msg.content
+      const content = text.length > 2000
+        ? text.slice(0, 1000) + "\n[...truncated...]\n" + text.slice(-800)
+        : text
       return `### ${role}\n${content}`
     })
     .join("\n\n---\n\n")

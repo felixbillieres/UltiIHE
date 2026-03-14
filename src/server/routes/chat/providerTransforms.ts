@@ -96,18 +96,22 @@ export function filterUnsupportedParts(
 // ── Internal helpers ──────────────────────────────────────────────
 
 function filterEmptyMessages(messages: any[]): any[] {
-  return messages.filter((msg) => {
-    if (typeof msg.content === "string") return msg.content.length > 0
-    if (Array.isArray(msg.content)) {
-      const filtered = msg.content.filter((part: any) => {
-        if (part.type === "text" && (!part.text || part.text.length === 0)) return false
-        return true
-      })
-      if (filtered.length === 0) return false
-      msg.content = filtered
-    }
-    return true
-  })
+  return messages
+    .map((msg) => {
+      if (typeof msg.content === "string") {
+        return msg.content.length > 0 ? msg : undefined
+      }
+      if (Array.isArray(msg.content)) {
+        const filtered = msg.content.filter((part: any) => {
+          if (part.type === "text" && (!part.text || part.text.length === 0)) return false
+          return true
+        })
+        if (filtered.length === 0) return undefined
+        return { ...msg, content: filtered }
+      }
+      return msg
+    })
+    .filter((msg): msg is any => msg !== undefined)
 }
 
 /** Anthropic rejects empty text/reasoning parts inside arrays */

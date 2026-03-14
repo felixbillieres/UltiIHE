@@ -5,6 +5,7 @@
 
 const MAX_OUTPUT = 50 * 1024 // 50KB
 const DEFAULT_TIMEOUT = 30_000 // 30s
+const CONTAINER_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
 
 export interface ExecResult {
   stdout: string
@@ -17,6 +18,10 @@ export async function dockerExec(
   command: string,
   options: { timeout?: number; stdin?: string; maxOutput?: number } = {},
 ): Promise<ExecResult> {
+  if (!CONTAINER_NAME_RE.test(container)) {
+    throw new Error(`Invalid container name: ${container}`)
+  }
+
   const { timeout = DEFAULT_TIMEOUT, stdin, maxOutput = MAX_OUTPUT } = options
 
   const args = stdin

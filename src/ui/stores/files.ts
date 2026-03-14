@@ -247,9 +247,17 @@ export const useFileStore = create<FileStore>()(
       const data = await res.json()
       const entries: FileEntry[] = data.entries || []
 
-      set((s) => ({
-        dirCache: { ...s.dirCache, [key]: entries },
-      }))
+      set((s) => {
+        const newCache = { ...s.dirCache, [key]: entries }
+        // LRU eviction: if cache exceeds 100 entries, drop 20 oldest
+        const keys = Object.keys(newCache)
+        if (keys.length > 100) {
+          for (const k of keys.slice(0, 20)) {
+            delete newCache[k]
+          }
+        }
+        return { dirCache: newCache }
+      })
 
       return entries
     } catch {
@@ -508,7 +516,16 @@ export const useFileStore = create<FileStore>()(
       const res = await fetch(`/api/files/host/list?path=${encodeURIComponent(path)}`)
       const data = await res.json()
       const entries: FileEntry[] = data.entries || []
-      set((s) => ({ dirCache: { ...s.dirCache, [key]: entries } }))
+      set((s) => {
+        const newCache = { ...s.dirCache, [key]: entries }
+        const keys = Object.keys(newCache)
+        if (keys.length > 100) {
+          for (const k of keys.slice(0, 20)) {
+            delete newCache[k]
+          }
+        }
+        return { dirCache: newCache }
+      })
       return entries
     } catch {
       return []

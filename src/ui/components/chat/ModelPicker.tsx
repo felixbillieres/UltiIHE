@@ -88,6 +88,15 @@ export function ModelPicker({
     return () => window.removeEventListener("mousedown", close)
   }, [onClose, anchorRef])
 
+  // Escape key to close picker
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose() }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [onClose])
+
   const configuredProviderIds = new Set(
     providers.filter((p) => p.enabled && p.apiKey).map((p) => p.id),
   )

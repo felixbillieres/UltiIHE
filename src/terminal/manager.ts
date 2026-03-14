@@ -116,7 +116,7 @@ class TerminalManager {
     // for user-created terminals, but AI-created ones bypass that handler.
     this._broadcast(terminal.id, {
       type: "terminal:created",
-      data: { terminalId: terminal.id, name: terminal.name, container },
+      data: { terminalId: terminal.id, name: terminal.name, container, aiCreated: true },
     })
     return terminal
   }

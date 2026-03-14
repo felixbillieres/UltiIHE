@@ -8,15 +8,19 @@ import { useWebSocket } from "../../hooks/useWebSocket"
 import {
   Brain,
   Eye,
+  EyeOff,
   Wrench,
   ChevronDown,
   Cpu,
   Loader2,
   Gauge,
   Zap,
+  LayoutGrid,
+  SlidersHorizontal,
 } from "lucide-react"
 import { ModelPicker } from "./ModelPicker"
 import { ProviderIcon } from "../provider-icons/ProviderIcon"
+import { useTerminalStore } from "../../stores/terminal"
 
 function Separator() {
   return <div className="w-px h-4 bg-border-weak shrink-0" />
@@ -169,13 +173,33 @@ export function ControlBar() {
   const setApprovalMode = useCommandApprovalStore((s) => s.setMode)
   const { send: wsSend } = useWebSocket()
 
+  const followAssistant = useTerminalStore((s) => s.followAssistant)
+  const toggleFollow = useTerminalStore((s) => s.toggleFollowAssistant)
+  const aiTerminalMode = useTerminalStore((s) => s.aiTerminalMode)
+  const setAITerminalMode = useTerminalStore((s) => s.setAITerminalMode)
+  const toggleSplitMode = () => {
+    setAITerminalMode(aiTerminalMode === "tabs" ? "split" : "tabs")
+  }
+
   const server = useLocalAIStore((s) => s.server)
   const serverStarting = useLocalAIStore((s) => s.serverStarting)
   const serverError = useLocalAIStore((s) => s.serverError)
   const modelInfo = getActiveModelInfo()
 
   const [showModelPicker, setShowModelPicker] = useState(false)
+  const [showBehavior, setShowBehavior] = useState(false)
   const modelBtnRef = useRef<HTMLButtonElement>(null)
+  const behaviorBtnRef = useRef<HTMLButtonElement>(null)
+
+  // Escape key to close AI behavior popover
+  useEffect(() => {
+    if (!showBehavior) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); setShowBehavior(false) }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [showBehavior])
 
   // For local models, show the catalog name
   const localCatalog = useLocalAIStore((s) => s.catalog)
@@ -298,28 +322,101 @@ export function ControlBar() {
 
       <Separator />
 
-      {/* YOLO mode toggle — auto-run all commands and tools without asking */}
-      <CapBadge
-        icon={<Zap className="w-3 h-3" />}
-        label="YOLO"
-        active={approvalMode !== "ask"}
-        onClick={() => {
-          if (approvalMode === "ask") {
-            setApprovalMode("auto-run")
-            wsSend({ type: "command:set-mode", data: { mode: "auto-run" } })
-            wsSend({ type: "tool:set-mode", data: { mode: "auto-run" } })
-            toast.success("YOLO mode ON — commands & tools run without approval")
-          } else {
-            setApprovalMode("ask")
-            wsSend({ type: "command:set-mode", data: { mode: "ask" } })
-            wsSend({ type: "tool:set-mode", data: { mode: "ask" } })
-            toast("YOLO mode OFF — back to approval mode")
-          }
-        }}
-        title={approvalMode !== "ask"
-          ? "YOLO mode ON — click to require approval"
-          : "Click to enable YOLO mode (auto-run commands & tools)"}
-      />
+      {/* AI behavior popover — YOLO, follow, split */}
+      <div className="relative shrink-0">
+        <button
+          ref={behaviorBtnRef}
+          onClick={() => setShowBehavior(!showBehavior)}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans transition-colors cursor-pointer ${
+            approvalMode !== "ask" || followAssistant || aiTerminalMode === "split"
+              ? "bg-accent/10 text-accent hover:bg-accent/15"
+              : "bg-surface-2 text-text-weaker hover:bg-surface-3"
+          }`}
+          title="AI behavior settings"
+        >
+          <SlidersHorizontal className="w-3 h-3" />
+        </button>
+
+        {showBehavior && (
+          <>
+            {/* Backdrop */}
+            <div className="fixed inset-0 z-40" onClick={() => setShowBehavior(false)} />
+            {/* Popover */}
+            <div className="absolute bottom-full right-0 mb-2 z-50 w-52 bg-surface-2 border border-border-base rounded-lg shadow-xl overflow-hidden">
+              <div className="px-3 py-2 border-b border-border-weak">
+                <span className="text-[10px] text-text-weaker font-sans font-medium uppercase tracking-wider">
+                  AI Behavior
+                </span>
+              </div>
+
+              {/* YOLO */}
+              <button
+                onClick={() => {
+                  if (approvalMode === "ask") {
+                    setApprovalMode("auto-run")
+                    wsSend({ type: "command:set-mode", data: { mode: "auto-run" } })
+                    wsSend({ type: "tool:set-mode", data: { mode: "auto-run" } })
+                    toast.success("YOLO mode ON — commands & tools run without approval")
+                  } else {
+                    setApprovalMode("ask")
+                    wsSend({ type: "command:set-mode", data: { mode: "ask" } })
+                    wsSend({ type: "tool:set-mode", data: { mode: "ask" } })
+                    toast("YOLO mode OFF — back to approval mode")
+                  }
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-surface-3 transition-colors"
+              >
+                <Zap className={`w-3.5 h-3.5 shrink-0 ${approvalMode !== "ask" ? "text-accent" : "text-text-weaker"}`} />
+                <div className="flex-1 text-left">
+                  <div className="text-[11px] font-sans text-text-base">YOLO Mode</div>
+                  <div className="text-[9px] font-sans text-text-weaker">Auto-run commands & tools</div>
+                </div>
+                <div className={`w-7 h-4 rounded-full transition-colors flex items-center ${
+                  approvalMode !== "ask" ? "bg-accent justify-end" : "bg-surface-0 justify-start"
+                }`}>
+                  <div className="w-3 h-3 rounded-full bg-white mx-0.5 shadow-sm" />
+                </div>
+              </button>
+
+              {/* Follow */}
+              <button
+                onClick={toggleFollow}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-surface-3 transition-colors"
+              >
+                {followAssistant
+                  ? <Eye className="w-3.5 h-3.5 shrink-0 text-accent" />
+                  : <EyeOff className="w-3.5 h-3.5 shrink-0 text-text-weaker" />}
+                <div className="flex-1 text-left">
+                  <div className="text-[11px] font-sans text-text-base">Follow AI</div>
+                  <div className="text-[9px] font-sans text-text-weaker">Auto-focus active terminal</div>
+                </div>
+                <div className={`w-7 h-4 rounded-full transition-colors flex items-center ${
+                  followAssistant ? "bg-accent justify-end" : "bg-surface-0 justify-start"
+                }`}>
+                  <div className="w-3 h-3 rounded-full bg-white mx-0.5 shadow-sm" />
+                </div>
+              </button>
+
+              {/* Split */}
+              <button
+                onClick={toggleSplitMode}
+                className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-surface-3 transition-colors"
+              >
+                <LayoutGrid className={`w-3.5 h-3.5 shrink-0 ${aiTerminalMode === "split" ? "text-accent" : "text-text-weaker"}`} />
+                <div className="flex-1 text-left">
+                  <div className="text-[11px] font-sans text-text-base">Split Grid</div>
+                  <div className="text-[9px] font-sans text-text-weaker">AI terminals in 2x2 grid</div>
+                </div>
+                <div className={`w-7 h-4 rounded-full transition-colors flex items-center ${
+                  aiTerminalMode === "split" ? "bg-accent justify-end" : "bg-surface-0 justify-start"
+                }`}>
+                  <div className="w-3 h-3 rounded-full bg-white mx-0.5 shadow-sm" />
+                </div>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       <Separator />
 

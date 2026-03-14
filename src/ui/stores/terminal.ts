@@ -1,5 +1,11 @@
 import { create } from "zustand"
 
+// ─── Persistence keys ─────────────────────────────────────────
+const FOLLOW_KEY = "ultiIHE-follow-assistant"
+const AI_TERM_MODE_KEY = "ultiIHE-ai-terminal-mode"
+
+export type AITerminalMode = "tabs" | "split"
+
 // ─── Data types ───────────────────────────────────────────────
 
 export interface TerminalInstance {
@@ -51,11 +57,24 @@ interface TerminalStore {
   /** Currently active project for layout scoping */
   _currentProjectId: string | null
 
+  /** Follow assistant mode — auto-focus terminal when AI writes to it */
+  followAssistant: boolean
+  toggleFollowAssistant: () => void
+
+  /** How AI-created terminals appear: as tabs or as splits */
+  aiTerminalMode: AITerminalMode
+  setAITerminalMode: (mode: AITerminalMode) => void
+
   // Terminal CRUD
   addTerminal: (terminal: TerminalInstance, groupId?: string) => void
+  /** Add a terminal in split grid mode (2x2 max, then tabs in smallest group) */
+  addTerminalInSplit: (terminal: TerminalInstance) => void
   removeTerminal: (id: string) => void
   renameTerminal: (id: string, name: string) => void
   setNotification: (id: string, has: boolean) => void
+
+  /** Focus the terminal the AI is writing to (if follow mode is on) */
+  focusTerminalById: (terminalId: string) => void
 
   // Group/layout actions
   focusGroup: (groupId: string) => void
@@ -162,6 +181,24 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
   _projectState: {},
   _currentProjectId: null,
 
+  followAssistant: (() => {
+    try { return localStorage.getItem(FOLLOW_KEY) !== "false" } catch { return true }
+  })(),
+  toggleFollowAssistant: () =>
+    set((state) => {
+      const next = !state.followAssistant
+      try { localStorage.setItem(FOLLOW_KEY, String(next)) } catch { /* ignore */ }
+      return { followAssistant: next }
+    }),
+
+  aiTerminalMode: (() => {
+    try { return (localStorage.getItem(AI_TERM_MODE_KEY) as AITerminalMode) || "tabs" } catch { return "tabs" as AITerminalMode }
+  })(),
+  setAITerminalMode: (mode) => {
+    try { localStorage.setItem(AI_TERM_MODE_KEY, mode) } catch { /* ignore */ }
+    set({ aiTerminalMode: mode })
+  },
+
   addTerminal: (terminal, groupId) =>
     set((state) => {
       const targetGroupId = groupId || state.focusedGroupId
@@ -203,6 +240,120 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
         activeTerminalId: terminal.id,
       }
     }),
+
+  addTerminalInSplit: (terminal) =>
+    set((state) => {
+      const panelCount = state.groups.length
+
+      // 4+ panels already → add as tab in the group with fewest terminals
+      if (panelCount >= 4) {
+        const smallest = [...state.groups].sort(
+          (a, b) => a.terminalIds.length - b.terminalIds.length,
+        )[0]
+        return {
+          terminals: [...state.terminals, terminal],
+          groups: state.groups.map((g) =>
+            g.id === smallest.id
+              ? {
+                  ...g,
+                  terminalIds: [...g.terminalIds, terminal.id],
+                  activeTerminalId: terminal.id,
+                }
+              : g,
+          ),
+          activeTerminalId: terminal.id,
+          focusedGroupId: smallest.id,
+        }
+      }
+
+      // Create a new group for the new terminal
+      const gId = newGroupId()
+      const newGroup: TerminalGroup = {
+        id: gId,
+        terminalIds: [terminal.id],
+        activeTerminalId: terminal.id,
+      }
+      const newTerminals = [...state.terminals, terminal]
+      const newGroups = [...state.groups, newGroup]
+      const leaf: LayoutNode = { type: "leaf" as const, groupId: gId }
+
+      let newLayout: LayoutNode
+
+      if (panelCount === 0 || !state.layout) {
+        // 0 panels → single leaf
+        newLayout = leaf
+      } else if (panelCount === 1) {
+        // 1 panel → split horizontal: [existing, new] side by side
+        newLayout = {
+          type: "split",
+          direction: "horizontal",
+          children: [state.layout, leaf],
+          sizes: [50, 50],
+        }
+      } else if (panelCount === 2) {
+        // 2 panels (horizontal split) → split left child vertically
+        // Before: H[left, right]
+        // After:  H[V[left, new], right]
+        if (state.layout.type === "split") {
+          newLayout = {
+            ...state.layout,
+            children: [
+              {
+                type: "split",
+                direction: "vertical",
+                children: [state.layout.children[0], leaf],
+                sizes: [50, 50],
+              },
+              state.layout.children[1],
+            ],
+          }
+        } else {
+          newLayout = { type: "split", direction: "horizontal", children: [state.layout, leaf], sizes: [50, 50] }
+        }
+      } else {
+        // 3 panels → split right child vertically to get 2x2 grid
+        // Before: H[V[TL, BL], right]
+        // After:  H[V[TL, BL], V[right, new]]
+        if (state.layout.type === "split") {
+          newLayout = {
+            ...state.layout,
+            children: [
+              state.layout.children[0],
+              {
+                type: "split",
+                direction: "vertical",
+                children: [state.layout.children[1], leaf],
+                sizes: [50, 50],
+              },
+            ],
+          }
+        } else {
+          newLayout = { type: "split", direction: "horizontal", children: [state.layout, leaf], sizes: [50, 50] }
+        }
+      }
+
+      return {
+        terminals: newTerminals,
+        groups: newGroups,
+        layout: newLayout,
+        focusedGroupId: gId,
+        activeTerminalId: terminal.id,
+      }
+    }),
+
+  focusTerminalById: (terminalId) => {
+    const state = get()
+    const group = findGroupForTerminal(state.groups, terminalId)
+    if (!group) return
+    // Switch tab + group focus to this terminal
+    set({
+      groups: state.groups.map((g) =>
+        g.id === group.id ? { ...g, activeTerminalId: terminalId } : g,
+      ),
+      focusedGroupId: group.id,
+      activeTerminalId: terminalId,
+    })
+  },
 
   removeTerminal: (id) =>
     set((state) => {

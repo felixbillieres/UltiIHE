@@ -13,11 +13,19 @@
 const CHARS_PER_TOKEN = 4
 
 /**
- * Estimate token count for a string.
+ * Estimate token count for a string or array of content parts.
  */
-export function estimateTokens(text: string): number {
-  if (!text) return 0
-  return Math.ceil(text.length / CHARS_PER_TOKEN)
+export function estimateTokens(content: string | any[]): number {
+  if (!content) return 0
+  if (typeof content === "string") return Math.ceil(content.length / CHARS_PER_TOKEN)
+  if (Array.isArray(content)) {
+    return content.reduce((sum, part) => {
+      if (part.type === "text" && typeof part.text === "string") return sum + Math.ceil(part.text.length / CHARS_PER_TOKEN)
+      if (part.type === "image") return sum + 1000 // rough estimate for images
+      return sum + 50 // fallback for unknown parts
+    }, 0)
+  }
+  return 50
 }
 
 /**

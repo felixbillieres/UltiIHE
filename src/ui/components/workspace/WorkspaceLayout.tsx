@@ -7,6 +7,7 @@ import { useTerminalStore } from "../../stores/terminal"
 import { useWorkspaceStore } from "../../stores/workspace"
 import { useFileStore } from "../../stores/files"
 import { useChatContextStore } from "../../stores/chatContext"
+import { switchProject as orchestratorSwitchProject } from "../../stores/orchestrator"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useToolApprovalStore } from "../../stores/toolApproval"
@@ -72,14 +73,14 @@ export function WorkspaceLayout({ project }: Props) {
   // ── Project switch: scope all stores to the new project ──
   const prevProjectIdRef = useRef(project.id)
   useEffect(() => {
-    // Notify all per-project stores about the project switch
-    useTerminalStore.getState().switchProject(project.id)
-    useWorkspaceStore.getState().switchProject(project.id)
-    useFileStore.getState().switchProject(project.id)
-
-    // Clear transient chat context (quotes/images don't belong to new project)
     if (prevProjectIdRef.current !== project.id) {
-      useChatContextStore.getState().clearAll()
+      // Orchestrator resets all per-project stores at once
+      orchestratorSwitchProject(project.id)
+    } else {
+      // Initial mount — just scope the per-project stores
+      useTerminalStore.getState().switchProject(project.id)
+      useWorkspaceStore.getState().switchProject(project.id)
+      useFileStore.getState().switchProject(project.id)
     }
     prevProjectIdRef.current = project.id
   }, [project.id])
@@ -208,8 +209,8 @@ export function WorkspaceLayout({ project }: Props) {
             projects={projects}
             onNavigateHome={() => navigate("/")}
             onSwitchProject={(id) => {
-              // Switch project — per-project stores will scope on next render via useEffect
-              setActiveProject(id)
+              // Switch project — orchestrator resets all per-project stores at once
+              orchestratorSwitchProject(id)
               navigate(`/project/${id}`)
             }}
             onOpenSettings={() => setShowSettings(true)}

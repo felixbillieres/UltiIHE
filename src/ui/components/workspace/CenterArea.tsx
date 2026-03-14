@@ -15,6 +15,7 @@ import { PopOutPortal } from "./PopOutPortal"
 import { PopOutGhost } from "./PopOutGhost"
 import { Terminal, FileText, Globe, Loader2, X, ExternalLink } from "lucide-react"
 import { ContainerPickerModal } from "../terminal/WebToolModals"
+import { useResizeHandle } from "../../hooks/useResizeHandle"
 
 // ─── Tool panel renderer ────────────────────────────────────
 
@@ -197,6 +198,7 @@ export function CenterArea({
   const reattach = usePopOutStore((s) => s.reattach)
 
   const addTerminal = useTerminalStore((s) => s.addTerminal)
+  const addTerminalInSplit = useTerminalStore((s) => s.addTerminalInSplit)
   const terminalGroups = useTerminalStore((s) => s.groups)
   const terminalLayout = useTerminalStore((s) => s.layout)
   const isSplit = terminalGroups.length > 1
@@ -207,6 +209,18 @@ export function CenterArea({
   const stopTool = useWebToolsStore((s) => s.stopTool)
 
   const [bottomDragging, setBottomDragging] = useState(false)
+  const bottomStartHeightRef = useRef(bottomPanelHeight)
+  const bottomResizeMouseDown = useResizeHandle(
+    "vertical",
+    (delta) => {
+      // delta is (currentY - startY); dragging up = negative delta = bigger panel
+      onResizeBottomPanel(Math.max(150, Math.min(bottomStartHeightRef.current - delta, 600)))
+    },
+    (dragging) => {
+      if (dragging) bottomStartHeightRef.current = bottomPanelHeight
+      setBottomDragging(dragging)
+    },
+  )
   const [pendingToolId, setPendingToolId] = useState<string | null>(null)
   const hasContainers = project.containerIds.length > 0
 
@@ -239,24 +253,68 @@ export function CenterArea({
         const serverId = msg.data.terminalId as string
         const name = (msg.data.name as string) || serverId.slice(0, 8)
         const containerName = (msg.data.container as string) || "unknown"
+        const aiCreated = !!msg.data.aiCreated
 
         const termState = useTerminalStore.getState()
         if (!termState.terminals.find((t) => t.id === serverId)) {
-          addTerminal({
+          const newTerm = {
             id: serverId,
             name,
             container: containerName,
             projectId: project.id,
             createdAt: Date.now(),
             hasNotification: false,
-          })
+          }
+
+          // AI-created terminals respect the aiTerminalMode setting
+          if (aiCreated && termState.aiTerminalMode === "split") {
+            addTerminalInSplit(newTerm)
+          } else {
+            addTerminal(newTerm)
+          }
           // Also create a workspace tab
           openTerminalTab(serverId, name, containerName)
         }
       }
     })
     return unsubscribe
-  }, [subscribe, addTerminal, openTerminalTab, project.id])
+  }, [subscribe, addTerminal, addTerminalInSplit, openTerminalTab, project.id])
+
+  // Follow assistant: auto-focus terminal when AI executes a command
+  // When not following, show notification badge on the target terminal tab
+  useEffect(() => {
+    const unsubscribe = subscribe((msg: any) => {
+      let targetTerminalId: string | null = null
+
+      if (msg.type === "command:executed" && msg.data?.terminalId) {
+        targetTerminalId = msg.data.terminalId
+      } else if (msg.type === "ops:update" && msg.data?.op?.status === "running" && msg.data?.op?.terminalId) {
+        targetTerminalId = msg.data.op.terminalId
+      }
+
+      if (!targetTerminalId) return
+
+      const termState = useTerminalStore.getState()
+
+      if (termState.followAssistant) {
+        termState.focusTerminalById(targetTerminalId)
+        // Also switch workspace tab to terminal
+        const wsState = useWorkspaceStore.getState()
+        const termTab = wsState.tabs.find(
+          (t) => t.type === "terminal" && t.terminalId === targetTerminalId,
+        )
+        if (termTab) {
+          wsState.setActiveTab(termTab.id)
+        }
+      } else {
+        // Not following — show notification badge if this isn't the active terminal
+        if (termState.activeTerminalId !== targetTerminalId) {
+          termState.setNotification(targetTerminalId, true)
+        }
+      }
+    })
+    return unsubscribe
+  }, [subscribe])
 
   // When workspace tabs are removed, clean up the underlying resources
   useEffect(() => {
@@ -510,12 +568,18 @@ export function CenterArea({
             />
           ))}
 
-          {/* File editor — rendered for active file tab (excluding popped out) */}
-          {activeTab?.type === "file" && activeTab.fileId && !activeTabPoppedOut && (
-            <div className="absolute inset-0 bg-surface-0">
-              <FileEditorPane fileId={activeTab.fileId} />
+          {/* File editors — all open file tabs kept mounted with visibility toggle */}
+          {tabs.filter(t => t.type === "file" && t.fileId && !poppedOutTabIds.has(t.id)).map(tab => (
+            <div
+              key={tab.id}
+              className="absolute inset-0 bg-surface-0"
+              style={{
+                visibility: activeTab?.id === tab.id && !activeTabPoppedOut ? "visible" : "hidden"
+              }}
+            >
+              <FileEditorPane fileId={tab.fileId!} />
             </div>
-          )}
+          ))}
 
           {/* Empty state */}
           {!activeTab && <EmptyWorkspace hasContainers={hasContainers} />}
@@ -531,29 +595,7 @@ export function CenterArea({
                 ? "bg-accent/40"
                 : "bg-border-weak hover:bg-accent/20"
             }`}
-            onMouseDown={(e) => {
-              e.preventDefault()
-              setBottomDragging(true)
-              const startY = e.clientY
-              const startH = bottomPanelHeight
-              function onMove(ev: MouseEvent) {
-                const delta = startY - ev.clientY
-                onResizeBottomPanel(
-                  Math.max(150, Math.min(startH + delta, 600)),
-                )
-              }
-              function onUp() {
-                setBottomDragging(false)
-                document.removeEventListener("mousemove", onMove)
-                document.removeEventListener("mouseup", onUp)
-                document.body.style.cursor = ""
-                document.body.style.userSelect = ""
-              }
-              document.body.style.cursor = "row-resize"
-              document.body.style.userSelect = "none"
-              document.addEventListener("mousemove", onMove)
-              document.addEventListener("mouseup", onUp)
-            }}
+            onMouseDown={bottomResizeMouseDown}
           />
           <div
             className="shrink-0 overflow-hidden flex flex-col"

@@ -227,6 +227,7 @@ chatRoutes.post("/chat", async (c) => {
         system: systemPrompt,
         messages: processedMessages,
         tools,
+        maxOutputTokens: maxOutput,
         // Hide InvalidTool from model's active tools
         activeTools: Object.keys(tools).filter((t) => t !== "invalid"),
         // Adaptive steps based on context budget tier:
