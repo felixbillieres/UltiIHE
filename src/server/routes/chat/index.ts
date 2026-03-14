@@ -125,6 +125,8 @@ chatRoutes.post("/chat", async (c) => {
       "file_create_dir", "file_delete",
       "todo_read", "todo_write",
       "caido_read", "caido_scope",
+      "exh_read_creds", "exh_read_hosts", "exh_read_env",
+      "exh_add_cred", "exh_add_host",
     ]
 
     const prioritized = [...ESSENTIAL_TOOLS, ...SECONDARY_TOOLS, ...TERTIARY_TOOLS]

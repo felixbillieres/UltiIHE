@@ -1,16 +1,14 @@
 import { useState } from "react"
 import { type Project } from "../../stores/project"
 import { FileManager } from "../files/FileManager"
+import { ExhPanel } from "../exh/ExhPanel"
 import {
   FolderOpen,
   X,
-  ChevronDown,
-  ChevronUp,
-  Maximize2,
-  Minimize2,
+  KeyRound,
 } from "lucide-react"
 
-type BottomTab = "files"
+type BottomTab = "files" | "history"
 
 interface BottomPanelProps {
   project: Project
@@ -30,7 +28,12 @@ export function BottomPanel({ project, onClose }: BottomPanelProps) {
           icon={<FolderOpen className="w-3.5 h-3.5" />}
           label="Files"
         />
-        {/* Future tabs: Credentials, Screenshots, Vulnerabilities */}
+        <TabButton
+          active={activeTab === "history"}
+          onClick={() => setActiveTab("history")}
+          icon={<KeyRound className="w-3.5 h-3.5" />}
+          label="Exegol History"
+        />
         <div className="ml-auto flex items-center pr-1.5 gap-0.5">
           <button
             onClick={onClose}
@@ -46,6 +49,9 @@ export function BottomPanel({ project, onClose }: BottomPanelProps) {
       <div className="flex-1 min-h-0 overflow-hidden">
         {activeTab === "files" && (
           <FileManager containerIds={project.containerIds} />
+        )}
+        {activeTab === "history" && (
+          <ExhPanel containerIds={project.containerIds} />
         )}
       </div>
     </div>

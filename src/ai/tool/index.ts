@@ -20,6 +20,10 @@ import { webTools } from "./web-tools"
 import { todoTools } from "./todo-tools"
 import { userQuestionTool, createBatchTool } from "./workflow-tools"
 import { caidoTools } from "./caido-tools"
+import {
+  exhReadCredsTool, exhReadHostsTool, exhReadEnvTool,
+  exhAddCredTool, exhAddHostTool,
+} from "./exh-tools"
 import { toolApprovalQueue } from "./tool-approval"
 import { generateDiff } from "./file-tools"
 import { dockerExec, shellEscape } from "./exec"
@@ -159,6 +163,9 @@ const passthrough = {
   caido_read: caidoTools.caido_read,
   caido_scope: caidoTools.caido_scope,
   user_question: userQuestionTool,
+  exh_read_creds: exhReadCredsTool,
+  exh_read_hosts: exhReadHostsTool,
+  exh_read_env: exhReadEnvTool,
 }
 
 // ── Tools that need approval ────────────────────────────────────
@@ -185,6 +192,12 @@ const approved = {
   ),
   todo_write: withApproval("todo_write", todoTools.todo_write,
     () => "Update todo list",
+  ),
+  exh_add_cred: withApproval("exh_add_cred", exhAddCredTool,
+    (a) => `Add credential: ${a.username || ""}${a.domain ? `@${a.domain}` : ""}`,
+  ),
+  exh_add_host: withApproval("exh_add_host", exhAddHostTool,
+    (a) => `Add host: ${a.ip || ""}${a.hostname ? ` (${a.hostname})` : ""}`,
   ),
 }
 
@@ -213,6 +226,9 @@ export const readOnlyTools: Record<string, any> = {
   todo_read: todoTools.todo_read,
   caido_read: caidoTools.caido_read,
   caido_scope: caidoTools.caido_scope,
+  exh_read_creds: exhReadCredsTool,
+  exh_read_hosts: exhReadHostsTool,
+  exh_read_env: exhReadEnvTool,
   // web tools still need approval even in read-only mode
   web_fetch: approved.web_fetch,
   web_search: approved.web_search,
