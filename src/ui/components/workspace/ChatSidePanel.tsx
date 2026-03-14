@@ -168,24 +168,26 @@ function SessionSidebar({
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-weak shrink-0">
         <span className="text-xs text-text-strong font-sans font-medium">
-          Sessions
+          Agents
         </span>
-        <div className="flex items-center gap-0.5">
-          <button
-            onClick={() => startNewChat(projectId)}
-            className="p-1 rounded hover:bg-surface-2 transition-colors"
-            title="New session"
-          >
-            <Plus className="w-3.5 h-3.5 text-text-weaker" />
-          </button>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-surface-2 transition-colors"
-            title="Close"
-          >
-            <X className="w-3 h-3 text-text-weaker" />
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded hover:bg-surface-2 transition-colors"
+          title="Close"
+        >
+          <X className="w-3 h-3 text-text-weaker" />
+        </button>
+      </div>
+
+      {/* New Agent button — prominent like Cursor */}
+      <div className="px-2 pt-2 pb-1 shrink-0">
+        <button
+          onClick={() => startNewChat(projectId)}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-border-weak text-text-base text-xs font-sans font-medium transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          New Agent
+        </button>
       </div>
 
       {/* Search */}
@@ -195,7 +197,7 @@ function SessionSidebar({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search sessions..."
+            placeholder="Search..."
             className="flex-1 bg-transparent text-[11px] text-text-strong font-sans outline-none placeholder-text-weaker"
           />
         </div>

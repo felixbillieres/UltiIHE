@@ -16,7 +16,7 @@ import {
   Archive,
 } from "lucide-react"
 import { MarkdownContent } from "./MarkdownContent"
-import { ToolCallCard } from "./ToolCallCard"
+import { ToolCallCard, ToolCallGroup } from "./ToolCallCard"
 
 // ── Context block types ──────────────────────────────────────────
 
@@ -206,10 +206,38 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
 
 // ── Parts renderer ───────────────────────────────────────────────
 
+/** Group consecutive tool calls of the same type for cleaner display */
+function groupParts(parts: MessagePart[]): Array<MessagePart | { type: "tool-group"; parts: MessagePart[] }> {
+  const result: Array<MessagePart | { type: "tool-group"; parts: MessagePart[] }> = []
+  let i = 0
+  while (i < parts.length) {
+    const part = parts[i]
+    // Try to group 3+ consecutive tool calls of the same tool type
+    if (part.type === "tool-call") {
+      const tool = part.tool
+      let j = i + 1
+      while (j < parts.length && parts[j].type === "tool-call" && (parts[j] as any).tool === tool) j++
+      if (j - i >= 3) {
+        result.push({ type: "tool-group", parts: parts.slice(i, j) })
+        i = j
+        continue
+      }
+    }
+    result.push(part)
+    i++
+  }
+  return result
+}
+
 function AssistantParts({ parts }: { parts: MessagePart[] }) {
+  const grouped = groupParts(parts)
   return (
     <div className="text-sm leading-relaxed font-sans text-text-base">
-      {parts.map((part, i) => {
+      {grouped.map((item, i) => {
+        if ("type" in item && item.type === "tool-group") {
+          return <ToolCallGroup key={`group-${i}`} parts={item.parts as any} />
+        }
+        const part = item as MessagePart
         if (part.type === "text") {
           return part.content ? (
             <div key={`text-${i}`} className="break-words">
