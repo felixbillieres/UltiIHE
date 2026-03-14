@@ -254,6 +254,27 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
   const cw = containerRef.current?.offsetWidth || 400
   const ch = containerRef.current?.offsetHeight || 400
 
+  // Image files — render as <img> instead of Monaco
+  if (file.language === "image") {
+    return (
+      <div ref={containerRef} className="h-full flex flex-col relative overflow-hidden">
+        <div className="flex-1 min-h-0 flex items-center justify-center bg-[#0a0a0a] overflow-auto p-4">
+          <img
+            src={file.content}
+            alt={file.filename}
+            className="max-w-full max-h-full object-contain rounded shadow-lg"
+            style={{ imageRendering: "auto" }}
+          />
+        </div>
+        {/* Status bar */}
+        <div className="flex items-center justify-between px-3 py-1 border-t border-border-weak bg-surface-1 text-[10px] text-text-weaker font-sans shrink-0">
+          <span className="truncate">{file.path}</span>
+          <span>image</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div ref={containerRef} className="h-full flex flex-col relative overflow-hidden">
       <div className="flex-1 min-h-0">

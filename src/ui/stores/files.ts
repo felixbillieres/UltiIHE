@@ -295,6 +295,9 @@ export const useFileStore = create<FileStore>()(
 
     const filename = path.split("/").pop() || path
     const language = detectLanguage(filename)
+    const ext = filename.split(".").pop()?.toLowerCase() || ""
+    const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"])
+    const isImage = IMAGE_EXTS.has(ext)
 
     set((s) => ({
       openFiles: [
@@ -305,15 +308,27 @@ export const useFileStore = create<FileStore>()(
     }))
 
     try {
-      const res = await fetch(`/api/files/${container}/read?path=${encodeURIComponent(path)}`)
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-
-      set((s) => ({
-        openFiles: s.openFiles.map((f) =>
-          f.id === id ? { ...f, content: data.content, originalContent: data.content, loading: false } : f,
-        ),
-      }))
+      if (isImage) {
+        // Fetch as base64 for image preview
+        const res = await fetch(`/api/files/${container}/read?path=${encodeURIComponent(path)}&base64=true`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        const dataUrl = `data:${data.mime};base64,${data.base64}`
+        set((s) => ({
+          openFiles: s.openFiles.map((f) =>
+            f.id === id ? { ...f, content: dataUrl, originalContent: dataUrl, language: "image", loading: false } : f,
+          ),
+        }))
+      } else {
+        const res = await fetch(`/api/files/${container}/read?path=${encodeURIComponent(path)}`)
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+        set((s) => ({
+          openFiles: s.openFiles.map((f) =>
+            f.id === id ? { ...f, content: data.content, originalContent: data.content, loading: false } : f,
+          ),
+        }))
+      }
     } catch (err) {
       set((s) => ({
         openFiles: s.openFiles.map((f) =>
