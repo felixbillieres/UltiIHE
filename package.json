@@ -43,6 +43,7 @@
     "clsx": "^2.1.1",
     "fuzzysort": "^3.1.0",
     "hono": "^4.7.0",
+    "html2canvas": "^1.4.1",
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

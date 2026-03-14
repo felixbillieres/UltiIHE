@@ -6,6 +6,7 @@ import {
 } from "../../stores/workspace"
 import { useFileStore } from "../../stores/files"
 import { useTerminalStore } from "../../stores/terminal"
+import { useProjectStore } from "../../stores/project"
 import {
   Terminal,
   FileText,
@@ -19,7 +20,9 @@ import {
   SplitSquareHorizontal,
   SplitSquareVertical,
   Merge,
+  Camera,
 } from "lucide-react"
+import { toast } from "sonner"
 import { usePopOutStore } from "../../stores/popout"
 import { useWebToolsStore, WEB_TOOLS, toolKey } from "../../stores/webtools"
 import { TOOL_ICONS } from "../terminal/terminalConstants"
@@ -440,6 +443,9 @@ export function WorkspaceTabBar({
             onLaunch={onLaunchTool}
             onSettings={() => {}}
           />
+
+          {/* Screenshot button */}
+          <ScreenshotButton containerIds={containerIds} />
         </div>
       </div>
 
@@ -658,6 +664,105 @@ function TabItem({
         <div className="absolute right-0 top-1 bottom-1 w-0.5 bg-accent z-20 translate-x-px" />
       )}
     </div>
+  )
+}
+
+// ─── Screenshot button ──────────────────────────────────────
+
+function ScreenshotButton({ containerIds }: { containerIds: string[] }) {
+  const [capturing, setCapturing] = useState(false)
+
+  const handleScreenshot = useCallback(async () => {
+    const target = document.querySelector("[data-terminal-content]") as HTMLElement | null
+    if (!target) {
+      toast.error("No terminal area to capture")
+      return
+    }
+    const container = containerIds[0]
+    if (!container) {
+      toast.error("No container available")
+      return
+    }
+
+    setCapturing(true)
+    try {
+      // Dynamic import to avoid loading html2canvas eagerly
+      const { default: html2canvas } = await import("html2canvas")
+      const canvas = await html2canvas(target, {
+        backgroundColor: "#0a0a0a",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      })
+
+      // Convert to PNG blob
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Failed to create blob"))), "image/png")
+      })
+
+      // Build filename: containerName_YYYY-MM-DD_HH-MM-SS.png
+      const now = new Date()
+      const pad = (n: number) => String(n).padStart(2, "0")
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`
+      const filename = `${container}_${timestamp}.png`
+      const remotePath = `/workspace/.ihe/screenshots/${filename}`
+
+      // Convert blob to base64
+      const reader = new FileReader()
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string
+          // Strip "data:image/png;base64," prefix
+          resolve(result.split(",")[1])
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+
+      // Ensure directory exists and write file via docker exec
+      const res = await fetch(`/api/files/${container}/write`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: remotePath,
+          contentBase64: base64,
+          mkdir: true,
+        }),
+      })
+
+      if (!res.ok) {
+        // Fallback: write via plain content endpoint if base64 not supported
+        // Just offer local download instead
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = filename
+        a.click()
+        URL.revokeObjectURL(url)
+        toast.success(`Screenshot saved locally: ${filename}`)
+        return
+      }
+
+      toast.success(`Screenshot saved: ${remotePath}`)
+    } catch (err) {
+      console.error("[Screenshot]", err)
+      toast.error("Screenshot failed")
+    } finally {
+      setCapturing(false)
+    }
+  }, [containerIds])
+
+  return (
+    <button
+      onClick={handleScreenshot}
+      disabled={capturing}
+      className="p-1 rounded text-text-weaker hover:bg-surface-2/50 hover:text-text-weak transition-colors disabled:opacity-40"
+      title="Screenshot terminals"
+    >
+      {capturing
+        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        : <Camera className="w-3.5 h-3.5" />}
+    </button>
   )
 }
 

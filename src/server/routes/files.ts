@@ -247,16 +247,46 @@ filesRoutes.get("/files/:container/read", async (c) => {
 
 filesRoutes.post("/files/:container/write", async (c) => {
   const container = c.req.param("container")
-  const { path, content } = (await c.req.json()) as { path: string; content: string }
+  const body = (await c.req.json()) as { path: string; content?: string; contentBase64?: string; mkdir?: boolean }
+  const { path, content, contentBase64, mkdir } = body
 
   if (!container || !path) return c.json({ error: "Missing params" }, 400)
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
-  if (typeof content !== "string") return c.json({ error: "Content must be a string" }, 400)
-  // Size limit: 10MB max for file writes
-  if (content.length > 10 * 1024 * 1024) return c.json({ error: "Content too large (> 10MB)" }, 413)
 
   try {
+    // Ensure parent directory exists if requested
+    if (mkdir) {
+      const dir = path.substring(0, path.lastIndexOf("/"))
+      if (dir) {
+        const mkdirProc = Bun.spawn(["docker", "exec", container, "mkdir", "-p", dir], {
+          stdout: "pipe", stderr: "pipe",
+        })
+        await mkdirProc.exited
+      }
+    }
+
+    if (contentBase64) {
+      // Binary write via base64 decode
+      if (contentBase64.length > 15 * 1024 * 1024) return c.json({ error: "Content too large (> 10MB)" }, 413)
+      const proc = Bun.spawn(["docker", "exec", "-i", container, "sh", "-c", `base64 -d > '${path.replace(/'/g, "'\\''")}'`], {
+        stdin: "pipe", stdout: "pipe", stderr: "pipe",
+      })
+      proc.stdin.write(contentBase64)
+      proc.stdin.end()
+      await proc.exited
+
+      if (proc.exitCode !== 0) {
+        const stderr = await new Response(proc.stderr).text()
+        throw new Error(stderr || `Exit code ${proc.exitCode}`)
+      }
+      return c.json({ ok: true })
+    }
+
+    // Text write
+    if (typeof content !== "string") return c.json({ error: "Content must be a string" }, 400)
+    if (content.length > 10 * 1024 * 1024) return c.json({ error: "Content too large (> 10MB)" }, 413)
+
     const proc = Bun.spawn(["docker", "exec", "-i", container, "tee", path], {
       stdin: "pipe", stdout: "pipe", stderr: "pipe",
     })
