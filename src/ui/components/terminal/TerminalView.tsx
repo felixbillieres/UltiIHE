@@ -139,6 +139,11 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
         // Let xterm handle it (sends \t to PTY) — don't let the browser use it for focus
         return true
       }
+      // Ctrl+R: send to PTY (zsh reverse-i-search) instead of browser refresh
+      // Ctrl+L: send to PTY (clear terminal) instead of browser address bar
+      if (ev.ctrlKey && (ev.key === "r" || ev.key === "l")) {
+        return true
+      }
       return true
     })
 

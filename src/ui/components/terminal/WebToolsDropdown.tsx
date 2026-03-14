@@ -84,9 +84,9 @@ export function WebToolsDropdown({
                   <span className="flex-1">{tool.name}</span>
                   {openCount > 0 && (
                     <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-text-weaker shrink-0" />
                       {openCount > 1 && (
-                        <span className="text-[9px] text-emerald-400 font-mono">{openCount}</span>
+                        <span className="text-[9px] text-text-weaker font-mono">{openCount}</span>
                       )}
                     </span>
                   )}

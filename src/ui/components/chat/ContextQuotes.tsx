@@ -39,9 +39,9 @@ function ContextQuoteItem({
 
   const isTerminal = q.source === "terminal"
   const icon = isTerminal ? (
-    <Terminal className="w-3 h-3 text-cyan-400 shrink-0" />
+    <Terminal className="w-3 h-3 text-text-weaker shrink-0" />
   ) : (
-    <FileText className="w-3 h-3 text-blue-400 shrink-0" />
+    <FileText className="w-3 h-3 text-text-weaker shrink-0" />
   )
 
   const label = isTerminal

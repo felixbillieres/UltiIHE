@@ -170,19 +170,19 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
   const firstLine = part.content.split("\n")[0]?.slice(0, 80) || "Thinking..."
 
   return (
-    <div className="my-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 overflow-hidden">
+    <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-purple-500/10 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
-        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 bg-purple-500/15">
+        <div className="w-5 h-5 rounded flex items-center justify-center shrink-0 bg-surface-2">
           {isStreaming ? (
-            <Loader2 className="w-3 h-3 text-purple-400 animate-spin" />
+            <Loader2 className="w-3 h-3 text-text-weaker animate-spin" />
           ) : (
-            <Brain className="w-3 h-3 text-purple-400" />
+            <Brain className="w-3 h-3 text-text-weaker" />
           )}
         </div>
-        <span className="text-[12px] font-medium text-purple-400 shrink-0">
+        <span className="text-[12px] font-medium text-text-weak shrink-0">
           {isStreaming ? "Thinking..." : "Thought"}
         </span>
         <span className="text-[11px] text-text-weaker truncate flex-1">
@@ -194,7 +194,7 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
         <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
       {expanded && (
-        <div className="border-t border-purple-500/20 px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-surface-0">
+        <div className="border-t border-border-weak px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-surface-0">
           <div className="text-[11px] text-text-weak leading-relaxed whitespace-pre-wrap font-mono">
             {part.content}
           </div>
@@ -355,7 +355,7 @@ function UsageBadge({ usage }: { usage: MessageUsage }) {
       ].filter(Boolean).join(" | ")}
     >
       {formatTokens(usage.inputTokens)} in · {formatTokens(usage.outputTokens)} out
-      {cachePercent > 0 && <span className="text-emerald-400/60"> · {cachePercent}% cached</span>}
+      {cachePercent > 0 && <span className="text-text-weaker"> · {cachePercent}% cached</span>}
     </span>
   )
 }

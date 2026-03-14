@@ -151,7 +151,7 @@ export function useAtOptions(): AtOption[] {
       id: f.id,
       display: f.filename,
       description: `${f.container}:${f.path}`,
-      icon: <FileText className="w-3.5 h-3.5 text-blue-400" />,
+      icon: <FileText className="w-3.5 h-3.5 text-text-weaker" />,
       fileMeta: { container: f.container, path: f.path, language: f.language },
     }))
 
@@ -160,7 +160,7 @@ export function useAtOptions(): AtOption[] {
       id: "__url__",
       display: "url",
       description: "Fetch a URL and attach its content",
-      icon: <Link className="w-3.5 h-3.5 text-green-400" />,
+      icon: <Link className="w-3.5 h-3.5 text-text-weaker" />,
     }
 
     return [urlOption, ...terms, ...files]

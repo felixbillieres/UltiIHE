@@ -286,7 +286,7 @@ export function ControlBar() {
         )}
       </div>
 
-      {/* Capabilities badges */}
+      {/* Thinking effort badge (only interactive badge shown) */}
       <div className="flex items-center gap-1 shrink-0">
         {(modelInfo?.reasoning || localEntry?.reasoning) && (
           <CapBadge
@@ -295,27 +295,6 @@ export function ControlBar() {
             active={thinkingEffort !== "off"}
             onClick={cycleThinkingEffort}
             title="Thinking effort — Click to cycle (off > low > medium > high)"
-          />
-        )}
-        {modelInfo?.vision && (
-          <CapBadge
-            icon={<Eye className="w-3 h-3" />}
-            label="vision"
-            active
-          />
-        )}
-        {(modelInfo?.toolCalling || localEntry?.toolCalling) && (
-          <CapBadge
-            icon={<Wrench className="w-3 h-3" />}
-            label="tools"
-            active
-          />
-        )}
-        {activeProvider === "local" && (
-          <CapBadge
-            icon={<Cpu className="w-3 h-3" />}
-            label="local"
-            active
           />
         )}
       </div>

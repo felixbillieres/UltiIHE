@@ -16,7 +16,7 @@ const PROVIDER_SORT_ORDER = [
 function StatusBadge({ status }: { status: "alpha" | "beta" | "deprecated" }) {
   const colors = {
     alpha: "bg-yellow-500/15 text-yellow-400",
-    beta: "bg-blue-500/15 text-blue-400",
+    beta: "bg-blue-500/15 text-text-weaker",
     deprecated: "bg-red-500/15 text-red-400",
   }
   return (
@@ -257,7 +257,7 @@ export function ModelPicker({
                       {(model.fileSizeMB / 1024).toFixed(1)} GB
                     </span>
                     {model.reasoning && (
-                      <span className="text-[10px] text-purple-400">reasoning</span>
+                      <span className="text-[10px] text-text-weaker">reasoning</span>
                     )}
                     {model.tags.slice(0, 2).map((tag) => (
                       <span key={tag} className="text-[10px] text-text-weaker">{tag}</span>
@@ -316,12 +316,12 @@ export function ModelPicker({
                       {fmtCtx(model.contextWindow)} ctx
                     </span>
                     {model.reasoning && (
-                      <span className="text-[10px] text-purple-400">
+                      <span className="text-[10px] text-text-weaker">
                         reasoning
                       </span>
                     )}
                     {model.vision && (
-                      <span className="text-[10px] text-blue-400">vision</span>
+                      <span className="text-[10px] text-text-weaker">vision</span>
                     )}
                   </div>
                 </div>

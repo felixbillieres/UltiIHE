@@ -275,7 +275,7 @@ export function UnifiedSearchDialog() {
                     key={r.terminalId}
                     index={itemIndex}
                     selected={selectedIndex === itemIndex}
-                    icon={<Terminal className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                    icon={<Terminal className="w-3.5 h-3.5 text-text-weaker shrink-0" />}
                     title={r.terminalName}
                     subtitle={`${r.matchCount} match${r.matchCount !== 1 ? "es" : ""}`}
                     onClick={() => {
@@ -313,7 +313,7 @@ export function UnifiedSearchDialog() {
                     key={`${r.container}:${r.filePath}`}
                     index={itemIndex}
                     selected={selectedIndex === itemIndex}
-                    icon={<FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                    icon={<FileText className="w-3.5 h-3.5 text-text-weaker shrink-0" />}
                     title={r.filePath.split("/").pop() || r.filePath}
                     subtitle={r.filePath}
                     onClick={() => {

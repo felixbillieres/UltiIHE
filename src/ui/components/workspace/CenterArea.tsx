@@ -76,11 +76,11 @@ function ToolPanel({ toolId, container, visible }: { toolId: string; container: 
       {toolInfo?.status === "error" && (
         <div className="flex items-center justify-center h-full">
           <div className="text-center max-w-md">
-            <X className="w-8 h-8 text-red-400 mx-auto mb-3" />
+            <X className="w-8 h-8 text-status-error mx-auto mb-3" />
             <p className="text-sm text-text-weak font-sans mb-2">
               Failed to start {toolDef?.name}
             </p>
-            <p className="text-xs text-red-400/80 font-mono bg-surface-2 rounded px-3 py-2">
+            <p className="text-xs text-status-error/80 font-mono bg-surface-2 rounded px-3 py-2">
               {toolInfo.error || "Unknown error"}
             </p>
           </div>
@@ -140,9 +140,9 @@ function EmptyWorkspace({ hasContainers }: { hasContainers: boolean }) {
     <div className="flex items-center justify-center h-full">
       <div className="text-center">
         <div className="flex items-center justify-center gap-3 mb-4">
-          <Terminal className="w-8 h-8 text-green-400/40" />
-          <FileText className="w-8 h-8 text-blue-400/40" />
-          <Globe className="w-8 h-8 text-purple-400/40" />
+          <Terminal className="w-8 h-8 text-text-weaker/40" />
+          <FileText className="w-8 h-8 text-text-weaker/40" />
+          <Globe className="w-8 h-8 text-text-weaker/40" />
         </div>
         <p className="text-sm text-text-weak font-sans mb-1">Workspace</p>
         <p className="text-xs text-text-weaker font-sans">

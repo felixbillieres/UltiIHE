@@ -29,25 +29,25 @@ import {
 // ── Tool display metadata ──────────────────────────────────
 
 const TOOL_META: Record<string, { name: string; Icon: LucideIcon; color: string }> = {
-  terminal_read:    { name: "Read Terminal",    Icon: Terminal,    color: "text-cyan-400" },
-  terminal_write:   { name: "Run Command",      Icon: Play,        color: "text-green-400" },
-  terminal_create:  { name: "Create Terminal",   Icon: Plus,        color: "text-cyan-400" },
-  terminal_list:    { name: "List Terminals",    Icon: List,        color: "text-cyan-400" },
-  file_read:        { name: "Read File",         Icon: FileText,    color: "text-blue-400" },
-  file_write:       { name: "Write File",        Icon: FileEdit,    color: "text-yellow-400" },
-  file_edit:        { name: "Edit File",         Icon: FileEdit,    color: "text-yellow-400" },
-  file_delete:      { name: "Delete",            Icon: Trash2,      color: "text-red-400" },
-  file_create_dir:  { name: "Create Directory",  Icon: FolderPlus,  color: "text-blue-400" },
-  search_grep:      { name: "Search",            Icon: Search,      color: "text-purple-400" },
-  search_find:      { name: "Find Files",        Icon: FolderSearch, color: "text-purple-400" },
-  web_search:       { name: "Web Search",        Icon: Globe,       color: "text-orange-400" },
-  web_fetch:        { name: "Fetch URL",         Icon: Download,    color: "text-orange-400" },
+  terminal_read:    { name: "Read Terminal",    Icon: Terminal,    color: "text-text-weaker" },
+  terminal_write:   { name: "Run Command",      Icon: Play,        color: "text-text-weaker" },
+  terminal_create:  { name: "Create Terminal",   Icon: Plus,        color: "text-text-weaker" },
+  terminal_list:    { name: "List Terminals",    Icon: List,        color: "text-text-weaker" },
+  file_read:        { name: "Read File",         Icon: FileText,    color: "text-text-weaker" },
+  file_write:       { name: "Write File",        Icon: FileEdit,    color: "text-text-weaker" },
+  file_edit:        { name: "Edit File",         Icon: FileEdit,    color: "text-text-weaker" },
+  file_delete:      { name: "Delete",            Icon: Trash2,      color: "text-status-error" },
+  file_create_dir:  { name: "Create Directory",  Icon: FolderPlus,  color: "text-text-weaker" },
+  search_grep:      { name: "Search",            Icon: Search,      color: "text-text-weaker" },
+  search_find:      { name: "Find Files",        Icon: FolderSearch, color: "text-text-weaker" },
+  web_search:       { name: "Web Search",        Icon: Globe,       color: "text-text-weaker" },
+  web_fetch:        { name: "Fetch URL",         Icon: Download,    color: "text-text-weaker" },
   user_question:    { name: "Question",          Icon: HelpCircle,  color: "text-accent" },
   batch:            { name: "Batch Execute",     Icon: Layers,      color: "text-text-weak" },
   todo_read:        { name: "Read TODO",         Icon: ListChecks,  color: "text-text-weak" },
   todo_write:       { name: "Update TODO",       Icon: ListChecks,  color: "text-text-weak" },
-  caido_read:       { name: "Caido Read",        Icon: Shield,      color: "text-emerald-400" },
-  caido_scope:      { name: "Caido Scope",       Icon: Target,      color: "text-emerald-400" },
+  caido_read:       { name: "Caido Read",        Icon: Shield,      color: "text-text-weaker" },
+  caido_scope:      { name: "Caido Scope",       Icon: Target,      color: "text-text-weaker" },
 }
 
 const DEFAULT_META = { name: "Tool", Icon: Layers, color: "text-text-weak" }
@@ -112,11 +112,11 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
         className={`my-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-0/50 border border-border-weak transition-colors text-left ${hasOutput ? "hover:bg-surface-1/50 cursor-pointer" : "cursor-default"}`}
       >
         <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 ${
-          part.status === "error" ? "bg-red-400/15" : "bg-emerald-400/15"
+          part.status === "error" ? "bg-status-error/15" : "bg-status-success/15"
         }`}>
           {part.status === "error"
-            ? <X className="w-2.5 h-2.5 text-red-400" />
-            : <Check className="w-2.5 h-2.5 text-emerald-400" />
+            ? <X className="w-2.5 h-2.5 text-status-error" />
+            : <Check className="w-2.5 h-2.5 text-status-success" />
           }
         </div>
         <Icon className={`w-3 h-3 ${meta.color}`} />
@@ -139,15 +139,15 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
           part.status === "running"
             ? "bg-accent/15"
             : part.status === "error"
-              ? "bg-red-400/15"
-              : "bg-emerald-400/15"
+              ? "bg-status-error/15"
+              : "bg-status-success/15"
         }`}>
           {part.status === "running" ? (
             <Loader2 className="w-3 h-3 text-accent animate-spin" />
           ) : part.status === "error" ? (
-            <X className="w-3 h-3 text-red-400" />
+            <X className="w-3 h-3 text-status-error" />
           ) : (
-            <Check className="w-3 h-3 text-emerald-400" />
+            <Check className="w-3 h-3 text-status-success" />
           )}
         </div>
 

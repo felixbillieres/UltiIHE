@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { usePopOutStore } from "../../stores/popout"
+import { useOpsStore } from "../../stores/operations"
 import { useWebToolsStore, WEB_TOOLS, toolKey } from "../../stores/webtools"
 import { TOOL_ICONS } from "../terminal/terminalConstants"
 import { NewTerminalButton } from "../terminal/NewTerminalButton"
@@ -38,9 +39,9 @@ const TAB_TYPE_ICON: Record<TabType, React.ReactNode> = {
 }
 
 const TAB_TYPE_ACCENT: Record<TabType, string> = {
-  terminal: "bg-green-500",
-  file: "bg-blue-500",
-  webtool: "bg-purple-500",
+  terminal: "bg-text-weaker",
+  file: "bg-text-weaker",
+  webtool: "bg-text-weaker",
 }
 
 const FILTER_LABELS: { type: TabType | null; label: string }[] = [
@@ -549,8 +550,13 @@ function TabItem({
       ? s.runningTools[toolKey(tab.toolId, tab.container)]?.status
       : undefined,
   )
+  const terminalRunning = useOpsStore(
+    (s) => tab.type === "terminal" && tab.terminalId
+      ? s.operations.some((op) => op.terminalId === tab.terminalId && op.status === "running")
+      : false,
+  )
 
-  const icon = getTabIcon(tab, toolStatus)
+  const icon = getTabIcon(tab, toolStatus, terminalRunning)
   const showMultiContainer = containerIds.length > 1
 
   return (
@@ -771,6 +777,7 @@ function ScreenshotButton({ containerIds }: { containerIds: string[] }) {
 function getTabIcon(
   tab: WorkspaceTab,
   toolStatus?: string,
+  terminalRunning?: boolean,
 ): React.ReactNode {
   if (tab.type === "webtool") {
     if (toolStatus === "starting") {
@@ -781,10 +788,13 @@ function getTabIcon(
     if (tool && TOOL_ICONS[tool.icon]) {
       return TOOL_ICONS[tool.icon]
     }
-    return <Globe className="w-3 h-3 shrink-0 text-purple-400" />
+    return <Globe className="w-3 h-3 shrink-0 text-text-weaker" />
   }
   if (tab.type === "file") {
-    return <FileText className="w-3 h-3 shrink-0 text-blue-400" />
+    return <FileText className="w-3 h-3 shrink-0 text-text-weaker" />
   }
-  return <Terminal className="w-3 h-3 shrink-0 text-green-400" />
+  if (terminalRunning) {
+    return <Loader2 className="w-3 h-3 shrink-0 animate-spin text-accent" />
+  }
+  return <Terminal className="w-3 h-3 shrink-0 text-text-weaker" />
 }

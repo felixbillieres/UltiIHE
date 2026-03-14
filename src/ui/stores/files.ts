@@ -236,7 +236,11 @@ export const useFileStore = create<FileStore>()(
 
     // Return cache if fresh
     const cached = get().dirCache[key]
-    if (cached) return cached
+    if (cached) {
+      // Start auto-refresh on first cache hit (lazy init)
+      startAutoRefresh()
+      return cached
+    }
 
     set((s) => ({ loadingDirs: new Set(s.loadingDirs).add(key) }))
 
@@ -258,6 +262,9 @@ export const useFileStore = create<FileStore>()(
         }
         return { dirCache: newCache }
       })
+
+      // Start auto-refresh on first directory fetch
+      startAutoRefresh()
 
       return entries
     } catch {
@@ -706,3 +713,53 @@ export const useFileStore = create<FileStore>()(
     }),
   },
 ))
+
+// ── Auto-refresh: re-fetch all cached directories every 10s ──────
+let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+async function refreshCachedDir(container: string, path: string) {
+  const key = cacheKey(container, path)
+  try {
+    const res = await fetch(
+      `/api/files/${container}/list?path=${encodeURIComponent(path)}`,
+    )
+    const data = await res.json()
+    const entries: FileEntry[] = data.entries || []
+    useFileStore.setState((s) => ({
+      dirCache: { ...s.dirCache, [key]: entries },
+    }))
+  } catch {
+    // Silently ignore — dir may have been removed
+  }
+}
+
+function startAutoRefresh() {
+  if (autoRefreshTimer) return
+  autoRefreshTimer = setInterval(() => {
+    const cache = useFileStore.getState().dirCache
+    for (const key of Object.keys(cache)) {
+      // Keys are "container:path" for container dirs, "host:path" for host dirs
+      const colonIdx = key.indexOf(":")
+      if (colonIdx === -1) continue
+      const container = key.substring(0, colonIdx)
+      const path = key.substring(colonIdx + 1)
+      if (container && path) {
+        if (container === "host") {
+          // Host dirs use fetchHostDirectory which also has cache-first logic;
+          // re-fetch directly to avoid the cache guard
+          fetch(`/api/files/host/list?path=${encodeURIComponent(path)}`)
+            .then((r) => r.json())
+            .then((data) => {
+              const entries: FileEntry[] = data.entries || []
+              useFileStore.setState((s) => ({
+                dirCache: { ...s.dirCache, [key]: entries },
+              }))
+            })
+            .catch(() => {})
+        } else {
+          refreshCachedDir(container, path)
+        }
+      }
+    }
+  }, 10_000)
+}

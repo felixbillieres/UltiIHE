@@ -39,12 +39,12 @@ function ModelRow({ model }: { model: ModelInfo }) {
           </span>
         )}
         {model.reasoning && (
-          <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 text-[8px] font-sans font-medium" title="Reasoning">
+          <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-surface-2 text-text-weaker text-[8px] font-sans font-medium" title="Reasoning">
             <Brain className="w-2.5 h-2.5" />
           </span>
         )}
         {model.vision && (
-          <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 text-[8px] font-sans font-medium" title="Vision">
+          <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-surface-2 text-text-weaker text-[8px] font-sans font-medium" title="Vision">
             <Eye className="w-2.5 h-2.5" />
           </span>
         )}
@@ -123,12 +123,12 @@ function ModelList({ models }: { models: ModelInfo[] }) {
           {toolModels.length} with tools
         </span>
         {models.some((m) => m.reasoning) && (
-          <span className="text-[9px] text-purple-400/70 font-sans">
+          <span className="text-[9px] text-text-weaker font-sans">
             {models.filter((m) => m.reasoning).length} with reasoning
           </span>
         )}
         {models.some((m) => m.vision) && (
-          <span className="text-[9px] text-blue-400/70 font-sans">
+          <span className="text-[9px] text-text-weaker font-sans">
             {models.filter((m) => m.vision).length} with vision
           </span>
         )}
