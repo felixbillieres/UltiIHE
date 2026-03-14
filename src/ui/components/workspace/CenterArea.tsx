@@ -334,6 +334,10 @@ export function CenterArea({
           if (tab.type === "terminal" && tab.terminalId) {
             send({ type: "terminal:close", data: { terminalId: tab.terminalId } })
             useTerminalStore.getState().removeTerminal(tab.terminalId)
+            // Dispose the xterm instance from the global pool
+            import("../terminal/TerminalView").then(({ disposeTerminalInstance }) => {
+              disposeTerminalInstance(tab.terminalId!)
+            })
           }
           if (tab.type === "file" && tab.fileId) {
             useFileStore.getState().closeFile(tab.fileId)
