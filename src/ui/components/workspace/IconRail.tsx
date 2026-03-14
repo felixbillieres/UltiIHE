@@ -2,11 +2,13 @@ import { useState, useEffect } from "react"
 import { type Project } from "../../stores/project"
 import { useCommandPalette } from "../../hooks/useCommandPalette"
 import { type LayoutPreset, LAYOUT_PRESETS } from "./layoutPersistence"
+import { useSearchStore } from "../../stores/search"
 import {
   Settings as SettingsIcon,
   Plus,
   Box,
   Command,
+  Search,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -76,6 +78,7 @@ export function IconRail({
   onApplyPreset,
 }: IconRailProps) {
   const { open: openCommandPalette } = useCommandPalette()
+  const openSearch = () => useSearchStore.getState().open()
   const [expanded, setExpanded] = useState(() => {
     try { return localStorage.getItem(EXPAND_KEY) === "true" } catch { return false }
   })
@@ -241,7 +244,14 @@ export function IconRail({
 
         <div className={`${expanded ? "mx-2" : "w-6"} h-px bg-border-weak/50 my-0.5 self-center`} />
 
-        {/* Container + settings */}
+        {/* Search + Container + settings */}
+        <RailBtn
+          icon={<Search className={ICON_SIZE} />}
+          label="Search"
+          onClick={openSearch}
+          title="Search everywhere (Ctrl+K)"
+          className={expanded ? "h-8" : "h-9 w-9 rounded-lg"}
+        />
         <RailBtn
           icon={<Box className="w-4 h-4" />}
           label={`Containers${containerCount > 0 ? ` (${containerCount})` : ""}`}

@@ -9,6 +9,7 @@ import { webtoolRoutes } from "./routes/webtool"
 import { localRoutes } from "./routes/local"
 import { providerRoutes } from "./routes/providers"
 import { mcpRoutes } from "./routes/mcp"
+import { searchRoutes } from "./routes/search"
 import { websocketHandlers } from "./ws"
 import { terminalManager } from "../terminal/manager"
 import { stopServer as stopLocalServer } from "./services/local/server"
@@ -30,6 +31,7 @@ app.route("/api", webtoolRoutes)
 app.route("/api", localRoutes)
 app.route("/api", providerRoutes)
 app.route("/api/mcp", mcpRoutes)
+app.route("/api", searchRoutes)
 
 app.get("/api/health", (c) => c.json({ status: "ok", uptime: process.uptime() }))
 

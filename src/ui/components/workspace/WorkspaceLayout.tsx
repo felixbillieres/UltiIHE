@@ -20,6 +20,8 @@ import { PopOutPortal } from "./PopOutPortal"
 import { PopOutChatView } from "../chat/PopOutChatView"
 import { CommandPaletteProvider } from "../../hooks/useCommandPalette"
 import { CommandPaletteDialog } from "../CommandPaletteDialog"
+import { UnifiedSearchDialog } from "../search/UnifiedSearchDialog"
+import { SearchMiniPanel } from "../search/SearchMiniPanel"
 import { useBuiltinCommands, type LayoutActions } from "../../hooks/useBuiltinCommands"
 
 // ─── Main component ──────────────────────────────────────────
@@ -179,6 +181,8 @@ export function WorkspaceLayout({ project }: Props) {
     <CommandPaletteProvider>
       <CommandPaletteBindings projectId={project.id} layout={layoutActions} />
       <CommandPaletteDialog />
+      <UnifiedSearchDialog />
+      <SearchMiniPanel />
 
       <div className="h-full flex flex-col">
         {/* Chat pop-out portal — lives at root so it persists when panel is closed */}

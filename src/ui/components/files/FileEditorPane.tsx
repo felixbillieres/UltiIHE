@@ -1,10 +1,38 @@
 import { useEffect, useCallback, useRef, useState } from "react"
 import { useFileStore } from "../../stores/files"
+import { useSearchStore } from "../../stores/search"
 import { Loader2, AlertCircle, Save, Plus } from "lucide-react"
 import Editor, { type OnMount } from "@monaco-editor/react"
 import type { editor } from "monaco-editor"
 import { ProbeModal, type ProbeContext } from "../probe/ProbeModal"
 import { ProbeHistory } from "../probe/ProbeHistory"
+
+// ─── Trigger Monaco's native find widget with a query ────────
+
+function triggerMonacoFind(ed: editor.IStandaloneCodeEditor, query: string) {
+  ed.focus()
+  // Access the built-in find controller
+  const controller = ed.getContribution("editor.contrib.findController") as any
+  if (!controller) return
+
+  // Open the find widget
+  controller.start({
+    forceRevealReplace: false,
+    seedSearchStringFromSelection: "none",
+    seedSearchStringFromNonEmptySelection: false,
+    seedSearchStringFromGlobalClipboard: false,
+    shouldFocus: 1, // FindStartFocusAction.FocusSearchInput
+    shouldAnimate: true,
+    updateSearchScope: false,
+    loop: true,
+  })
+
+  // Pre-fill the search string
+  const findState = controller.getState?.()
+  if (findState?.change) {
+    findState.change({ searchString: query }, false)
+  }
+}
 
 // ─── Language mapping (file store → Monaco) ─────────────────
 
@@ -72,6 +100,13 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
     editorRef.current = ed
     ed.focus()
 
+    // Check for pending file search from unified search bar
+    const pending = useSearchStore.getState().pendingFileSearch
+    if (pending && pending.fileId === fileId) {
+      triggerMonacoFind(ed, pending.query)
+      useSearchStore.getState().clearPendingFileSearch()
+    }
+
     const editorDom = ed.getDomNode()
     if (!editorDom) return
 
@@ -134,6 +169,18 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
       editorRef.current = null
     }
   }, [])
+
+  // Watch for pending file search when editor is already mounted (e.g. file was already open)
+  useEffect(() => {
+    const unsub = useSearchStore.subscribe((state) => {
+      const pending = state.pendingFileSearch
+      if (pending && pending.fileId === fileId && editorRef.current) {
+        triggerMonacoFind(editorRef.current, pending.query)
+        useSearchStore.getState().clearPendingFileSearch()
+      }
+    })
+    return unsub
+  }, [fileId])
 
   const openProbe = () => {
     setProbeOpen(true)

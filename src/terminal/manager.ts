@@ -160,7 +160,11 @@ class TerminalManager {
     // Why this works now but didn't with `script`+`Bun.spawn`:
     // - Bun.spawn creates pipes, not a PTY → stty was a silent no-op
     // - bun-pty creates a real PTY → stty actually configures termios
-    const dockerCmd = `docker exec -it -w /workspace -e TERM=xterm-256color ${container} /bin/bash --login`
+    //
+    // Shell: try zsh first (Exegol default — has autosuggestions, syntax highlighting,
+    // oh-my-zsh plugins), fall back to bash if zsh isn't available.
+    const shellCmd = `'if command -v zsh >/dev/null 2>&1; then exec zsh -l; else exec bash --login; fi'`
+    const dockerCmd = `docker exec -it -w /workspace -e TERM=xterm-256color ${container} sh -c ${shellCmd}`
     const ptyProcess = spawn("sh", [
       "-c",
       `stty raw -echo 2>/dev/null; exec ${dockerCmd}`,

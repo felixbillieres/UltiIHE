@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
+import { SearchAddon } from "@xterm/addon-search"
 import "@xterm/xterm/css/xterm.css"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
 import { useTerminalStore } from "../../stores/terminal"
 import { Plus } from "lucide-react"
 import { ProbeModal, type ProbeContext } from "../probe/ProbeModal"
 import { ProbeHistory } from "../probe/ProbeHistory"
+import { useSearchStore } from "../../stores/search"
 
 // Track terminals whose buffer has already been fetched and written to xterm.
 // Prevents duplicate content when TerminalView remounts (e.g. moving between split groups).
@@ -29,6 +31,8 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
+
+  const searchAddonRef = useRef<SearchAddon | null>(null)
 
   const [anchor, setAnchor] = useState<SelectionAnchor | null>(null)
   const [probeOpen, setProbeOpen] = useState(false)
@@ -75,7 +79,10 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     })
 
     const fitAddon = new FitAddon()
+    const searchAddon = new SearchAddon()
     term.loadAddon(fitAddon)
+    term.loadAddon(searchAddon)
+    searchAddonRef.current = searchAddon
     term.open(containerRef.current)
     termRef.current = term
 
@@ -214,6 +221,8 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
       resizeDisposable.dispose()
       selectionDisposable.dispose()
       unsubscribe()
+      searchAddon.dispose()
+      searchAddonRef.current = null
       term.dispose()
       termRef.current = null
 
@@ -227,6 +236,73 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
       }, 200)
     }
   }, [serverId, send, subscribe])
+
+  // Subscribe to search mini panel — activate SearchAddon, handle prev/next
+  useEffect(() => {
+    const searchOpts = {
+      caseSensitive: false,
+      decorations: {
+        matchBackground: "#FFD70044",
+        activeMatchBackground: "#FF8C00CC",
+        matchBorder: "#FFD70066",
+        matchOverviewRuler: "#FFD700",
+        activeMatchColorOverviewRuler: "#FF8C00",
+      },
+    }
+
+    // Track identity by key fields — NOT object reference (setMatchInfo creates new objects)
+    let activeKey = "" // "terminal:<id>:<query>" when active, "" when not
+    let prevNavSeq = -1
+    let resultsDisposable: { dispose(): void } | null = null
+
+    function panelKey(panel: ReturnType<typeof useSearchStore.getState>["miniPanel"]): string {
+      if (!panel || panel.type !== "terminal" || panel.terminalId !== serverId) return ""
+      return `terminal:${panel.terminalId}:${panel.query}`
+    }
+
+    const unsub = useSearchStore.subscribe((state) => {
+      const panel = state.miniPanel
+      const addon = searchAddonRef.current
+      if (!addon) return
+
+      const key = panelKey(panel)
+
+      // Panel identity changed (opened, closed, or switched target)
+      if (key !== activeKey) {
+        if (key && panel) {
+          // Activate: find first match + listen for results
+          addon.findNext(panel.query, searchOpts)
+          resultsDisposable?.dispose()
+          resultsDisposable = addon.onDidChangeResults((r) => {
+            useSearchStore.getState().setMatchInfo(r.resultIndex, r.resultCount)
+          })
+        } else if (activeKey) {
+          // Deactivate: clear
+          addon.clearDecorations()
+          resultsDisposable?.dispose()
+          resultsDisposable = null
+        }
+        activeKey = key
+        prevNavSeq = panel?._navSeq ?? -1
+        return
+      }
+
+      // Handle prev/next navigation (same panel, navSeq changed)
+      if (key && panel && panel._navSeq !== prevNavSeq) {
+        prevNavSeq = panel._navSeq
+        if (panel._navDir === "next") {
+          addon.findNext(panel.query, searchOpts)
+        } else {
+          addon.findPrevious(panel.query, searchOpts)
+        }
+      }
+    })
+
+    return () => {
+      unsub()
+      resultsDisposable?.dispose()
+    }
+  }, [serverId])
 
   const openProbe = () => {
     setProbeOpen(true)

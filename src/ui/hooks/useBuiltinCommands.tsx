@@ -23,10 +23,12 @@ import {
   FolderOpen,
   Trash2,
   Type,
+  Search,
 } from "lucide-react"
 import { useRegisterCommands, type CommandOption } from "./useCommandPalette"
 import { useCommandPalette } from "./useCommandPalette"
 import { useSessionStore } from "../stores/session"
+import { useSearchStore } from "../stores/search"
 import { useSettingsStore } from "../stores/settings"
 import { useTerminalStore } from "../stores/terminal"
 
@@ -66,6 +68,15 @@ export function useBuiltinCommands(
         keybind: "mod+,",
         icon: <Settings className="w-3.5 h-3.5" />,
         onSelect: layout.openSettings,
+      },
+      {
+        id: "search.unified",
+        title: "Search Everywhere",
+        description: "Search terminals, files, and more",
+        category: "General",
+        keybind: "mod+k",
+        icon: <Search className="w-3.5 h-3.5" />,
+        onSelect: () => useSearchStore.getState().open(),
       },
     ]
 
