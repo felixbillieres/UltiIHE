@@ -86,6 +86,8 @@ const SUPPORTED_PROVIDERS = new Set([
   "cohere",
   "amazon-bedrock",
   "azure",
+  "moonshotai",
+  "minimax",
 ])
 
 // Provider ID mapping (models.dev ID → our internal ID)

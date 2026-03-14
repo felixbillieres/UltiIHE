@@ -13,6 +13,7 @@ import { createCerebras } from "@ai-sdk/cerebras"
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock"
 import { createAzure } from "@ai-sdk/azure"
 import { createCohere } from "@ai-sdk/cohere"
+import { createMoonshotAI } from "@ai-sdk/moonshotai"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { getServerStatus, startServer } from "../../services/local/server"
@@ -117,6 +118,16 @@ export async function createRegistry(providerId: string, apiKey: string, modelId
     ),
     cohere: () => getCachedOrCreate(`cohere:${quickHash(apiKey)}`, () =>
       createCohere({ apiKey })
+    ),
+    moonshotai: () => getCachedOrCreate(`moonshotai:${quickHash(apiKey)}`, () =>
+      createMoonshotAI({ apiKey })
+    ),
+    minimax: () => getCachedOrCreate(`minimax:${quickHash(apiKey)}`, () =>
+      createOpenAICompatible({
+        name: "minimax",
+        baseURL: "https://api.minimax.io/v1",
+        headers: { Authorization: `Bearer ${apiKey}` },
+      })
     ),
     // local and custom are NOT cached — they depend on runtime state
     local: async () => {

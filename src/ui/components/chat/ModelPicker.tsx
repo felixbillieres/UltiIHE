@@ -4,12 +4,13 @@ import { useSettingsStore } from "../../stores/settings"
 import { useProviderCatalog } from "../../stores/providerCatalog"
 import { useLocalAIStore } from "../../stores/localAI"
 import { Zap, Cpu, Search, Clock } from "lucide-react"
+import { ProviderIcon } from "../provider-icons/ProviderIcon"
 import { fmtCtx } from "../../utils/format"
 
 const PROVIDER_SORT_ORDER = [
   "anthropic", "openai", "google", "mistral", "xai", "deepseek",
-  "groq", "openrouter", "togetherai", "fireworks", "cerebras",
-  "cohere", "perplexity",
+  "groq", "openrouter", "moonshotai", "minimax", "togetherai",
+  "fireworks", "cerebras", "cohere", "perplexity",
 ]
 
 function StatusBadge({ status }: { status: "alpha" | "beta" | "deprecated" }) {
@@ -279,7 +280,8 @@ export function ModelPicker({
       {/* Cloud providers */}
       {filteredProviders.map((provider) => (
         <div key={provider.id}>
-          <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wide font-sans font-medium">
+          <div className="px-3 py-1.5 text-[10px] text-text-weaker uppercase tracking-wide font-sans font-medium flex items-center gap-1.5">
+            <ProviderIcon id={provider.id} className="w-3.5 h-3.5 shrink-0" />
             {provider.name}
           </div>
           {provider.models.map((model) => {

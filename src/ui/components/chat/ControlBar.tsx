@@ -16,6 +16,7 @@ import {
   Zap,
 } from "lucide-react"
 import { ModelPicker } from "./ModelPicker"
+import { ProviderIcon } from "../provider-icons/ProviderIcon"
 
 function Separator() {
   return <div className="w-px h-4 bg-border-weak shrink-0" />
@@ -238,6 +239,9 @@ export function ControlBar() {
           )}
           {activeProvider === "local" && serverError && !isLocalStarting && (
             <div className="w-1.5 h-1.5 rounded-full bg-status-error shrink-0" />
+          )}
+          {activeProvider !== "local" && !isLocalStarting && (
+            <ProviderIcon id={activeProvider} className="w-3.5 h-3.5 shrink-0" />
           )}
           <span className="text-xs font-sans text-text-weak truncate">
             {isLocalStarting

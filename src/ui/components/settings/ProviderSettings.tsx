@@ -7,27 +7,11 @@ import {
 import { useProviderCatalog } from "../../stores/providerCatalog"
 import { t } from "../../i18n/translations"
 import {
-  Check, ExternalLink, Sparkles, Key, X, Zap, Cloud, Shield, Cpu,
+  Check, ExternalLink, Sparkles, Key, X,
   ChevronDown, ChevronUp, Wrench, Brain, Eye, DollarSign,
 } from "lucide-react"
+import { ProviderIcon } from "../provider-icons/ProviderIcon"
 import { fmtCtx } from "../../utils/format"
-
-// Provider icons by type/id
-const PROVIDER_ICONS: Record<string, { icon: typeof Cloud; color: string }> = {
-  anthropic: { icon: Shield, color: "text-orange-400" },
-  openai: { icon: Zap, color: "text-emerald-400" },
-  google: { icon: Cloud, color: "text-blue-400" },
-  mistral: { icon: Zap, color: "text-orange-300" },
-  groq: { icon: Cpu, color: "text-purple-400" },
-  openrouter: { icon: Cloud, color: "text-pink-400" },
-  xai: { icon: Zap, color: "text-gray-300" },
-  deepseek: { icon: Cpu, color: "text-cyan-400" },
-  togetherai: { icon: Cloud, color: "text-indigo-400" },
-  perplexity: { icon: Zap, color: "text-teal-400" },
-  fireworks: { icon: Zap, color: "text-amber-400" },
-  cerebras: { icon: Cpu, color: "text-violet-400" },
-  cohere: { icon: Cloud, color: "text-rose-400" },
-}
 
 // Format cost per 1K tokens
 function fmtCost(c?: number): string {
@@ -193,9 +177,6 @@ export function ProviderSettings() {
 
   // Shared card renderer
   function ProviderCard({ cat, isConnected }: { cat: ProviderInfo; isConnected: boolean }) {
-    const iconDef = PROVIDER_ICONS[cat.id]
-    const Icon = iconDef?.icon || Cloud
-    const iconColor = iconDef?.color || "text-text-weaker"
     const isEditing = editingKey === cat.id
     const isExpanded = expandedProvider === cat.id
     const toolCount = cat.models.filter((m) => m.toolCalling).length
@@ -230,7 +211,7 @@ export function ProviderSettings() {
           {/* Header */}
           <div className="flex items-center gap-2.5 mb-2">
             <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center">
-              <Icon className={`w-4 h-4 ${iconColor}`} />
+              <ProviderIcon id={cat.id} className="w-5 h-5" />
             </div>
             <div>
               <h4 className="text-sm text-text-strong font-sans font-semibold">{cat.name}</h4>

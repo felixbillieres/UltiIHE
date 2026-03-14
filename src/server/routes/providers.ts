@@ -97,6 +97,14 @@ const PROVIDER_META: Record<string, ProviderMeta> = {
     signupUrl: "https://dashboard.cohere.com/api-keys",
     description: "Free trial key",
   },
+  moonshotai: {
+    signupUrl: "https://platform.moonshot.ai/",
+    description: "Kimi models — strong reasoning, 262K context",
+  },
+  minimax: {
+    signupUrl: "https://www.minimax.io/",
+    description: "MiniMax models — up to 1M context, reasoning",
+  },
 }
 
 // ── Convert models.dev model → frontend ModelInfo ────────────
