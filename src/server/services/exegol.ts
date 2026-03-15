@@ -75,13 +75,9 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "").replace(SPINNER_RE, "")
 }
 
-// ── Safe name validation ─────────────────────────────────────
+// ── Safe name validation (uses shared) ───────────────────────
 
-const SAFE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
-
-function isValidName(name: string): boolean {
-  return SAFE_NAME_RE.test(name)
-}
+import { isValidContainerName as isValidName } from "../../shared/validation"
 
 /**
  * Extract the meaningful error from verbose exegol CLI output.

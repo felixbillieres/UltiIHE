@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { isValidContainerName } from "../../../shared/validation"
 import {
   useExegolStore,
   type ExegolImage,
@@ -92,7 +93,7 @@ export function CreateContainerModal({
       setError("Select an image")
       return
     }
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name.trim())) {
+    if (!isValidContainerName(name.trim())) {
       setError("Invalid name (alphanumeric, dots, dashes, underscores)")
       return
     }

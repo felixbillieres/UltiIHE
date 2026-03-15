@@ -1,8 +1,7 @@
 import { stripAnsi } from "./strip-ansi"
 import { opsTracker } from "./ops-tracker"
 import type { IPty } from "bun-pty"
-
-const CONTAINER_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+import { CONTAINER_NAME_RE } from "../shared/validation"
 const RING_BUFFER_MAX_LINES = 1000
 const MAX_AI_POOL = 4
 

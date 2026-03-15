@@ -42,6 +42,7 @@ interface ProbeStore {
   updateLastAssistant: (probeId: string, content: string) => void
   removeProbe: (probeId: string) => void
   clearProbes: (pageKey: string) => void
+  clearAll: () => void
   setActiveProbe: (probeId: string | null) => void
   toggleHistory: (pageKey: string) => void
   closeHistory: (pageKey: string) => void
@@ -119,6 +120,8 @@ export const useProbeStore = create<ProbeStore>()((set, get) => ({
       }
     })
   },
+
+  clearAll: () => set({ probes: [], activeProbeId: null, openHistoryKeys: [] }),
 
   setActiveProbe: (probeId) => set({ activeProbeId: probeId }),
 

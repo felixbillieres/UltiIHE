@@ -1,15 +1,17 @@
 import { Hono } from "hono"
 import { readdir, stat, readFile, writeFile, mkdir, rm, rename as fsRename, cp } from "node:fs/promises"
 import { join, resolve, basename, dirname } from "node:path"
+import { isValidContainerName, validatePath, PROTECTED_ROOTS } from "../../shared/validation"
+import { DOCKER_EXEC_TIMEOUT } from "../../config"
 
 export const filesRoutes = new Hono()
 
-// ── Docker exec helper (no shell interpolation) ────────────────
+// ── Docker exec helper (no shell interpolation, array args) ─────
 
 async function dockerExec(
   container: string,
   args: string[],
-  timeout = 30000,
+  timeout = DOCKER_EXEC_TIMEOUT,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["docker", "exec", container, ...args], {
     stdout: "pipe",
@@ -27,24 +29,9 @@ async function dockerExec(
   return { stdout, stderr, exitCode: proc.exitCode ?? 1 }
 }
 
-// ── Validation ──────────────────────────────────────────────────
+// ── Validation (uses shared) ────────────────────────────────────
 
-function validateContainer(name: string): boolean {
-  return /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)
-}
-
-function validatePath(path: string): boolean {
-  if (!path.startsWith("/")) return false
-  if (path.includes("..")) return false
-  if (path.includes("\0")) return false
-  // Whitelist: alphanumeric, common path chars. Blocks shell metacharacters (;|&$`'"(){}!<>)
-  return /^\/[a-zA-Z0-9_./ @+:,~#%-]*$/.test(path)
-}
-
-const PROTECTED_ROOTS = new Set([
-  "/", "/bin", "/sbin", "/lib", "/lib64", "/usr", "/var",
-  "/boot", "/dev", "/proc", "/sys",
-])
+const validateContainer = isValidContainerName
 
 function validateHostPath(path: string): boolean {
   if (!path.startsWith("/")) return false

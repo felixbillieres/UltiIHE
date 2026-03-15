@@ -4,6 +4,7 @@ import { commandQueue } from "../terminal/command-queue"
 import { questionQueue } from "../ai/tool/question-queue"
 import { toolApprovalQueue } from "../ai/tool/tool-approval"
 import { opsTracker } from "../terminal/ops-tracker"
+import { CONTAINER_NAME_RE } from "../shared/validation"
 import type { ServerWebSocket } from "bun"
 
 // --- Message Schemas ---
@@ -11,7 +12,7 @@ import type { ServerWebSocket } from "bun"
 const terminalCreateSchema = z.object({
   type: z.literal("terminal:create"),
   data: z.object({
-    container: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/, "Invalid container name"),
+    container: z.string().regex(CONTAINER_NAME_RE, "Invalid container name"),
     name: z.string().optional(),
     cols: z.number().int().min(1).max(500).optional(),
     rows: z.number().int().min(1).max(200).optional(),

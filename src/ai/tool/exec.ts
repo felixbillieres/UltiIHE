@@ -3,9 +3,8 @@
  * Used internally by file, search, and other container-scoped tools.
  */
 
-const MAX_OUTPUT = 50 * 1024 // 50KB
-const DEFAULT_TIMEOUT = 30_000 // 30s
-const CONTAINER_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/
+import { isValidContainerName } from "../../shared/validation"
+import { DOCKER_EXEC_MAX_OUTPUT, DOCKER_EXEC_TIMEOUT } from "../../config"
 
 export interface ExecResult {
   stdout: string
@@ -18,11 +17,11 @@ export async function dockerExec(
   command: string,
   options: { timeout?: number; stdin?: string; maxOutput?: number } = {},
 ): Promise<ExecResult> {
-  if (!CONTAINER_NAME_RE.test(container)) {
+  if (!isValidContainerName(container)) {
     throw new Error(`Invalid container name: ${container}`)
   }
 
-  const { timeout = DEFAULT_TIMEOUT, stdin, maxOutput = MAX_OUTPUT } = options
+  const { timeout = DOCKER_EXEC_TIMEOUT, stdin, maxOutput = DOCKER_EXEC_MAX_OUTPUT } = options
 
   const args = stdin
     ? ["docker", "exec", "-i", container, "sh", "-c", command]

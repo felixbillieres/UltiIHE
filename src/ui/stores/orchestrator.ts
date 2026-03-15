@@ -15,6 +15,8 @@ import { useCommandApprovalStore } from "./commandApproval"
 import { useToolApprovalStore } from "./toolApproval"
 import { useContextStore } from "./context"
 import { useOpsStore } from "./operations"
+import { useExhStore } from "./exh"
+import { useProbeStore } from "./probe"
 
 export function switchProject(projectId: string) {
   useProjectStore.getState().setActiveProject(projectId)
@@ -26,4 +28,6 @@ export function switchProject(projectId: string) {
   useToolApprovalStore.getState().clearAll()
   useContextStore.getState().clear()
   useOpsStore.getState().clearCompleted()
+  useExhStore.getState().clear()
+  useProbeStore.getState().clearAll()
 }
