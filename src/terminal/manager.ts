@@ -199,12 +199,19 @@ class TerminalManager {
       // Uses a line accumulator (_currentLine) so partial PTY chunks
       // are joined into complete lines before being pushed.
       const stripped = stripAnsi(chunk)
-      terminal._currentLine += stripped
+
+      // Handle \r (carriage return): when the shell outputs "# \r [full prompt]",
+      // the \r means "go back to start of line and overwrite". We simulate this
+      // by clearing _currentLine when we encounter \r mid-line (Exegol PS1 pattern).
+      const withCR = stripped.replace(/[^\n]*\r(?!\n)/g, "")
+
+      terminal._currentLine += withCR
       const parts = terminal._currentLine.split("\n")
       // All parts except the last are complete lines
       for (let i = 0; i < parts.length - 1; i++) {
-        if (parts[i].length > 0) {
-          terminal.ringBuffer.push(parts[i])
+        const line = parts[i].trimEnd()
+        if (line.length > 0) {
+          terminal.ringBuffer.push(line)
         }
       }
       // Last part is the current incomplete line (or "" if chunk ended with \n)
@@ -404,7 +411,10 @@ class TerminalManager {
   getOutput(terminalId: string): string {
     const terminal = this.terminals.get(terminalId)
     if (!terminal) throw new Error(`Terminal not found: ${terminalId}`)
-    return terminal.ringBuffer.join("\n")
+    // Filter out bare prompt artifacts (standalone # or $ from PS1 pre-render)
+    return terminal.ringBuffer
+      .filter((line) => !/^[#$%>]\s*$/.test(line))
+      .join("\n")
   }
 
   subscribe(terminalId: string, ws: WebSocket): void {
