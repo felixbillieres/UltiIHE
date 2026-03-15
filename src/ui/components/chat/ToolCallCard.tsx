@@ -120,8 +120,12 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
   const isError = part.status === "error"
   const isCompleted = part.status === "completed"
 
-  // Auto-expand when output arrives for the first time
+  // Detect doom loop warnings — these are not real failures
   const output = part.output || ""
+  const isDoomWarning = isError && output.includes("was just called with identical arguments")
+  const isRealError = isError && !isDoomWarning
+
+  // Auto-expand when output arrives for the first time
   useEffect(() => {
     if (output && !hadOutputRef.current) {
       hadOutputRef.current = true
@@ -132,25 +136,31 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
   // Parse terminal output for display
   const { text: displayOutput, truncated } = truncateOutput(output)
 
-  const label = autoRan ? "Auto-Ran command" : "Ran command"
+  const label = autoRan ? "Auto-ran" : "Ran"
+  const statusLabel = isRunning ? "Running" : isDoomWarning ? "Warning" : isRealError ? "Failed" : label
 
   return (
-    <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
-      {/* Header — Cline-style status dot from CommandOutputRow.tsx */}
+    <div className={`my-1.5 rounded-lg border overflow-hidden ${
+      isRealError ? "border-status-error/30" : "border-border-weak"
+    } bg-surface-0/50`}>
+      {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
-        {/* Cline-style status dot: green pulsing (running), red (error), green solid (done) */}
         <div className={`rounded-full w-2 h-2 shrink-0 ${
           isRunning ? "bg-status-success animate-pulse"
-            : isError ? "bg-status-error"
+            : isDoomWarning ? "bg-status-warning"
+            : isRealError ? "bg-status-error"
             : "bg-status-success"
         }`} />
         <span className={`text-[11px] font-sans font-medium shrink-0 ${
-          isRunning ? "text-status-success" : "text-text-weaker"
+          isRunning ? "text-status-success"
+            : isDoomWarning ? "text-status-warning"
+            : isRealError ? "text-status-error"
+            : "text-text-weaker"
         }`}>
-          {isRunning ? "Running" : isError ? "Failed" : label}
+          {statusLabel}
         </span>
         <code className="text-[11px] text-text-base font-mono truncate flex-1">{command}</code>
         {duration && <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{duration}</span>}

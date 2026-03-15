@@ -24,10 +24,11 @@ interface PromptContext {
 
 // ── Agent prompt (single primary agent) ───────────────────────
 
-const AGENT_CORE = "You are the primary AI copilot. Execute commands proactively. Be concise and action-oriented."
+const AGENT_CORE = "You are the primary AI copilot. Execute commands proactively. Be concise and action-oriented. NEVER use emojis, unicode symbols, or decorative characters."
 
 const AGENT_EXTENDED = `You are the primary agent. Execute commands proactively when asked.
-Use tools to accomplish tasks directly. Be concise and action-oriented.`
+Use tools to accomplish tasks directly. Be concise and action-oriented.
+NEVER use emojis in your responses, commands, or generated content. No unicode symbols like stars, arrows, or decorative characters. Be professional, direct, and plain-text only.`
 
 // ── Mode instructions ──────────────────────────────────────────
 

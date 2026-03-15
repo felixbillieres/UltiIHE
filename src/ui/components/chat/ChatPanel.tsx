@@ -150,20 +150,22 @@ export function ChatPanel({ projectId }: Props) {
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   const scrollToBottom = useCallback(() => {
-    virtuosoRef.current?.scrollToIndex({
-      index: "LAST",
-      behavior: "smooth",
-    })
+    // Use scrollBy with a large value — more reliable than scrollToIndex
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" })
+    }
     setShowScrollButton(false)
   }, [])
 
   // Delay initial state to avoid flashing the button on mount
   const mountedRef = useRef(false)
-  useEffect(() => { const t = setTimeout(() => { mountedRef.current = true }, 500); return () => clearTimeout(t) }, [])
+  useEffect(() => { const t = setTimeout(() => { mountedRef.current = true }, 1000); return () => clearTimeout(t) }, [])
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
-    if (!mountedRef.current) return // ignore initial Virtuoso mount callbacks
-    setShowScrollButton(!atBottom && messages.length > 3)
-  }, [messages.length])
+    if (!mountedRef.current) return
+    // Don't show during streaming — followOutput handles it
+    if (streaming) { setShowScrollButton(false); return }
+    setShowScrollButton(!atBottom && messages.length > 5)
+  }, [messages.length, streaming])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -1050,7 +1052,7 @@ export function ChatPanel({ projectId }: Props) {
               ? Math.max(0, messages.filter((msg) => searchResults.includes(msg.id)).length - 1)
               : Math.max(0, messages.length - 1)
           }
-          atBottomThreshold={10}
+          atBottomThreshold={100}
           followOutput="smooth"
           atBottomStateChange={handleAtBottomStateChange}
           scrollerRef={(ref) => { containerRef.current = ref as HTMLDivElement | null }}
