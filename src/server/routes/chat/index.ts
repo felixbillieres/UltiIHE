@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import { streamText, stepCountIs } from "ai"
+import { z } from "zod"
 import { terminalManager } from "../../../terminal/manager"
 import { allTools, readOnlyTools } from "../../../ai/tool"
 import { createRegistry } from "./registry"
@@ -21,6 +22,46 @@ import { getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withP
 import { invalidTool, buildRepairCallback, createDoomLoopTracker } from "./toolResilience"
 import { getMCPTools } from "../../../ai/mcp/client"
 
+// ── Zod schema for chat request validation ────────────────────
+const ChatRequestSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(["user", "assistant", "system"]),
+    content: z.string(),
+  })),
+  providerId: z.string(),
+  modelId: z.string(),
+  apiKey: z.string().optional().default(""),
+  containerIds: z.array(z.string()).optional().default([]),
+  activeTerminalId: z.string().optional(),
+  baseUrl: z.string().optional(),
+  mode: z.enum(["build", "plan", "deep"]).optional().default("build"),
+  agentMode: z.enum(["ctf", "audit", "neutral"]).optional().default("neutral"),
+  thinkingEffort: z.enum(["off", "low", "medium", "high"]).optional().default("off"),
+  images: z.array(z.object({
+    mime: z.string(),
+    dataUrl: z.string(),
+  })).optional().default([]),
+})
+
+// ── Stream part interfaces for type-safe access ───────────────
+interface StreamToolCallPart {
+  type: "tool-call"
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+}
+
+interface StreamToolResultPart {
+  type: "tool-result"
+  toolCallId: string
+  result: unknown
+}
+
+interface StreamReasoningDeltaPart {
+  type: "reasoning-delta"
+  text: string
+}
+
 // Sub-routes
 import { contextRoute } from "./contextRoute"
 import { compactRoute } from "./compactRoute"
@@ -37,6 +78,10 @@ chatRoutes.route("/", titleRoute)
 
 chatRoutes.post("/chat", async (c) => {
   const body = await c.req.json()
+  const parsed = ChatRequestSchema.safeParse(body)
+  if (!parsed.success) {
+    return c.json({ error: "Invalid request: " + parsed.error.issues[0]?.message }, 400)
+  }
   const {
     messages,
     providerId,
@@ -45,27 +90,12 @@ chatRoutes.post("/chat", async (c) => {
     containerIds,
     activeTerminalId,
     baseUrl,
-    mode = "build",
-    agentMode = "neutral",
-    thinkingEffort = "off",
-    images = [],
-  } = body as {
-    messages: any[]
-    providerId: string
-    modelId: string
-    apiKey: string
-    containerIds?: string[]
-    activeTerminalId?: string
-    baseUrl?: string
-    mode?: ReasoningMode
-    agentMode?: "ctf" | "audit" | "neutral"
-    thinkingEffort?: ThinkingEffort
-    images?: Array<{ mime: string; dataUrl: string }>
-  }
+    mode,
+    agentMode,
+    thinkingEffort,
+    images,
+  } = parsed.data
 
-  if (!messages || !providerId || !modelId) {
-    return c.json({ error: "Missing required fields" }, 400)
-  }
   if (messages.length > 500) {
     return c.json({ error: "Message history too large (max 500)" }, 413)
   }
@@ -101,17 +131,18 @@ chatRoutes.post("/chat", async (c) => {
 
   // ── Adaptive system prompt ────────────────────────────────
   const systemPrompt = buildAdaptivePrompt({
-    containerIds: containerIds || [],
+    containerIds,
     terminalContext,
     activeTerminals,
     mode,
-    agentMode: agentMode as "ctf" | "audit" | "neutral",
+    agentMode,
     tier: budget.promptTier,
   })
 
   // ── Tool selection ────────────────────────────────────────
   const baseTools = mode === "plan" ? readOnlyTools : allTools
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let tools: Record<string, any> = baseTools
   if (budget.maxTools < Object.keys(baseTools).length) {
     const ESSENTIAL_TOOLS = [
@@ -133,6 +164,7 @@ chatRoutes.post("/chat", async (c) => {
     ]
 
     const prioritized = [...ESSENTIAL_TOOLS, ...SECONDARY_TOOLS, ...TERTIARY_TOOLS]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const limited: Record<string, any> = {}
     let count = 0
     for (const name of prioritized) {
@@ -155,7 +187,9 @@ chatRoutes.post("/chat", async (c) => {
   // ── Message pruning ───────────────────────────────────────
   // Note: message normalization (empty content, tool IDs, etc.) is now handled
   // by the wrapLanguageModel middleware — applied at the AI SDK level like OpenCode.
-  let processedMessages = [...messages]
+  // Messages start as Zod-validated but content may become multipart (image injection)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let processedMessages: any[] = [...messages]
 
   // ── Inject images into last user message ─────────────────
   if (images.length > 0) {
@@ -163,7 +197,7 @@ chatRoutes.post("/chat", async (c) => {
       if (processedMessages[i].role === "user") {
         const msg = processedMessages[i]
         const textContent = typeof msg.content === "string" ? msg.content : ""
-        const parts: any[] = []
+        const parts: Array<{ type: string; image?: string; mimeType?: string; text?: string }> = []
         for (const img of images) {
           const match = img.dataUrl.match(/^data:([^;]+);base64,(.+)$/)
           if (match) {
@@ -195,6 +229,7 @@ chatRoutes.post("/chat", async (c) => {
     const sampling = getDefaultSampling(providerId, modelId)
 
     // ── Prompt caching ────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const providerOptions: Record<string, any> = {
       ...getReasoningOptions(providerId, mode, thinkingEffort),
     }
@@ -260,12 +295,12 @@ chatRoutes.post("/chat", async (c) => {
       })
     } catch (err) {
       const msg = extractErrorMessage(err)
-      const status = (err as any)?.statusCode || 500
+      const status = ((err as { statusCode?: number })?.statusCode || 500) as 400 | 500 | 502
       return c.json({ error: msg }, status)
     }
 
     // ── SSE helper ──────────────────────────────────────────
-    function sse(event: string, data: any): string {
+    function sse(event: string, data: Record<string, unknown>): string {
       return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
     }
 
@@ -284,7 +319,7 @@ chatRoutes.post("/chat", async (c) => {
       iterator = fullStream[Symbol.asyncIterator]()
     } catch (err) {
       const msg = extractErrorMessage(err)
-      const status = (err as any)?.statusCode || 500
+      const status = ((err as { statusCode?: number })?.statusCode || 500) as 400 | 500 | 502
       return c.json({ error: msg }, status)
     }
 
@@ -322,7 +357,8 @@ chatRoutes.post("/chat", async (c) => {
         if (!part) continue
 
         if (part.type !== "text-delta" && part.type !== "start") {
-          console.log(`[Stream] part type: ${part.type}`, part.type === "tool-call" ? `tool: ${(part as any).toolName}` : "")
+          const toolPart = part as unknown as StreamToolCallPart
+          console.log(`[Stream] part type: ${part.type}`, part.type === "tool-call" ? `tool: ${toolPart.toolName}` : "")
         }
 
         switch (part.type) {
@@ -333,22 +369,25 @@ chatRoutes.post("/chat", async (c) => {
             }
             doomTracker.resetOnText()
             break
-          case "reasoning-delta":
+          case "reasoning-delta": {
             hasContent = true
+            const reasoningPart = part as unknown as StreamReasoningDeltaPart
             bufferedEvents.push(sse("reasoning", {
-              text: (part as any).text || "",
+              text: reasoningPart.text || "",
             }))
             break
+          }
           case "tool-call": {
             hasContent = true
             toolCallCount++
+            const tcPart = part as unknown as StreamToolCallPart
             bufferedEvents.push(sse("tool-call", {
-              id: (part as any).toolCallId,
-              tool: (part as any).toolName,
-              args: (part as any).args,
+              id: tcPart.toolCallId,
+              tool: tcPart.toolName,
+              args: tcPart.args,
             }))
             // Doom loop detection — Cline-style escalating response
-            const earlyDoomResult = doomTracker.check((part as any).toolName, (part as any).args)
+            const earlyDoomResult = doomTracker.check(tcPart.toolName, tcPart.args)
             if (earlyDoomResult.action === "abort") {
               console.warn(`[Doom Loop] Aborting: "${earlyDoomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
               earlyError = earlyDoomResult.message
@@ -357,22 +396,24 @@ chatRoutes.post("/chat", async (c) => {
               // Inject warning as tool result so the model can adapt (Cline pattern: feedback, not abort)
               console.warn(`[Doom Loop] Warning: "${earlyDoomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
               bufferedEvents.push(sse("tool-result", {
-                id: (part as any).toolCallId,
+                id: tcPart.toolCallId,
                 output: earlyDoomResult.message,
                 isError: true,
               }))
             }
             break
           }
-          case "tool-result":
+          case "tool-result": {
+            const trPart = part as unknown as StreamToolResultPart
             bufferedEvents.push(sse("tool-result", {
-              id: (part as any).toolCallId,
-              output: truncateOutput(String((part as any).result ?? "")),
+              id: trPart.toolCallId,
+              output: truncateOutput(String(trPart.result ?? "")),
               isError: false,
             }))
             // Cline pattern: reset consecutive mistake counter on successful tool result
             doomTracker.resetOnSuccess()
             break
+          }
           case "error":
             earlyError = extractErrorMessage(part.error)
             break
@@ -399,12 +440,12 @@ chatRoutes.post("/chat", async (c) => {
         await result.text
       } catch (err) {
         const msg = extractErrorMessage(err)
-        const status = (err as any)?.statusCode || 500
+        const status = ((err as { statusCode?: number })?.statusCode || 500) as 400 | 500 | 502
         return c.json({ error: msg }, status)
       }
       if (capturedError) {
         const msg = extractErrorMessage(capturedError)
-        const status = (capturedError as any)?.statusCode || 500
+        const status = ((capturedError as { statusCode?: number })?.statusCode || 500) as 400 | 500 | 502
         return c.json({ error: msg }, status)
       }
       return c.json({ error: "Model returned an empty response" }, 502)
@@ -459,22 +500,25 @@ chatRoutes.post("/chat", async (c) => {
                 controller.enqueue(encoder.encode(sse("text-delta", { text: part.text })))
                 doomTracker.resetOnText()
                 break
-              case "reasoning-delta":
+              case "reasoning-delta": {
+                const reasoningPart = part as unknown as StreamReasoningDeltaPart
                 controller.enqueue(encoder.encode(sse("reasoning", {
-                  text: (part as any).text || "",
+                  text: reasoningPart.text || "",
                 })))
                 break
+              }
               case "tool-call": {
                 toolCallCount++
-                const toolCallId = (part as any).toolCallId
+                const tcPart = part as unknown as StreamToolCallPart
+                const toolCallId = tcPart.toolCallId
                 runningToolCalls.add(toolCallId)
                 controller.enqueue(encoder.encode(sse("tool-call", {
                   id: toolCallId,
-                  tool: (part as any).toolName,
-                  args: (part as any).args,
+                  tool: tcPart.toolName,
+                  args: tcPart.args,
                 })))
                 // Doom loop detection — Cline-style escalating response
-                const doomResult = doomTracker.check((part as any).toolName, (part as any).args)
+                const doomResult = doomTracker.check(tcPart.toolName, tcPart.args)
                 if (doomResult.action === "abort") {
                   // Level 3: hard abort after MAX_CONSECUTIVE_MISTAKES
                   console.warn(`[Doom Loop] Aborting mid-stream: "${doomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
@@ -494,11 +538,12 @@ chatRoutes.post("/chat", async (c) => {
                 break
               }
               case "tool-result": {
-                const resultId = (part as any).toolCallId
+                const trPart = part as unknown as StreamToolResultPart
+                const resultId = trPart.toolCallId
                 runningToolCalls.delete(resultId)
                 controller.enqueue(encoder.encode(sse("tool-result", {
                   id: resultId,
-                  output: truncateOutput(String((part as any).result ?? "")),
+                  output: truncateOutput(String(trPart.result ?? "")),
                   isError: false,
                 })))
                 // Cline pattern: reset consecutive mistake counter on successful tool result
@@ -576,7 +621,7 @@ chatRoutes.post("/chat", async (c) => {
     })
   } catch (err) {
     const msg = extractErrorMessage(err)
-    const status = (err as any)?.statusCode || 500
+    const status = ((err as { statusCode?: number })?.statusCode || 500) as 400 | 500 | 502
     return c.json({ error: msg }, status)
   }
 })

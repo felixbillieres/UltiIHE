@@ -125,10 +125,10 @@ export function ProbeHistory({ pageKey, containerWidth, containerHeight }: Props
 
   return (
     <>
-      {/* Floating Exegol button — bottom-right of container */}
+      {/* Floating Exegol button — bottom-right of container, above status bar */}
       <button
         onClick={() => toggleHistory(pageKey)}
-        className={`absolute z-20 bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full shadow-lg transition-all hover:scale-105 ${
+        className={`absolute z-20 bottom-8 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full shadow-lg transition-all hover:scale-105 ${
           isOpen
             ? "bg-accent text-white"
             : "bg-surface-2 border border-border-base text-text-weak hover:text-text-base hover:border-accent/30"
@@ -146,7 +146,7 @@ export function ProbeHistory({ pageKey, containerWidth, containerHeight }: Props
       {/* History panel */}
       {isOpen && (
         <div
-          className="absolute z-30 bottom-12 right-3 w-[400px] bg-surface-2 border border-border-base rounded-xl shadow-2xl flex flex-col overflow-hidden"
+          className="absolute z-30 bottom-[4.5rem] right-3 w-[400px] bg-surface-2 border border-border-base rounded-xl shadow-2xl flex flex-col overflow-hidden"
           style={{ maxHeight: Math.min(containerHeight - 60, 500) }}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
