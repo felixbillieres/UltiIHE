@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react"
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso"
 import { useSessionStore, type Message, type MessagePart, type ToolCallPart, type ReasoningPart } from "../../stores/session"
 import { useSettingsStore } from "../../stores/settings"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
@@ -9,7 +10,7 @@ import { useTerminalStore } from "../../stores/terminal"
 import { useChatContextStore } from "../../stores/chatContext"
 import { useContextStore } from "../../stores/context"
 import { useLocalAIStore } from "../../stores/localAI"
-import { useAutoScroll } from "../../hooks/useAutoScroll"
+// useAutoScroll replaced by react-virtuoso built-in scroll behavior
 import { Send, Bot, Loader2, Square, ArrowDown, Search, X } from "lucide-react"
 import { toast } from "sonner"
 
@@ -18,12 +19,14 @@ import { useSlashCommands, useAtOptions, type SlashCommand, type AtOption } from
 import { ControlBar } from "./ControlBar"
 import { ContextQuotes } from "./ContextQuotes"
 import { CommandPopover } from "./CommandPopover"
-import { MessageBubble, CompactionMessage } from "./MessageBubble"
+import { MemoizedMessageBubble, CompactionMessage } from "./MessageBubble"
 import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
 import { FileApprovalBanner, ResolvedFilesSummary } from "./FileApprovalBanner"
 import { ImageAttachments } from "./ImageAttachments"
 import { OperationsTracker } from "./OperationsTracker"
 import { SSEParser } from "./SSEParser"
+import { TokenBar } from "./TokenBar"
+import { ActivityIndicator } from "./ActivityIndicator"
 
 // Stable reference for empty arrays (avoids infinite re-render loops)
 const EMPTY_MESSAGES: Message[] = []
@@ -141,25 +144,26 @@ export function ChatPanel({ projectId }: Props) {
     [atOptions, popoverFilter],
   )
 
-  // Smart auto-scroll
-  const { containerRef, showScrollButton, scrollToBottom, scrollToLastUserMessage, onContentUpdate } =
-    useAutoScroll(streaming)
+  // Virtuoso scroll management
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [showScrollButton, setShowScrollButton] = useState(false)
 
-  // On new user message: scroll so it's at the top (clean context). Otherwise follow streaming.
-  const prevMsgCountRef = useRef(messages.length)
-  useEffect(() => {
-    const prev = prevMsgCountRef.current
-    prevMsgCountRef.current = messages.length
-    if (messages.length > prev) {
-      const last = messages[messages.length - 1]
-      if (last?.role === "user") {
-        // Delay to let React render the message + spacer first
-        requestAnimationFrame(() => scrollToLastUserMessage())
-        return
-      }
-    }
-    onContentUpdate()
-  }, [messages.length, onContentUpdate, scrollToLastUserMessage])
+  const scrollToBottom = useCallback(() => {
+    virtuosoRef.current?.scrollToIndex({
+      index: "LAST",
+      behavior: "smooth",
+    })
+    setShowScrollButton(false)
+  }, [])
+
+  // Delay initial state to avoid flashing the button on mount
+  const mountedRef = useRef(false)
+  useEffect(() => { const t = setTimeout(() => { mountedRef.current = true }, 500); return () => clearTimeout(t) }, [])
+  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    if (!mountedRef.current) return // ignore initial Virtuoso mount callbacks
+    setShowScrollButton(!atBottom && messages.length > 3)
+  }, [messages.length])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -454,7 +458,6 @@ export function ChatPanel({ projectId }: Props) {
         content: fullText,
         parts: [...parts],
       })
-      onContentUpdate()
       rafPending = false
     }
 
@@ -979,7 +982,7 @@ export function ChatPanel({ projectId }: Props) {
   }
 
   return (
-    <div className="h-full flex flex-col" data-chat-panel>
+    <div className="h-full flex flex-col relative" data-chat-panel>
       {/* Search bar */}
       {searchOpen && (
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-surface-1 border-b border-border-weak">
@@ -1013,32 +1016,56 @@ export function ChatPanel({ projectId }: Props) {
         </div>
       )}
 
-      {/* Messages — Cline pattern: grow to fill, min-h-0 for flex overflow */}
-      <div
-        ref={containerRef}
-        className="flex-1 min-h-0 overflow-y-auto scrollbar-none p-4 space-y-4 relative"
-      >
-        {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center">
-            <Bot className="w-8 h-8 text-text-weaker mb-3" />
-            <p className="text-sm text-text-weak mb-1 font-sans">
-              Ready to assist
-            </p>
-            <p className="text-xs text-text-weaker max-w-[200px] font-sans">
-              Ask me to run commands, scan targets, or analyze results
-            </p>
-          </div>
-        ) : (
-          messages
-            .filter((msg) => !searchResults || searchResults.includes(msg.id))
-            .map((msg) => {
-              // Detect compaction summary messages and render them specially
-              if (msg.content.startsWith("[Context Summary")) {
-                return <CompactionMessage key={msg.id} content={msg.content} />
-              }
+      {/* Token usage bar — always visible */}
+      <TokenBar />
+
+      {/* Activity indicator — visible during streaming */}
+      <ActivityIndicator
+        streaming={streaming}
+        parts={
+          streaming && streamingMsgIdRef.current
+            ? (messages.find((m) => m.id === streamingMsgIdRef.current)?.parts ?? [])
+            : []
+        }
+      />
+
+      {/* Messages — virtualized list for performance */}
+      {messages.length === 0 ? (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-center">
+          <Bot className="w-8 h-8 text-text-weaker mb-3" />
+          <p className="text-sm text-text-weak mb-1 font-sans">
+            Ready to assist
+          </p>
+          <p className="text-xs text-text-weaker max-w-[200px] font-sans">
+            Ask me to run commands, scan targets, or analyze results
+          </p>
+        </div>
+      ) : (
+        <Virtuoso
+          ref={virtuosoRef}
+          data={searchResults ? messages.filter((msg) => searchResults.includes(msg.id)) : messages}
+          increaseViewportBy={{ top: 3000, bottom: Number.MAX_SAFE_INTEGER }}
+          initialTopMostItemIndex={
+            searchResults
+              ? Math.max(0, messages.filter((msg) => searchResults.includes(msg.id)).length - 1)
+              : Math.max(0, messages.length - 1)
+          }
+          atBottomThreshold={10}
+          followOutput="smooth"
+          atBottomStateChange={handleAtBottomStateChange}
+          scrollerRef={(ref) => { containerRef.current = ref as HTMLDivElement | null }}
+          className="flex-1 min-h-0 scrollbar-none"
+          itemContent={(_index, msg) => {
+            if (msg.content.startsWith("[Context Summary")) {
               return (
-                <MessageBubble
-                  key={msg.id}
+                <div className="px-4 py-2">
+                  <CompactionMessage content={msg.content} />
+                </div>
+              )
+            }
+            return (
+              <div className="px-4 py-2">
+                <MemoizedMessageBubble
                   message={msg}
                   isStreaming={
                     streaming &&
@@ -1051,16 +1078,16 @@ export function ChatPanel({ projectId }: Props) {
                   onRetry={handleRetry}
                   onEdit={!streaming ? handleQuoteMessage : undefined}
                 />
-              )
-            })
-        )}
-        {/* Spacer — Cline-style: full spacer when idle (lets user msg scroll to top),
-            shrinks during streaming so the AI answer stays at the bottom of the viewport
-            instead of floating mid-page with empty space below */}
-        {messages.length > 0 && (
-          <div style={{ minHeight: streaming ? "1rem" : "50vh" }} className="transition-[min-height] duration-300" />
-        )}
-      </div>
+              </div>
+            )
+          }}
+          components={{
+            Footer: () => (
+              <div style={{ minHeight: streaming ? "1rem" : "50vh" }} className="transition-[min-height] duration-300" />
+            ),
+          }}
+        />
+      )}
 
       {/* Scroll to bottom button */}
       {showScrollButton && (

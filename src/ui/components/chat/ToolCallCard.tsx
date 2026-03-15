@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import type { ToolCallPart } from "../../stores/session"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import {
@@ -112,15 +112,24 @@ function truncateOutput(output: string, maxLines = 15): { text: string; truncate
 // ── Terminal command card (inline output like Cursor) ───────
 
 function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: boolean }) {
-  const [expanded, setExpanded] = useState(part.status === "running")
+  const [expanded, setExpanded] = useState(false)
+  const hadOutputRef = useRef(false)
   const command = part.args?.command || part.args?.input || ""
   const duration = formatDuration(part.startTime, part.endTime)
   const isRunning = part.status === "running"
   const isError = part.status === "error"
   const isCompleted = part.status === "completed"
 
-  // Parse terminal output from tool result
+  // Auto-expand when output arrives for the first time
   const output = part.output || ""
+  useEffect(() => {
+    if (output && !hadOutputRef.current) {
+      hadOutputRef.current = true
+      setExpanded(true)
+    }
+  }, [output])
+
+  // Parse terminal output for display
   const { text: displayOutput, truncated } = truncateOutput(output)
 
   const label = autoRan ? "Auto-Ran command" : "Ran command"
@@ -314,11 +323,16 @@ export function ToolCallGroup({ parts }: { parts: ToolCallPart[] }) {
   // Cline-style summary label
   const label = getToolGroupSummary(parts)
 
-  const statusLabel = runningCount > 0
-    ? `${runningCount} running...`
-    : hasErrors
-      ? `${completedCount} succeeded, ${errorCount} failed`
-      : "Success"
+  const doneCount = completedCount + errorCount
+  const progressLabel = runningCount > 0 ? `${doneCount}/${parts.length} done` : null
+  const errorLabel = hasErrors ? `${errorCount} error${errorCount > 1 ? "s" : ""}` : null
+  const durationLabel = totalDuration > 0
+    ? totalDuration >= 60_000
+      ? `${Math.floor(totalDuration / 60_000)}m ${Math.round((totalDuration % 60_000) / 1000)}s`
+      : totalDuration >= 1000
+        ? `${(totalDuration / 1000).toFixed(1)}s`
+        : `${totalDuration}ms`
+    : null
 
   // Pick an icon: use the most common tool's icon, or a generic one
   const toolCounts = parts.reduce<Record<string, number>>((acc, p) => {
@@ -347,16 +361,17 @@ export function ToolCallGroup({ parts }: { parts: ToolCallPart[] }) {
           )}
         </div>
         <Icon className={`w-3.5 h-3.5 shrink-0 ${meta.color}`} />
-        <span className="text-[12px] font-medium text-text-weak">{label}</span>
-        <span className={`text-[10px] shrink-0 ${
-          runningCount > 0 ? "text-accent" : hasErrors ? "text-status-error" : "text-status-success"
-        }`}>
-          {statusLabel}
-        </span>
-        {allDone && totalDuration > 0 && (
-          <span className="text-[10px] text-text-weaker tabular-nums shrink-0">
-            {totalDuration < 1000 ? `${totalDuration}ms` : `${(totalDuration / 1000).toFixed(1)}s`}
+        <span className="text-[12px] font-medium text-text-weak flex-1 truncate">{label}</span>
+        {progressLabel && (
+          <span className="text-[10px] text-accent tabular-nums shrink-0">{progressLabel}</span>
+        )}
+        {errorLabel && (
+          <span className="text-[10px] font-medium text-status-error bg-status-error/10 px-1.5 py-0.5 rounded-full shrink-0">
+            {errorLabel}
           </span>
+        )}
+        {durationLabel && (
+          <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{durationLabel}</span>
         )}
         <ChevronRight className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
       </button>

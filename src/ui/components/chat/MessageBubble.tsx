@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react"
+import React, { useState, useCallback, useRef, useEffect } from "react"
 import { type Message, type MessagePart, type ReasoningPart, type MessageUsage } from "../../stores/session"
 import {
   Bot,
@@ -466,6 +466,37 @@ function UsageBadge({ usage }: { usage: MessageUsage }) {
   )
 }
 
+// ── Per-message token footer ─────────────────────────────────────
+
+function MessageTokenFooter({ usage, parts }: { usage: MessageUsage; parts?: MessagePart[] }) {
+  const toolCount = parts?.filter((p) => p.type === "tool-call").length ?? 0
+
+  // Compute duration from first part startTime to last part endTime
+  let durationStr = ""
+  if (parts && parts.length > 0) {
+    const starts = parts
+      .map((p) => (p as any).startTime as number | undefined)
+      .filter((t): t is number => typeof t === "number")
+    const ends = parts
+      .map((p) => (p as any).endTime as number | undefined)
+      .filter((t): t is number => typeof t === "number")
+    if (starts.length > 0 && ends.length > 0) {
+      const earliest = Math.min(...starts)
+      const latest = Math.max(...ends)
+      const secs = (latest - earliest) / 1000
+      durationStr = secs >= 10 ? `${Math.round(secs)}s` : `${secs.toFixed(1)}s`
+    }
+  }
+
+  const segments: string[] = []
+  segments.push(`${formatTokens(usage.inputTokens)} in`)
+  segments.push(`${formatTokens(usage.outputTokens)} out`)
+  if (toolCount > 0) segments.push(`${toolCount} tool${toolCount !== 1 ? "s" : ""}`)
+  if (durationStr) segments.push(durationStr)
+
+  return <span>{"\u21B3 " + segments.join(" \u00B7 ")}</span>
+}
+
 // ── Message bubble ───────────────────────────────────────────────
 
 export function MessageBubble({
@@ -560,7 +591,30 @@ export function MessageBubble({
             )}
           </div>
         )}
+        {/* Per-message token footer — always visible, very subtle */}
+        {!isStreaming && message.usage && (message.usage.inputTokens > 0 || message.usage.outputTokens > 0) && (
+          <div className="mt-0.5 text-[9px] text-text-weaker/50 font-sans tabular-nums">
+            <MessageTokenFooter usage={message.usage} parts={message.parts} />
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+export const MemoizedMessageBubble = React.memo(MessageBubble, (prev, next) => {
+  if (prev.message.id !== next.message.id) return false
+  if (prev.isStreaming !== next.isStreaming) return false
+  if (prev.isLastAssistant !== next.isLastAssistant) return false
+  // For streaming messages, check content length and parts length
+  if (prev.message.content.length !== next.message.content.length) return false
+  if ((prev.message.parts?.length || 0) !== (next.message.parts?.length || 0)) return false
+  // Check last part status for tool calls
+  const prevLast = prev.message.parts?.[prev.message.parts.length - 1]
+  const nextLast = next.message.parts?.[next.message.parts.length - 1]
+  if (prevLast?.type === "tool-call" || nextLast?.type === "tool-call") {
+    if ((prevLast as any)?.status !== (nextLast as any)?.status) return false
+    if ((prevLast as any)?.output !== (nextLast as any)?.output) return false
+  }
+  return true
+})
