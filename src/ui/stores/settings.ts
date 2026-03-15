@@ -10,9 +10,11 @@ export type {
   KeybindAction,
   ReasoningMode,
   ThinkingEffort,
-  AgentId,
+  AgentMode,
+  AgentModeInfo,
   Language,
 } from "./settingsTypes"
+export { AGENT_MODES } from "./settingsTypes"
 
 export type { MonoFont } from "./settingsCatalogs"
 export { THEMES, DEFAULT_KEYBINDS, MONO_FONTS } from "./settingsCatalogs"
@@ -23,6 +25,7 @@ import type {
   ModelInfo,
   ReasoningMode,
   ThinkingEffort,
+  AgentMode,
   Language,
 } from "./settingsTypes"
 import { THEMES, DEFAULT_KEYBINDS } from "./settingsCatalogs"
@@ -66,6 +69,8 @@ interface SettingsStore {
   activeModel: string
   activeMode: ReasoningMode
   thinkingEffort: ThinkingEffort
+  agentMode: AgentMode
+  agentModeByProject: Record<string, AgentMode>
 
   // Recent models
   recentModels: Array<{ providerId: string; modelId: string }>
@@ -98,6 +103,7 @@ interface SettingsStore {
   setActiveMode: (mode: ReasoningMode) => void
   setThinkingEffort: (effort: ThinkingEffort) => void
   cycleThinkingEffort: () => void
+  setAgentMode: (mode: AgentMode, projectId?: string) => void
 
   // Actions - Keybindings
   setKeybind: (actionId: string, key: string) => void
@@ -130,6 +136,8 @@ export const useSettingsStore = create<SettingsStore>()(
       activeModel: "claude-sonnet-4-20250514",
       activeMode: "build",
       thinkingEffort: "off" as ThinkingEffort,
+      agentMode: "neutral" as AgentMode,
+      agentModeByProject: {},
       recentModels: [],
       customKeybinds: {},
 
@@ -207,6 +215,15 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ thinkingEffort: efforts[(idx + 1) % efforts.length] })
       },
 
+      setAgentMode: (mode, projectId) => {
+        set((s) => ({
+          agentMode: mode,
+          agentModeByProject: projectId
+            ? { ...s.agentModeByProject, [projectId]: mode }
+            : s.agentModeByProject,
+        }))
+      },
+
       // --- Keybindings ---
       setKeybind: (actionId, key) =>
         set((s) => ({
@@ -254,6 +271,8 @@ export const useSettingsStore = create<SettingsStore>()(
         activeModel: state.activeModel,
         activeMode: state.activeMode,
         thinkingEffort: state.thinkingEffort,
+        agentMode: state.agentMode,
+        agentModeByProject: state.agentModeByProject,
         customKeybinds: state.customKeybinds,
         recentModels: state.recentModels,
       }),

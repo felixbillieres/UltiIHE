@@ -168,7 +168,7 @@ function SessionSidebar({
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-weak shrink-0">
         <span className="text-xs text-text-strong font-sans font-medium">
-          Agents
+          Sessions
         </span>
         <button
           onClick={onClose}
@@ -186,7 +186,7 @@ function SessionSidebar({
           className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-2 hover:bg-surface-3 border border-border-weak text-text-base text-xs font-sans font-medium transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
-          New Agent
+          New Chat
         </button>
       </div>
 

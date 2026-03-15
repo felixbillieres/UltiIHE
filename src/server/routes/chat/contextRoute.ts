@@ -20,6 +20,7 @@ contextRoute.post("/context", async (c) => {
     containerIds,
     activeTerminalId,
     mode = "build",
+    agentMode = "neutral",
   } = body as {
     messages: Array<{ role: string; content: string }>
     providerId: string
@@ -27,6 +28,7 @@ contextRoute.post("/context", async (c) => {
     containerIds?: string[]
     activeTerminalId?: string
     mode?: ReasoningMode
+    agentMode?: "ctf" | "audit" | "neutral"
   }
 
   const contextWindow = resolveContextWindow(providerId, modelId)
@@ -50,6 +52,7 @@ contextRoute.post("/context", async (c) => {
     terminalContext,
     activeTerminals,
     mode,
+    agentMode: agentMode as "ctf" | "audit" | "neutral",
     tier: budget.promptTier,
   })
 

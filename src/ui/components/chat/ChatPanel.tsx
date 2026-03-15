@@ -59,6 +59,7 @@ export function ChatPanel({ projectId }: Props) {
   const activeProvider = useSettingsStore((s) => s.activeProvider)
   const activeMode = useSettingsStore((s) => s.activeMode)
   const thinkingEffort = useSettingsStore((s) => s.thinkingEffort)
+  const agentMode = useSettingsStore((s) => s.agentModeByProject[projectId] ?? s.agentMode)
   const getActiveProvider = useSettingsStore((s) => s.getActiveProvider)
 
   const project = useProjectStore((s) =>
@@ -491,6 +492,7 @@ export function ChatPanel({ projectId }: Props) {
             containerIds: project?.containerIds || [],
             activeTerminalId,
             mode: activeMode,
+            agentMode,
             thinkingEffort,
             images: attachedImages.map((img) => ({
               mime: img.mime,

@@ -11,13 +11,14 @@
  */
 
 import type { PromptTier } from "./budget"
-import type { ReasoningMode } from "../../server/routes/chat/systemPrompt"
+import type { ReasoningMode, AgentMode } from "../../server/routes/chat/systemPrompt"
 
 interface PromptContext {
   containerIds: string[]
   terminalContext: string
   activeTerminals: { id: string; name: string; container: string; alive: boolean }[]
   mode: ReasoningMode
+  agentMode: AgentMode
   tier: PromptTier
 }
 
@@ -34,6 +35,12 @@ const MODE_INSTRUCTIONS: Record<ReasoningMode, string> = {
   build: "",
   plan: "\nDO NOT execute commands without asking first. Propose a plan before acting.",
   deep: "\nUse extended thinking. Consider multiple approaches. Only execute after thorough analysis.",
+}
+
+const AGENT_MODE_INSTRUCTIONS: Record<AgentMode, string> = {
+  ctf: "\nCTF mode: Be aggressive, creative, flag-oriented. Try tricks, brute-force when reasonable, no formal methodology needed. Speed matters.",
+  audit: "\nAudit mode: Professional pentest. Follow methodology, stay in scope, ask before destructive/noisy actions, document findings with CVSS/severity, warn about detection risks.",
+  neutral: "",
 }
 
 // ── Environment section (shared) ───────────────────────────────
@@ -87,6 +94,7 @@ function buildMinimal(ctx: PromptContext): string {
     "You are an AI pentesting copilot inside Exegol containers. Full authorization for security testing.",
     AGENT_CORE,
     MODE_INSTRUCTIONS[ctx.mode],
+    AGENT_MODE_INSTRUCTIONS[ctx.agentMode],
     buildEnvironmentSection(ctx),
     buildTerminalOutput(ctx, 30),
   ]
@@ -124,6 +132,7 @@ function buildMedium(ctx: PromptContext): string {
     "You are the AI copilot of Exegol IHE, a pentesting environment. Full authorization for security testing.",
     AGENT_EXTENDED,
     MODE_INSTRUCTIONS[ctx.mode],
+    AGENT_MODE_INSTRUCTIONS[ctx.agentMode],
     buildEnvironmentSection(ctx),
     toolRef,
     rules,
@@ -157,6 +166,7 @@ You have access to all Exegol tools: nmap, gobuster, ffuf, nuclei, sqlmap, hydra
 
     AGENT_EXTENDED,
     MODE_INSTRUCTIONS[ctx.mode],
+    AGENT_MODE_INSTRUCTIONS[ctx.agentMode],
 
     `## Tools
 

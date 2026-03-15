@@ -17,10 +17,19 @@ import {
   Zap,
   LayoutGrid,
   SlidersHorizontal,
+  Flag,
+  ShieldCheck,
+  Terminal,
 } from "lucide-react"
 import { ModelPicker } from "./ModelPicker"
 import { ProviderIcon } from "../provider-icons/ProviderIcon"
 import { useTerminalStore } from "../../stores/terminal"
+import { useProjectStore } from "../../stores/project"
+import { AGENT_MODES } from "../../stores/settings"
+import type { AgentMode } from "../../stores/settingsTypes"
+
+const MODE_ICONS: Record<AgentMode, typeof Flag> = { ctf: Flag, audit: ShieldCheck, neutral: Terminal }
+const MODE_CYCLE: AgentMode[] = ["neutral", "ctf", "audit"]
 
 function Separator() {
   return <div className="w-px h-4 bg-border-weak shrink-0" />
@@ -171,6 +180,9 @@ export function ControlBar() {
   } = useSettingsStore()
   const approvalMode = useCommandApprovalStore((s) => s.mode)
   const setApprovalMode = useCommandApprovalStore((s) => s.setMode)
+  const activeProjectId = useProjectStore((s) => s.activeProjectId)
+  const agentMode = useSettingsStore((s) => activeProjectId ? (s.agentModeByProject[activeProjectId] ?? s.agentMode) : s.agentMode)
+  const setAgentMode = useSettingsStore((s) => s.setAgentMode)
   const { send: wsSend } = useWebSocket()
 
   const followAssistant = useTerminalStore((s) => s.followAssistant)
@@ -286,7 +298,7 @@ export function ControlBar() {
         )}
       </div>
 
-      {/* Thinking effort badge (only interactive badge shown) */}
+      {/* Thinking effort + agent mode badges */}
       <div className="flex items-center gap-1 shrink-0">
         {(modelInfo?.reasoning || localEntry?.reasoning) && (
           <CapBadge
@@ -297,6 +309,23 @@ export function ControlBar() {
             title="Thinking effort — Click to cycle (off > low > medium > high)"
           />
         )}
+        {(() => {
+          const modeInfo = AGENT_MODES.find((m) => m.id === agentMode)!
+          const MIcon = MODE_ICONS[agentMode]
+          return (
+            <CapBadge
+              icon={<MIcon className="w-3 h-3" style={{ color: agentMode !== "neutral" ? modeInfo.color : undefined }} />}
+              label={modeInfo.label}
+              active={agentMode !== "neutral"}
+              onClick={() => {
+                const idx = MODE_CYCLE.indexOf(agentMode)
+                const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length]
+                setAgentMode(next, activeProjectId ?? undefined)
+              }}
+              title={`Agent mode: ${modeInfo.label} — ${modeInfo.description}. Click to cycle.`}
+            />
+          )
+        })()}
       </div>
 
       <Separator />

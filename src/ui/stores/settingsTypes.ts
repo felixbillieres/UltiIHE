@@ -70,7 +70,43 @@ export type ReasoningMode = "build" | "plan" | "deep"
 
 export type ThinkingEffort = "off" | "low" | "medium" | "high"
 
-// Single primary agent — no multi-agent system
-export type AgentId = "build"
+// Agent modes — defines AI behavior profile
+export type AgentMode = "ctf" | "audit" | "neutral"
+
+export interface AgentModeInfo {
+  id: AgentMode
+  label: string
+  description: string
+  color: string
+  icon: string // lucide icon name
+  defaultApproval: "ask" | "auto-run"
+}
+
+export const AGENT_MODES: AgentModeInfo[] = [
+  {
+    id: "ctf",
+    label: "CTF",
+    description: "Solver mindset — aggressive exploration, creative tricks, flag-oriented",
+    color: "#22d3ee",
+    icon: "Flag",
+    defaultApproval: "auto-run",
+  },
+  {
+    id: "audit",
+    label: "Audit",
+    description: "Professional pentest — methodology, logging, scope-aware, approval-first",
+    color: "#f59e0b",
+    icon: "ShieldCheck",
+    defaultApproval: "ask",
+  },
+  {
+    id: "neutral",
+    label: "Neutral",
+    description: "General assistant — no specific security directives",
+    color: "#9ca3af",
+    icon: "Terminal",
+    defaultApproval: "ask",
+  },
+]
 
 export type Language = "en" | "fr" | "de" | "es" | "ja" | "zh"

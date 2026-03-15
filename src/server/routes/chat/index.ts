@@ -46,6 +46,7 @@ chatRoutes.post("/chat", async (c) => {
     activeTerminalId,
     baseUrl,
     mode = "build",
+    agentMode = "neutral",
     thinkingEffort = "off",
     images = [],
   } = body as {
@@ -57,6 +58,7 @@ chatRoutes.post("/chat", async (c) => {
     activeTerminalId?: string
     baseUrl?: string
     mode?: ReasoningMode
+    agentMode?: "ctf" | "audit" | "neutral"
     thinkingEffort?: ThinkingEffort
     images?: Array<{ mime: string; dataUrl: string }>
   }
@@ -103,6 +105,7 @@ chatRoutes.post("/chat", async (c) => {
     terminalContext,
     activeTerminals,
     mode,
+    agentMode: agentMode as "ctf" | "audit" | "neutral",
     tier: budget.promptTier,
   })
 
