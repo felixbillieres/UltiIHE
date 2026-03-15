@@ -343,7 +343,13 @@ function handleCommandSetMode(
   data: { mode: "ask" | "auto-run" | "allow-all-session" },
 ): void {
   commandQueue.setMode(data.mode)
-  console.log(`[Command] Approval mode set to: ${data.mode}`)
+  // Sync tool approval queue: allow-all/auto-run → tools also auto-approve
+  if (data.mode === "allow-all-session" || data.mode === "auto-run") {
+    toolApprovalQueue.setMode("auto-run")
+  } else {
+    toolApprovalQueue.setMode("ask")
+  }
+  console.log(`[Command] Approval mode set to: ${data.mode} (tools synced)`)
 }
 
 // --- Question answer handler ---
