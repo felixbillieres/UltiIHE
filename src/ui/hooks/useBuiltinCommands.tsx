@@ -31,6 +31,30 @@ import { useSessionStore } from "../stores/session"
 import { useSearchStore } from "../stores/search"
 import { useSettingsStore } from "../stores/settings"
 import { useTerminalStore } from "../stores/terminal"
+import { useProjectStore } from "../stores/project"
+
+// ── WS singleton access (for terminal creation) ──────────────
+
+function wsSend(msg: { type: string; data?: Record<string, unknown> }) {
+  const singleton = (window as any).__ultiIHE_ws__
+  const ws = singleton?.ws as WebSocket | null
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg))
+  }
+}
+
+// Chat panel textarea selector (scoped to chat, not any textarea)
+const CHAT_TEXTAREA_SELECTOR = "[data-chat-panel] textarea"
+
+// ── Helpers ─────────────────────────────────────────────────
+
+function injectSlashCommand(textarea: HTMLTextAreaElement, command: string) {
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype, "value",
+  )?.set
+  nativeInputValueSetter?.call(textarea, command)
+  textarea.dispatchEvent(new Event("input", { bubbles: true }))
+}
 
 // ── Layout actions interface ────────────────────────────────
 
@@ -97,15 +121,18 @@ export function useBuiltinCommands(
         category: "Session",
         icon: <Minimize2 className="w-3.5 h-3.5" />,
         onSelect: () => {
-          // Trigger compaction via slash command mechanism
-          const textarea = document.querySelector("textarea")
-          if (textarea) {
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-              window.HTMLTextAreaElement.prototype, "value",
-            )?.set
-            nativeInputValueSetter?.call(textarea, "/compact")
-            textarea.dispatchEvent(new Event("input", { bubbles: true }))
+          // Ensure chat panel is open, then trigger /compact via textarea
+          layout.toggleChatPanel() // no-op if already open? We need ensureOpen — toggle is fine, user sees it
+          const textarea = document.querySelector(CHAT_TEXTAREA_SELECTOR) as HTMLTextAreaElement
+          if (!textarea) {
+            // Chat panel not rendered — open it first, retry after a tick
+            setTimeout(() => {
+              const ta = document.querySelector(CHAT_TEXTAREA_SELECTOR) as HTMLTextAreaElement
+              if (ta) injectSlashCommand(ta, "/compact")
+            }, 100)
+            return
           }
+          injectSlashCommand(textarea, "/compact")
         },
       },
       {
@@ -114,8 +141,15 @@ export function useBuiltinCommands(
         category: "Session",
         icon: <Type className="w-3.5 h-3.5" />,
         onSelect: () => {
-          // Focus the session title in the sidebar (toggle sidebar if closed)
-          layout.toggleSessionSidebar()
+          const { getActiveSessionId, renameSession, sessions } = useSessionStore.getState()
+          const sid = getActiveSessionId(projectId)
+          if (!sid) return
+          const session = sessions.find((s) => s.id === sid)
+          const currentTitle = session?.title ?? ""
+          const newTitle = window.prompt("Rename session:", currentTitle)
+          if (newTitle && newTitle.trim() && newTitle.trim() !== currentTitle) {
+            renameSession(sid, newTitle.trim())
+          }
         },
       },
       {
@@ -145,7 +179,7 @@ export function useBuiltinCommands(
         keybind: "ctrl+l",
         icon: <MessageCircle className="w-3.5 h-3.5" />,
         onSelect: () => {
-          const textarea = document.querySelector("textarea")
+          const textarea = document.querySelector(CHAT_TEXTAREA_SELECTOR) as HTMLTextAreaElement
           textarea?.focus()
         },
       },
@@ -211,10 +245,24 @@ export function useBuiltinCommands(
         keybind: "ctrl+alt+t",
         icon: <Plus className="w-3.5 h-3.5" />,
         onSelect: () => {
-          // This requires the WebSocket to create a terminal
-          // For now, focus terminal area which shows create UI
-          const term = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement
-          term?.focus()
+          const project = useProjectStore.getState().getProject(projectId)
+          if (!project?.containerIds?.length) return
+          const container = project.containerIds[0]
+          // Find next available terminal number
+          const terminals = useTerminalStore.getState().terminals
+          const usedNumbers = new Set(
+            terminals
+              .map((t) => t.name.match(/^Terminal (\d+)$/))
+              .filter(Boolean)
+              .map((m) => parseInt(m![1], 10)),
+          )
+          let num = 1
+          while (usedNumbers.has(num)) num++
+          const name = `Terminal ${num}`
+          const contentEl = document.querySelector("[data-terminal-content]") as HTMLElement | null
+          const cols = contentEl ? Math.floor(contentEl.clientWidth / 8.4) : 120
+          const rows = contentEl ? Math.floor(contentEl.clientHeight / 17) : 30
+          wsSend({ type: "terminal:create", data: { container, name, cols, rows } })
         },
       },
       {

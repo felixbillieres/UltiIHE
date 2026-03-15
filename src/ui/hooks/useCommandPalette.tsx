@@ -201,8 +201,9 @@ export function CommandPaletteProvider({ children }: { children: ReactNode }) {
           if (!c.keybind || c.disabled) continue
           const keybinds = parseKeybind(c.keybind)
           if (matchKeybind(keybinds, e)) {
-            // Always allow palette trigger even in inputs
-            if (c.id === "palette" || !isInput) {
+            // Always allow palette trigger and focus-switching commands in inputs
+            const allowInInput = c.id === "palette" || c.id === "chat.focus" || c.id === "terminal.focus"
+            if (allowInInput || !isInput) {
               e.preventDefault()
               e.stopPropagation()
               c.onSelect()

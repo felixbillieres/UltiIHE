@@ -979,7 +979,7 @@ export function ChatPanel({ projectId }: Props) {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col" data-chat-panel>
       {/* Search bar */}
       {searchOpen && (
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 bg-surface-1 border-b border-border-weak">
