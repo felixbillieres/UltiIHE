@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { type Message, type MessagePart, type ReasoningPart, type MessageUsage } from "../../stores/session"
 import {
   Bot,
@@ -165,9 +165,29 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
   const [expanded, setExpanded] = useState(false)
   const isStreaming = !part.endTime
   const duration = part.endTime ? `${((part.endTime - part.startTime) / 1000).toFixed(1)}s` : ""
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollUp, setCanScrollUp] = useState(false)
+  const [canScrollDown, setCanScrollDown] = useState(false)
 
   // Extract first line as summary
   const firstLine = part.content.split("\n")[0]?.slice(0, 80) || "Thinking..."
+
+  // Cline-style: check scroll position for gradient overlays
+  const checkScrollable = useCallback(() => {
+    if (scrollRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+      setCanScrollUp(scrollTop > 1)
+      setCanScrollDown(scrollTop + clientHeight < scrollHeight - 1)
+    }
+  }, [])
+
+  // Auto-scroll to bottom during streaming (Cline ThinkingRow pattern)
+  useEffect(() => {
+    if (scrollRef.current && (isStreaming || expanded)) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+    checkScrollable()
+  }, [part.content, isStreaming, expanded, checkScrollable])
 
   return (
     <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
@@ -182,8 +202,13 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
             <Brain className="w-3 h-3 text-text-weaker" />
           )}
         </div>
-        <span className="text-[12px] font-medium text-text-weak shrink-0">
-          {isStreaming ? "Thinking..." : "Thought"}
+        {/* Cline-style shimmer: gradient text animation while streaming */}
+        <span className={`text-[12px] font-medium shrink-0 ${
+          isStreaming
+            ? "animate-shimmer bg-gradient-to-r from-text-base to-text-weaker bg-[length:200%_100%] bg-clip-text text-transparent select-none"
+            : "text-text-weak"
+        }`}>
+          {isStreaming ? "Thinking" : "Thought"}
         </span>
         <span className="text-[11px] text-text-weaker truncate flex-1">
           {!isStreaming && firstLine}
@@ -194,10 +219,23 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
         <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
       {expanded && (
-        <div className="border-t border-border-weak px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-surface-0">
-          <div className="text-[11px] text-text-weak leading-relaxed whitespace-pre-wrap font-mono">
-            {part.content}
+        <div className="border-t border-border-weak relative">
+          <div
+            ref={scrollRef}
+            onScroll={checkScrollable}
+            className="px-3 py-2 max-h-[200px] overflow-y-auto scrollbar-thin bg-surface-0"
+          >
+            <div className="text-[11px] text-text-weak leading-relaxed whitespace-pre-wrap font-mono">
+              {part.content}
+            </div>
           </div>
+          {/* Cline-style gradient overlays to indicate scrollable content */}
+          {canScrollUp && (
+            <div className="absolute top-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-b from-surface-0 to-transparent" />
+          )}
+          {canScrollDown && (
+            <div className="absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t from-surface-0 to-transparent" />
+          )}
         </div>
       )}
     </div>
@@ -206,14 +244,53 @@ function ReasoningBlock({ part }: { part: ReasoningPart }) {
 
 // ── Parts renderer ───────────────────────────────────────────────
 
-/** Group consecutive tool calls of the same type for cleaner display */
+/**
+ * Low-stakes tools that get grouped into a single collapsible row.
+ * Adapted from Cline's isLowStakesTool() — read/search/list operations
+ * that don't modify state and can be safely collapsed.
+ */
+const LOW_STAKES_TOOLS = new Set([
+  "file_read",
+  "search_grep",
+  "search_find",
+  "terminal_read",
+  "terminal_list",
+])
+
+function isLowStakesTool(part: MessagePart): boolean {
+  return part.type === "tool-call" && LOW_STAKES_TOOLS.has(part.tool)
+}
+
+/**
+ * Group consecutive low-stakes tool calls into collapsible groups.
+ * Adapted from Cline's groupLowStakesTools() in messageUtils.ts.
+ *
+ * Key differences from our old groupParts():
+ * - Groups DIFFERENT low-stakes tool types together (not just same-type)
+ * - Only needs 2+ consecutive low-stakes tools to group (was 3+ same-type)
+ * - Non-low-stakes tool calls (terminal_write, file_write, etc.) stay individual
+ * - Same-type non-low-stakes tools still group at 3+ consecutive
+ */
 function groupParts(parts: MessagePart[]): Array<MessagePart | { type: "tool-group"; parts: MessagePart[] }> {
   const result: Array<MessagePart | { type: "tool-group"; parts: MessagePart[] }> = []
   let i = 0
+
   while (i < parts.length) {
     const part = parts[i]
-    // Try to group 3+ consecutive tool calls of the same tool type
-    if (part.type === "tool-call") {
+
+    // Try to group consecutive low-stakes tools (Cline pattern: mix different read/search tools)
+    if (isLowStakesTool(part)) {
+      let j = i + 1
+      while (j < parts.length && isLowStakesTool(parts[j])) j++
+      if (j - i >= 2) {
+        result.push({ type: "tool-group", parts: parts.slice(i, j) })
+        i = j
+        continue
+      }
+    }
+
+    // Fallback: group 3+ consecutive same-type non-low-stakes tool calls
+    if (part.type === "tool-call" && !isLowStakesTool(part)) {
       const tool = part.tool
       let j = i + 1
       while (j < parts.length && parts[j].type === "tool-call" && (parts[j] as any).tool === tool) j++
@@ -223,6 +300,7 @@ function groupParts(parts: MessagePart[]): Array<MessagePart | { type: "tool-gro
         continue
       }
     }
+
     result.push(part)
     i++
   }

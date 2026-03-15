@@ -336,7 +336,7 @@ chatRoutes.post("/chat", async (c) => {
               text: (part as any).text || "",
             }))
             break
-          case "tool-call":
+          case "tool-call": {
             hasContent = true
             toolCallCount++
             bufferedEvents.push(sse("tool-call", {
@@ -344,20 +344,31 @@ chatRoutes.post("/chat", async (c) => {
               tool: (part as any).toolName,
               args: (part as any).args,
             }))
-            // Doom loop detection
-            if (doomTracker.check((part as any).toolName, (part as any).args)) {
-              const loopTool = doomTracker.getLoopTool()
-              console.warn(`[Doom Loop] Detected: "${loopTool}" called ${3}x with identical args — aborting`)
-              earlyError = `Stopped: tool "${loopTool}" was called repeatedly with identical arguments. This usually means the approach isn't working — try a different strategy.`
+            // Doom loop detection — Cline-style escalating response
+            const earlyDoomResult = doomTracker.check((part as any).toolName, (part as any).args)
+            if (earlyDoomResult.action === "abort") {
+              console.warn(`[Doom Loop] Aborting: "${earlyDoomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
+              earlyError = earlyDoomResult.message
               doomLoopAborted = true
+            } else if (earlyDoomResult.action === "warn") {
+              // Inject warning as tool result so the model can adapt (Cline pattern: feedback, not abort)
+              console.warn(`[Doom Loop] Warning: "${earlyDoomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
+              bufferedEvents.push(sse("tool-result", {
+                id: (part as any).toolCallId,
+                output: earlyDoomResult.message,
+                isError: true,
+              }))
             }
             break
+          }
           case "tool-result":
             bufferedEvents.push(sse("tool-result", {
               id: (part as any).toolCallId,
               output: truncateOutput(String((part as any).result ?? "")),
               isError: false,
             }))
+            // Cline pattern: reset consecutive mistake counter on successful tool result
+            doomTracker.resetOnSuccess()
             break
           case "error":
             earlyError = extractErrorMessage(part.error)
@@ -459,16 +470,23 @@ chatRoutes.post("/chat", async (c) => {
                   tool: (part as any).toolName,
                   args: (part as any).args,
                 })))
-                // Doom loop detection
-                if (doomTracker.check((part as any).toolName, (part as any).args)) {
-                  const loopTool = doomTracker.getLoopTool()
-                  console.warn(`[Doom Loop] Detected mid-stream: "${loopTool}" — aborting`)
-                  controller.enqueue(encoder.encode(sse("error", {
-                    message: `Stopped: tool "${loopTool}" was called repeatedly with identical arguments. Try a different approach.`,
-                  })))
+                // Doom loop detection — Cline-style escalating response
+                const doomResult = doomTracker.check((part as any).toolName, (part as any).args)
+                if (doomResult.action === "abort") {
+                  // Level 3: hard abort after MAX_CONSECUTIVE_MISTAKES
+                  console.warn(`[Doom Loop] Aborting mid-stream: "${doomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
+                  controller.enqueue(encoder.encode(sse("error", { message: doomResult.message })))
                   controller.enqueue(encoder.encode(sse("done", {})))
                   controller.close()
                   return
+                } else if (doomResult.action === "warn") {
+                  // Level 1-2: inject feedback as tool result so the model can adapt
+                  console.warn(`[Doom Loop] Warning mid-stream: "${doomResult.toolName}" — ${doomTracker.mistakes} consecutive mistakes`)
+                  controller.enqueue(encoder.encode(sse("tool-result", {
+                    id: toolCallId,
+                    output: doomResult.message,
+                    isError: true,
+                  })))
                 }
                 break
               }
@@ -480,6 +498,8 @@ chatRoutes.post("/chat", async (c) => {
                   output: truncateOutput(String((part as any).result ?? "")),
                   isError: false,
                 })))
+                // Cline pattern: reset consecutive mistake counter on successful tool result
+                doomTracker.resetOnSuccess()
                 break
               }
               case "error":

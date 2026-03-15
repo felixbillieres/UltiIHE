@@ -192,76 +192,161 @@ export function buildRepairCallback(tools: Record<string, any>) {
 }
 
 // ── Doom Loop Detection ──────────────────────────────────────────
+//
+// Adapted from Cline's two-level approach:
+// 1. Identical-args detection (our original) — catches exact same call repeated
+// 2. consecutiveMistakeCount (from Cline's TaskState) — accumulates across all
+//    tool types, with escalating feedback instead of hard abort
+//
+// Cline's key insight: counter only resets after a SUCCESSFUL tool result,
+// not at operation start (they had a known bug from resetting too early).
+//
+// Escalation levels (from Cline's responses.ts):
+// - Level 1 (warn): inject feedback asking model to change approach
+// - Level 2 (directive): stronger message with specific alternatives
+// - Level 3 (abort): stop execution entirely
 
 const DOOM_LOOP_THRESHOLD = 3
 
 // Tools that legitimately poll with identical args (output changes between calls)
-// These are completely exempt from doom loop detection.
 const EXEMPT_TOOLS = new Set(["terminal_read", "terminal_list"])
 
-// Tools that may retry the same args in complex workflows (e.g. AI retrying
-// a command after reading output). These get a higher threshold.
+// Tools that may retry the same args in complex workflows
 const HIGH_THRESHOLD_TOOLS = new Set(["terminal_write", "terminal_create"])
 const HIGH_THRESHOLD = 6
+
+// Cline-style: max consecutive mistakes before hard abort (configurable)
+const MAX_CONSECUTIVE_MISTAKES = 3
 
 interface ToolCallRecord {
   toolName: string
   argsHash: string
 }
 
+export type DoomLoopResult =
+  | { action: "ok" }
+  | { action: "warn"; message: string; toolName: string }
+  | { action: "abort"; message: string; toolName: string }
+
+/**
+ * Cline-style escalating error messages.
+ * Adapted from Cline's responses.ts writeToFileMissingContentError pattern.
+ * Provides progressively stronger guidance as failures accumulate.
+ */
+function getEscalatingMessage(toolName: string, consecutiveCount: number, argsHash: string): string {
+  if (consecutiveCount >= MAX_CONSECUTIVE_MISTAKES) {
+    // Level 3: hard abort (Cline's "CRITICAL" level)
+    return (
+      `Stopped: tool "${toolName}" was called repeatedly with identical arguments. ` +
+      `This usually means the approach isn't working — try a different strategy.`
+    )
+  }
+
+  if (consecutiveCount === 2) {
+    // Level 2: strong directive (Cline's "2nd failed attempt" level)
+    return (
+      `WARNING: You called "${toolName}" with the same arguments again (${consecutiveCount}x). ` +
+      `You MUST change your approach. Do NOT call this tool again with the same arguments. ` +
+      `Consider: use a different tool, modify your arguments, or explain to the user why you're stuck.`
+    )
+  }
+
+  // Level 1: gentle warn (Cline's "1st failure" level)
+  return (
+    `Note: "${toolName}" was just called with identical arguments to a previous call. ` +
+    `The result will be the same. Consider using different arguments or a different approach.`
+  )
+}
+
 export function createDoomLoopTracker() {
   const recent: ToolCallRecord[] = []
+  // Cline-style consecutive mistake counter — tracks across all tool types
+  let consecutiveMistakeCount = 0
 
   return {
-    check(toolName: string, args: any): boolean {
+    /**
+     * Check a tool call for doom loop patterns.
+     * Returns an action: "ok" (proceed), "warn" (inject feedback), or "abort" (stop).
+     *
+     * Adapted from Cline's two-tier approach:
+     * - Identical args detection (same tool + same args repeated)
+     * - consecutiveMistakeCount for escalating responses
+     */
+    check(toolName: string, args: any): DoomLoopResult {
       // Exempt tools: same args != same result (polling changing state)
-      if (EXEMPT_TOOLS.has(toolName)) return false
+      if (EXEMPT_TOOLS.has(toolName)) return { action: "ok" }
 
       const argsHash = JSON.stringify(args)
       recent.push({ toolName, argsHash })
-
-      // Use higher threshold for terminal action tools
-      const threshold = HIGH_THRESHOLD_TOOLS.has(toolName) ? HIGH_THRESHOLD : DOOM_LOOP_THRESHOLD
 
       // Keep enough history for the highest threshold
       while (recent.length > HIGH_THRESHOLD) {
         recent.shift()
       }
 
-      if (recent.length < threshold) return false
+      // Use higher threshold for terminal action tools
+      const threshold = HIGH_THRESHOLD_TOOLS.has(toolName) ? HIGH_THRESHOLD : DOOM_LOOP_THRESHOLD
 
-      // Check the last `threshold` entries
-      const window = recent.slice(-threshold)
-      const first = window[0]
-      return window.every(
-        (r) => r.toolName === first.toolName && r.argsHash === first.argsHash,
-      )
-    },
+      if (recent.length < 2) return { action: "ok" }
 
-    resetOnText() {
-      recent.length = 0
-    },
+      // Check for identical consecutive calls
+      const prev = recent[recent.length - 2]
+      if (prev.toolName === toolName && prev.argsHash === argsHash) {
+        // Same tool + same args as previous call — increment mistake counter
+        // (Cline: only reset after SUCCESS, not at operation start)
+        consecutiveMistakeCount++
 
-    getLoopTool(): string | null {
-      // Check with standard threshold first
-      if (recent.length >= DOOM_LOOP_THRESHOLD) {
-        const window = recent.slice(-DOOM_LOOP_THRESHOLD)
-        const first = window[0]
-        if (!HIGH_THRESHOLD_TOOLS.has(first.toolName) && !EXEMPT_TOOLS.has(first.toolName)) {
-          if (window.every((r) => r.toolName === first.toolName && r.argsHash === first.argsHash)) {
-            return first.toolName
+        if (consecutiveMistakeCount >= MAX_CONSECUTIVE_MISTAKES) {
+          return {
+            action: "abort",
+            message: getEscalatingMessage(toolName, consecutiveMistakeCount, argsHash),
+            toolName,
           }
         }
-      }
-      // Check with high threshold for terminal tools
-      if (recent.length >= HIGH_THRESHOLD) {
-        const window = recent.slice(-HIGH_THRESHOLD)
-        const first = window[0]
-        if (window.every((r) => r.toolName === first.toolName && r.argsHash === first.argsHash)) {
-          return first.toolName
+
+        return {
+          action: "warn",
+          message: getEscalatingMessage(toolName, consecutiveMistakeCount, argsHash),
+          toolName,
         }
       }
+
+      return { action: "ok" }
+    },
+
+    /**
+     * Reset on text output — conversation progress breaks the loop.
+     */
+    resetOnText() {
+      recent.length = 0
+      // Cline: text output from model means it's making progress
+      consecutiveMistakeCount = 0
+    },
+
+    /**
+     * Reset on successful tool result — Cline's pattern.
+     * Only called when a tool completes successfully (not on error).
+     */
+    resetOnSuccess() {
+      consecutiveMistakeCount = 0
+    },
+
+    /**
+     * Get the tool name that's looping (for error messages).
+     */
+    getLoopTool(): string | null {
+      if (recent.length < 2) return null
+      const last = recent[recent.length - 1]
+      const prev = recent[recent.length - 2]
+      if (last.toolName === prev.toolName && last.argsHash === prev.argsHash) {
+        return last.toolName
+      }
       return null
+    },
+
+    /** Current consecutive mistake count (for debugging/logging) */
+    get mistakes(): number {
+      return consecutiveMistakeCount
     },
   }
 }

@@ -5,6 +5,15 @@ export default {
   darkMode: "class",
   theme: {
     extend: {
+      animation: {
+        shimmer: "shimmer 5s infinite linear",
+      },
+      keyframes: {
+        shimmer: {
+          "0%": { backgroundPosition: "200% 0" },
+          "100%": { backgroundPosition: "-200% 0" },
+        },
+      },
       colors: {
         surface: {
           0: "var(--surface-0)",

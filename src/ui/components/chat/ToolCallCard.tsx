@@ -127,27 +127,24 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
 
   return (
     <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
-      {/* Header */}
+      {/* Header — Cline-style status dot from CommandOutputRow.tsx */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
-        <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${
-          isRunning ? "bg-accent/15" : isError ? "bg-status-error/15" : "bg-status-success/15"
+        {/* Cline-style status dot: green pulsing (running), red (error), green solid (done) */}
+        <div className={`rounded-full w-2 h-2 shrink-0 ${
+          isRunning ? "bg-status-success animate-pulse"
+            : isError ? "bg-status-error"
+            : "bg-status-success"
+        }`} />
+        <span className={`text-[11px] font-sans font-medium shrink-0 ${
+          isRunning ? "text-status-success" : "text-text-weaker"
         }`}>
-          {isRunning ? (
-            <Loader2 className="w-2.5 h-2.5 text-accent animate-spin" />
-          ) : isError ? (
-            <X className="w-2.5 h-2.5 text-status-error" />
-          ) : (
-            <Check className="w-2.5 h-2.5 text-status-success" />
-          )}
-        </div>
-        <span className="text-[11px] text-text-weaker font-sans">{label}:</span>
+          {isRunning ? "Running" : isError ? "Failed" : label}
+        </span>
         <code className="text-[11px] text-text-base font-mono truncate flex-1">{command}</code>
         {duration && <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{duration}</span>}
-        {isCompleted && !isError && <span className="text-[10px] text-status-success shrink-0">Success</span>}
-        {isError && <span className="text-[10px] text-status-error shrink-0">Failed</span>}
         {output && (
           <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         )}
@@ -258,11 +255,50 @@ export function ToolCallCard({ part }: { part: ToolCallPart }) {
 // ── Grouped tool calls (P2) ────────────────────────────────
 // Used by MessageBubble to group consecutive same-type tool calls
 
+/**
+ * Cline-style tool group summary.
+ * Adapted from getToolGroupSummary() in Cline's ToolGroupRenderer.tsx.
+ * Produces labels like "Read 3 files, searched 2 patterns" instead of "Read File x 5".
+ */
+function getToolGroupSummary(parts: ToolCallPart[]): string {
+  const counts: Record<string, number> = {}
+  for (const p of parts) {
+    counts[p.tool] = (counts[p.tool] || 0) + 1
+  }
+
+  const segments: string[] = []
+
+  // Map our tool names to Cline-style human labels
+  if (counts.file_read) segments.push(`${counts.file_read} file${counts.file_read > 1 ? "s" : ""}`)
+  if (counts.search_grep) segments.push(`${counts.search_grep} search${counts.search_grep > 1 ? "es" : ""}`)
+  if (counts.search_find) segments.push(`${counts.search_find} lookup${counts.search_find > 1 ? "s" : ""}`)
+  if (counts.terminal_read) segments.push(`${counts.terminal_read} terminal${counts.terminal_read > 1 ? "s" : ""}`)
+  if (counts.terminal_list) segments.push(`listed terminals`)
+  if (counts.terminal_write) segments.push(`${counts.terminal_write} command${counts.terminal_write > 1 ? "s" : ""}`)
+
+  // Fallback for any tool type not explicitly handled
+  for (const [tool, count] of Object.entries(counts)) {
+    if (!["file_read", "search_grep", "search_find", "terminal_read", "terminal_list", "terminal_write"].includes(tool)) {
+      const meta = getToolMeta(tool)
+      segments.push(`${meta.name} x ${count}`)
+    }
+  }
+
+  if (segments.length === 0) return `${parts.length} operations`
+
+  // Determine action verb based on tool mix
+  const hasReads = counts.file_read || counts.terminal_read
+  const hasSearches = counts.search_grep || counts.search_find
+  const hasCommands = counts.terminal_write
+
+  if (hasCommands) return `Ran ${segments.join(", ")}`
+  if (hasReads && !hasSearches) return `Read ${segments.join(", ")}`
+  if (hasSearches && !hasReads) return `Searched ${segments.join(", ")}`
+  return `Read ${segments.join(", ")}`
+}
+
 export function ToolCallGroup({ parts }: { parts: ToolCallPart[] }) {
   const [expanded, setExpanded] = useState(false)
-  const tool = parts[0].tool
-  const meta = getToolMeta(tool)
-  const { Icon } = meta
 
   const completedCount = parts.filter((p) => p.status === "completed").length
   const errorCount = parts.filter((p) => p.status === "error").length
@@ -275,16 +311,23 @@ export function ToolCallGroup({ parts }: { parts: ToolCallPart[] }) {
   const allDone = runningCount === 0
   const hasErrors = errorCount > 0
 
-  // Determine label based on tool type
-  const label = tool === "terminal_write"
-    ? `Ran ${parts.length} commands`
-    : `${meta.name} × ${parts.length}`
+  // Cline-style summary label
+  const label = getToolGroupSummary(parts)
 
   const statusLabel = runningCount > 0
     ? `${runningCount} running...`
     : hasErrors
       ? `${completedCount} succeeded, ${errorCount} failed`
       : "Success"
+
+  // Pick an icon: use the most common tool's icon, or a generic one
+  const toolCounts = parts.reduce<Record<string, number>>((acc, p) => {
+    acc[p.tool] = (acc[p.tool] || 0) + 1
+    return acc
+  }, {})
+  const dominantTool = Object.entries(toolCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || parts[0].tool
+  const meta = getToolMeta(dominantTool)
+  const { Icon } = meta
 
   return (
     <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">

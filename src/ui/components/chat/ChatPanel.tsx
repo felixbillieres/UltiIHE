@@ -1011,10 +1011,10 @@ export function ChatPanel({ projectId }: Props) {
         </div>
       )}
 
-      {/* Messages */}
+      {/* Messages — Cline pattern: grow to fill, min-h-0 for flex overflow */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto scrollbar-none p-4 space-y-4 relative"
+        className="flex-1 min-h-0 overflow-y-auto scrollbar-none p-4 space-y-4 relative"
       >
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
@@ -1052,8 +1052,12 @@ export function ChatPanel({ projectId }: Props) {
               )
             })
         )}
-        {/* Spacer — lets the last user message scroll to top for clean context */}
-        {messages.length > 0 && <div style={{ minHeight: "50vh" }} />}
+        {/* Spacer — Cline-style: full spacer when idle (lets user msg scroll to top),
+            shrinks during streaming so the AI answer stays at the bottom of the viewport
+            instead of floating mid-page with empty space below */}
+        {messages.length > 0 && (
+          <div style={{ minHeight: streaming ? "1rem" : "50vh" }} className="transition-[min-height] duration-300" />
+        )}
       </div>
 
       {/* Scroll to bottom button */}
