@@ -1,5 +1,6 @@
 /**
- * TopBar — single 35px row with logo, project switcher, panel toggles, and actions.
+ * TopBar — VS Code-style title bar with logo, project switcher, centered search,
+ * and right-aligned layout toggles.
  */
 
 import { useState, useRef, useEffect } from "react"
@@ -8,12 +9,12 @@ import { useCommandPalette } from "../../hooks/useCommandPalette"
 import { useSearchStore } from "../../stores/search"
 import {
   Settings as SettingsIcon,
-  Command,
   Search,
   PanelLeft,
   PanelRight,
   PanelBottom,
   ChevronDown,
+  LayoutGrid,
 } from "lucide-react"
 
 interface TopBarProps {
@@ -98,6 +99,32 @@ function ProjectSwitcher({
   )
 }
 
+// ── Panel toggle button ─────────────────────────────────────
+
+function PanelToggle({
+  active,
+  onClick,
+  icon,
+  title,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: React.ReactNode
+  title: string
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center justify-center w-[22px] h-[22px] rounded transition-colors ${
+        active ? "text-text-base bg-surface-2" : "text-text-weaker hover:text-text-weak hover:bg-surface-2/50"
+      }`}
+      title={title}
+    >
+      {icon}
+    </button>
+  )
+}
+
 // ── Main TopBar ──────────────────────────────────────────────
 
 export function TopBar({
@@ -118,8 +145,9 @@ export function TopBar({
   const openSearch = () => useSearchStore.getState().open()
 
   return (
-    <div className="shrink-0 bg-surface-0 border-b border-border-weak h-[35px] flex items-center px-2 gap-1">
-      {/* Logo */}
+    <div className="shrink-0 bg-surface-0 border-b border-border-weak h-[35px] flex items-center px-2 gap-1 select-none">
+
+      {/* ── Left: Logo + Project ─────────────────────────── */}
       <button
         onClick={onNavigateHome}
         className="flex items-center px-1 py-0.5 rounded hover:bg-surface-2 transition-colors shrink-0"
@@ -130,7 +158,6 @@ export function TopBar({
 
       <div className="w-px h-4 bg-border-weak mx-0.5" />
 
-      {/* Project switcher */}
       <ProjectSwitcher
         project={project}
         projects={projects}
@@ -138,65 +165,62 @@ export function TopBar({
         onHome={onNavigateHome}
       />
 
-      <div className="w-px h-4 bg-border-weak mx-0.5" />
-
-      {/* Panel toggles — icon-only, 22px tall */}
-      <div className="flex items-center gap-1">
+      {/* ── Center: Search bar ───────────────────────────── */}
+      <div className="flex-1 flex justify-center px-4">
         <button
-          onClick={onToggleFilesPanel}
-          className={`flex items-center justify-center w-[22px] h-[22px] rounded transition-colors ${
-            filesPanelOpen ? "text-text-base bg-surface-2" : "text-text-weaker hover:text-text-weak hover:bg-surface-2/50"
-          }`}
-          title={filesPanelOpen ? "Hide sidebar (Ctrl+B)" : "Show sidebar (Ctrl+B)"}
+          onClick={openSearch}
+          className="flex items-center gap-2 w-full max-w-[360px] h-[22px] px-2.5 rounded-md bg-surface-1 border border-border-weak hover:bg-surface-2 hover:border-border-base transition-colors cursor-pointer"
+          title="Search (Ctrl+K)"
         >
-          <PanelLeft className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={onToggleBottomPanel}
-          className={`flex items-center justify-center w-[22px] h-[22px] rounded transition-colors ${
-            bottomPanelOpen ? "text-text-base bg-surface-2" : "text-text-weaker hover:text-text-weak hover:bg-surface-2/50"
-          }`}
-          title={bottomPanelOpen ? "Hide panel (Ctrl+J)" : "Show panel (Ctrl+J)"}
-        >
-          <PanelBottom className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={onToggleChatPanel}
-          className={`flex items-center justify-center w-[22px] h-[22px] rounded transition-colors ${
-            chatPanelOpen ? "text-text-base bg-surface-2" : "text-text-weaker hover:text-text-weak hover:bg-surface-2/50"
-          }`}
-          title={chatPanelOpen ? "Hide assistant (Ctrl+Shift+B)" : "Show assistant (Ctrl+Shift+B)"}
-        >
-          <PanelRight className="w-3.5 h-3.5" />
+          <Search className="w-3 h-3 text-text-weaker shrink-0" />
+          <span className="text-[11px] text-text-weaker font-sans flex-1 text-left truncate">
+            Search...
+          </span>
+          <kbd className="text-[9px] text-text-weaker font-sans bg-surface-0 border border-border-weak rounded px-1 py-px shrink-0">
+            Ctrl+K
+          </kbd>
         </button>
       </div>
 
-      <div className="flex-1" />
+      {/* ── Right: Layout toggles + Settings ─────────────── */}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <PanelToggle
+          active={filesPanelOpen}
+          onClick={onToggleFilesPanel}
+          icon={<PanelLeft className="w-3.5 h-3.5" />}
+          title={filesPanelOpen ? "Hide sidebar (Ctrl+B)" : "Show sidebar (Ctrl+B)"}
+        />
+        <PanelToggle
+          active={bottomPanelOpen}
+          onClick={onToggleBottomPanel}
+          icon={<PanelBottom className="w-3.5 h-3.5" />}
+          title={bottomPanelOpen ? "Hide panel (Ctrl+J)" : "Show panel (Ctrl+J)"}
+        />
+        <PanelToggle
+          active={chatPanelOpen}
+          onClick={onToggleChatPanel}
+          icon={<PanelRight className="w-3.5 h-3.5" />}
+          title={chatPanelOpen ? "Hide assistant (Ctrl+Shift+B)" : "Show assistant (Ctrl+Shift+B)"}
+        />
 
-      {/* Right actions */}
-      <button
-        onClick={openSearch}
-        className="flex items-center justify-center w-[22px] h-[22px] rounded text-text-weaker hover:text-text-weak hover:bg-surface-2 transition-colors"
-        title="Search (Ctrl+K)"
-      >
-        <Search className="w-3.5 h-3.5" />
-      </button>
+        <div className="w-px h-4 bg-border-weak mx-0.5" />
 
-      <button
-        onClick={openCommandPalette}
-        className="flex items-center justify-center w-[22px] h-[22px] rounded text-text-weaker hover:text-text-weak hover:bg-surface-2 transition-colors"
-        title="Commands (Ctrl+Shift+P)"
-      >
-        <Command className="w-3.5 h-3.5" />
-      </button>
+        <button
+          onClick={openCommandPalette}
+          className="flex items-center justify-center w-[22px] h-[22px] rounded text-text-weaker hover:text-text-weak hover:bg-surface-2 transition-colors"
+          title="Command palette (Ctrl+Shift+P)"
+        >
+          <LayoutGrid className="w-3.5 h-3.5" />
+        </button>
 
-      <button
-        onClick={onOpenSettings}
-        className="flex items-center justify-center w-[22px] h-[22px] rounded text-text-weaker hover:text-text-weak hover:bg-surface-2 transition-colors"
-        title="Settings (Ctrl+,)"
-      >
-        <SettingsIcon className="w-3.5 h-3.5" />
-      </button>
+        <button
+          onClick={onOpenSettings}
+          className="flex items-center justify-center w-[22px] h-[22px] rounded text-text-weaker hover:text-text-weak hover:bg-surface-2 transition-colors"
+          title="Settings (Ctrl+,)"
+        >
+          <SettingsIcon className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   )
 }
