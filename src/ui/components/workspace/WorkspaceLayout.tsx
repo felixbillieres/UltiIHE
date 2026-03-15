@@ -228,6 +228,8 @@ export function WorkspaceLayout({ project }: Props) {
           onToggleFilesPanel={toggleFilesPanel}
           onToggleChatPanel={toggleChatPanel}
           onToggleBottomPanel={toggleBottomPanel}
+          swapped={layout.swapped}
+          onSwapPanels={swapPanels}
         />
 
         <div className="flex-1 flex overflow-hidden">

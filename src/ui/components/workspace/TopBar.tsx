@@ -14,7 +14,8 @@ import {
   PanelRight,
   PanelBottom,
   ChevronDown,
-  LayoutGrid,
+  Command,
+  ArrowLeftRight,
 } from "lucide-react"
 
 interface TopBarProps {
@@ -27,9 +28,11 @@ interface TopBarProps {
   filesPanelOpen: boolean
   chatPanelOpen: boolean
   bottomPanelOpen: boolean
+  swapped: boolean
   onToggleFilesPanel: () => void
   onToggleChatPanel: () => void
   onToggleBottomPanel: () => void
+  onSwapPanels: () => void
 }
 
 // ── Project switcher dropdown ────────────────────────────────
@@ -137,9 +140,11 @@ export function TopBar({
   filesPanelOpen,
   chatPanelOpen,
   bottomPanelOpen,
+  swapped,
   onToggleFilesPanel,
   onToggleChatPanel,
   onToggleBottomPanel,
+  onSwapPanels,
 }: TopBarProps) {
   const { open: openCommandPalette } = useCommandPalette()
   const openSearch = () => useSearchStore.getState().open()
@@ -202,6 +207,12 @@ export function TopBar({
           icon={<PanelRight className="w-3.5 h-3.5" />}
           title={chatPanelOpen ? "Hide assistant (Ctrl+Shift+B)" : "Show assistant (Ctrl+Shift+B)"}
         />
+        <PanelToggle
+          active={swapped}
+          onClick={onSwapPanels}
+          icon={<ArrowLeftRight className="w-3.5 h-3.5" />}
+          title="Swap side panels"
+        />
 
         <div className="w-px h-4 bg-border-weak mx-0.5" />
 
@@ -210,7 +221,7 @@ export function TopBar({
           className="flex items-center justify-center w-[22px] h-[22px] rounded text-text-weaker hover:text-text-weak hover:bg-surface-2 transition-colors"
           title="Command palette (Ctrl+Shift+P)"
         >
-          <LayoutGrid className="w-3.5 h-3.5" />
+          <Command className="w-3.5 h-3.5" />
         </button>
 
         <button
