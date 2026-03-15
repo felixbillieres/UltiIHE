@@ -129,6 +129,19 @@ export function WorkspaceLayout({ project }: Props) {
           isNewFile: (msg.isNewFile as boolean) || undefined,
         })
       }
+      // Mode switch or timeout → clear pending queues
+      if (msg.type === "command:all-cleared") {
+        useCommandApprovalStore.getState().clearAll()
+      }
+      if (msg.type === "tool:all-cleared") {
+        useToolApprovalStore.getState().clearAll()
+      }
+      if (msg.type === "command:timeout" && msg.data) {
+        removePendingCommand(msg.data.commandId as string)
+      }
+      if (msg.type === "tool:timeout" && msg.data) {
+        removePendingTool(msg.data.id as string)
+      }
     })
   }, [subscribe, addPendingCommand, removePendingCommand, addPendingTool, removePendingTool])
 

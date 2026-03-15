@@ -36,9 +36,20 @@ class ToolApprovalQueue {
   }
 
   setMode(mode: "ask" | "auto-run") {
+    const prev = this.mode
     this.mode = mode
-    if (mode === "auto-run") {
+
+    // When switching TO auto-run: auto-approve all pending, clear allowlist
+    if (mode === "auto-run" && prev === "ask") {
+      // Approve all pending tools since we're now in auto-run
+      for (const [, entry] of this.pending) {
+        clearTimeout(entry.timeoutId)
+        entry.resolve(true)
+      }
+      this.pending.clear()
       this.alwaysAllowed.clear()
+      // Broadcast cleared state
+      this.broadcast?.({ type: "tool:all-cleared" })
     }
   }
 
@@ -69,6 +80,8 @@ class ToolApprovalQueue {
         if (this.pending.has(id)) {
           this.pending.delete(id)
           resolve(false)
+          // Broadcast timeout so frontend can remove the pending banner
+          this.broadcast?.({ type: "tool:timeout", data: { id } })
         }
       }, 120_000)
 

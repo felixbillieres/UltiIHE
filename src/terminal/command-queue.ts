@@ -29,7 +29,18 @@ class CommandQueue {
   }
 
   setMode(mode: CommandApprovalMode) {
+    const prev = this.mode
     this.mode = mode
+
+    // When switching to auto-run/allow-all: approve all pending commands
+    if ((mode === "auto-run" || mode === "allow-all-session") && prev === "ask") {
+      for (const [, entry] of this.pending) {
+        clearTimeout(entry.timeoutId)
+        entry.resolve({ approved: true })
+      }
+      this.pending.clear()
+      this.broadcast?.({ type: "command:all-cleared" })
+    }
   }
 
   getMode(): CommandApprovalMode {
@@ -93,6 +104,8 @@ class CommandQueue {
         if (this.pending.has(id)) {
           this.pending.delete(id)
           resolve({ approved: false })
+          // Broadcast timeout so frontend removes the pending banner
+          this.broadcast?.({ type: "command:timeout", data: { commandId: id } })
         }
       }, 120_000)
 
