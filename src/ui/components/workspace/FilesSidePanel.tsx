@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react"
 import { FileTree } from "../layout/FileTree"
-import { FolderTree, X, Box, Settings } from "lucide-react"
+import { X, Box, ChevronRight, Settings } from "lucide-react"
 import { useContainerStore } from "../../stores/container"
 
 interface FilesSidePanelProps {
@@ -12,31 +12,60 @@ interface FilesSidePanelProps {
   onOpenContainers?: () => void
 }
 
-function TabButton({
-  active,
-  onClick,
+// ─── Collapsible Section (VS Code style) ──────────────────────
+
+function SidebarSection({
+  title,
   icon,
-  label,
+  defaultCollapsed = true,
+  badge,
+  actions,
+  children,
 }: {
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  label: string
+  title: string
+  icon?: React.ReactNode
+  defaultCollapsed?: boolean
+  badge?: number
+  actions?: React.ReactNode
+  children: React.ReactNode
 }) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
+
   return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-medium transition-colors border-b-2 ${
-        active
-          ? "text-text-strong border-accent"
-          : "text-text-weaker hover:text-text-weak border-transparent"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
+    <div className="border-t border-border-weak">
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="w-full flex items-center gap-1 px-2 py-1 hover:bg-surface-1 transition-colors group"
+      >
+        <ChevronRight
+          className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${
+            collapsed ? "" : "rotate-90"
+          }`}
+        />
+        {icon}
+        <span className="text-[11px] text-text-strong font-sans font-semibold uppercase tracking-wider flex-1 text-left">
+          {title}
+        </span>
+        {badge !== undefined && badge > 0 && (
+          <span className="text-[9px] text-text-weaker font-sans bg-surface-2 rounded px-1 py-px">
+            {badge}
+          </span>
+        )}
+        {actions && (
+          <span
+            className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actions}
+          </span>
+        )}
+      </button>
+      {!collapsed && children}
+    </div>
   )
 }
+
+// ─── Main ─────────────────────────────────────────────────────
 
 export function FilesSidePanel({
   width,
@@ -47,8 +76,6 @@ export function FilesSidePanel({
   onOpenContainers,
 }: FilesSidePanelProps) {
   const [dragging, setDragging] = useState(false)
-  const [activeTab, setActiveTab] = useState<"files" | "environments">("files")
-
   const containers = useContainerStore((s) => s.containers)
 
   const handleResizeStart = useCallback(
@@ -80,14 +107,12 @@ export function FilesSidePanel({
 
   const borderClass = side === "left" ? "border-r" : "border-l"
 
-  // Filter containers to those in this project (if containerIds provided)
   const projectContainers = containerIds
     ? containers.filter((c) => containerIds.includes(c.name))
     : containers
 
   return (
     <div className="flex shrink-0" style={{ width }}>
-      {/* Resize handle for right side */}
       {side === "right" && (
         <div
           className={`w-[3px] shrink-0 cursor-col-resize transition-colors ${
@@ -97,49 +122,53 @@ export function FilesSidePanel({
         />
       )}
 
-      <div
-        className={`flex-1 min-w-0 ${borderClass} border-border-weak bg-surface-0 flex flex-col`}
-      >
-        {/* Tab bar */}
-        <div className="flex items-center border-b border-border-weak shrink-0">
-          <TabButton
-            active={activeTab === "files"}
-            onClick={() => setActiveTab("files")}
-            icon={<FolderTree className="w-3.5 h-3.5" />}
-            label="Files"
-          />
-          <TabButton
-            active={activeTab === "environments"}
-            onClick={() => setActiveTab("environments")}
-            icon={<Box className="w-3.5 h-3.5" />}
-            label="Environments"
-          />
-          <div className="flex-1" />
+      <div className={`flex-1 min-w-0 ${borderClass} border-border-weak bg-surface-0 flex flex-col`}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-2 py-1 border-b border-border-weak shrink-0">
+          <span className="text-[11px] text-text-strong font-sans font-semibold uppercase tracking-wider">
+            Explorer
+          </span>
           <button
             onClick={onClose}
-            className="p-1 mr-1 rounded hover:bg-surface-2 transition-colors"
+            className="p-0.5 rounded hover:bg-surface-2 transition-colors"
             title="Close panel"
           >
             <X className="w-3 h-3 text-text-weaker" />
           </button>
         </div>
 
-        {/* Tab content */}
-        {activeTab === "files" ? (
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
-            <FileTree />
-          </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto scrollbar-thin">
+        {/* File tree — takes remaining space */}
+        <div className="flex-1 overflow-y-auto scrollbar-thin min-h-0">
+          <FileTree />
+        </div>
+
+        {/* Containers section — collapsible, bottom */}
+        <SidebarSection
+          title="Containers"
+          icon={<Box className="w-3 h-3 text-text-weaker shrink-0" />}
+          defaultCollapsed={false}
+          badge={projectContainers.length}
+          actions={
+            onOpenContainers ? (
+              <button
+                onClick={onOpenContainers}
+                className="p-0.5 rounded hover:bg-surface-2 transition-colors"
+                title="Manage containers"
+              >
+                <Settings className="w-3 h-3 text-text-weaker" />
+              </button>
+            ) : undefined
+          }
+        >
+          <div className="max-h-44 overflow-y-auto scrollbar-thin">
             {projectContainers.length === 0 ? (
-              <div className="px-3 py-8 text-center">
-                <Box className="w-5 h-5 text-text-weaker mx-auto mb-2" />
-                <p className="text-[11px] text-text-weaker font-sans">
-                  No containers
+              <div className="px-3 py-4 text-center">
+                <p className="text-[10px] text-text-weaker font-sans">
+                  No containers linked
                 </p>
               </div>
             ) : (
-              <div className="py-1">
+              <div className="py-0.5">
                 {projectContainers.map((c) => {
                   const dotColor =
                     c.state === "running"
@@ -150,41 +179,29 @@ export function FilesSidePanel({
                   return (
                     <div
                       key={c.id}
-                      className="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1 transition-colors"
+                      className="flex items-center gap-2 px-4 py-1 hover:bg-surface-1 transition-colors"
                     >
                       <span
-                        className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`}
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`}
                         title={c.state}
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] text-text-strong font-sans truncate">
+                        <div className="text-[11px] text-text-base font-sans truncate">
                           {c.name}
                         </div>
-                        <div className="text-[10px] text-text-weaker font-sans truncate">
-                          {c.image}
-                        </div>
                       </div>
+                      <span className="text-[9px] text-text-weaker font-sans shrink-0">
+                        {c.image?.split(":")[0]?.split("/").pop() || ""}
+                      </span>
                     </div>
                   )
                 })}
               </div>
             )}
-            {onOpenContainers && (
-              <div className="px-3 py-2 border-t border-border-weak">
-                <button
-                  onClick={onOpenContainers}
-                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-sans text-text-weak hover:text-text-strong bg-surface-1 hover:bg-surface-2 transition-colors"
-                >
-                  <Settings className="w-3 h-3" />
-                  Manage containers
-                </button>
-              </div>
-            )}
           </div>
-        )}
+        </SidebarSection>
       </div>
 
-      {/* Resize handle for left side */}
       {side === "left" && (
         <div
           className={`w-[3px] shrink-0 cursor-col-resize transition-colors ${

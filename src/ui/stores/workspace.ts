@@ -85,6 +85,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       const existing = s.tabs.find((t) => t.id === tab.id)
       if (existing) {
         return {
+          // Auto-clear filter if it would hide this tab
+          filter: s.filter && s.filter !== existing.type ? null : s.filter,
           activeTabIdByProject: {
             ...s.activeTabIdByProject,
             ...(tab.projectId ? { [tab.projectId]: tab.id } : s._currentProjectId ? { [s._currentProjectId]: tab.id } : {}),
@@ -94,6 +96,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
       const pid = tab.projectId || s._currentProjectId
       return {
         tabs: [...s.tabs, { ...tab, pinned: false, hasNotification: false }],
+        // Auto-clear filter if it would hide the new tab
+        filter: s.filter && s.filter !== tab.type ? null : s.filter,
         activeTabIdByProject: {
           ...s.activeTabIdByProject,
           ...(pid ? { [pid]: tab.id } : {}),

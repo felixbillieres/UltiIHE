@@ -234,12 +234,10 @@ export function WorkspaceTabBar({
     return () => window.removeEventListener("click", close)
   }, [contextMenu])
 
-  // Filter tabs
-  const visibleTabs = filter ? tabs.filter((t) => t.type === filter) : tabs
-  // Sort: pinned first
+  // Sort: pinned first (tabs already filtered by project + filter in useMemo above)
   const sortedTabs = [
-    ...visibleTabs.filter((t) => t.pinned),
-    ...visibleTabs.filter((t) => !t.pinned),
+    ...tabs.filter((t) => t.pinned),
+    ...tabs.filter((t) => !t.pinned),
   ]
 
   const handleDoubleClick = (id: string, currentTitle: string) => {
@@ -312,11 +310,15 @@ export function WorkspaceTabBar({
     setDropTarget(null)
   }, [])
 
-  // Count by type (for filter badges)
+  // Count by type — use ALL project tabs (unfiltered) for accurate badges
+  const allProjectTabs = useMemo(
+    () => currentProjectId ? allTabs.filter((t) => t.projectId === currentProjectId) : allTabs,
+    [allTabs, currentProjectId],
+  )
   const counts = {
-    terminal: tabs.filter((t) => t.type === "terminal").length,
-    file: tabs.filter((t) => t.type === "file").length,
-    webtool: tabs.filter((t) => t.type === "webtool").length,
+    terminal: allProjectTabs.filter((t) => t.type === "terminal").length,
+    file: allProjectTabs.filter((t) => t.type === "file").length,
+    webtool: allProjectTabs.filter((t) => t.type === "webtool").length,
   }
   const hasMultipleTypes =
     (counts.terminal > 0 ? 1 : 0) +
@@ -326,41 +328,10 @@ export function WorkspaceTabBar({
   return (
     <div className="flex flex-col bg-surface-1 shrink-0">
       {/* Tab bar */}
-      <div className="flex items-stretch min-w-0 border-b border-border-weak">
-        {/* Filter chips — only show when there are mixed types */}
-        {hasMultipleTypes && (
-          <div className="shrink-0 flex items-center gap-0.5 pl-2 pr-1 border-r border-border-weak">
-            <Filter className="w-3 h-3 text-text-weaker mr-0.5" />
-            {FILTER_LABELS.map(({ type, label }) => {
-              const isActive = filter === type
-              const count =
-                type === null
-                  ? tabs.length
-                  : counts[type as TabType]
-              if (type !== null && count === 0) return null
-              return (
-                <button
-                  key={label}
-                  onClick={() => setFilter(isActive ? null : type)}
-                  className={`px-1.5 py-0.5 rounded text-[10px] font-sans transition-colors ${
-                    isActive
-                      ? "bg-accent/20 text-accent"
-                      : "text-text-weaker hover:text-text-weak hover:bg-surface-2/50"
-                  }`}
-                >
-                  {label}
-                  {type !== null && (
-                    <span className="ml-0.5 opacity-60">{count}</span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
-
+      <div className="flex items-stretch min-w-0 border-b border-border-weak h-[35px]">
         {/* Scrollable tabs */}
         <div
-          className="flex-1 min-w-0 overflow-x-auto flex items-end gap-0 scrollbar-none"
+          className="flex-1 min-w-0 overflow-x-auto flex items-stretch gap-0 scrollbar-none"
           onDragLeave={() => setDropTarget(null)}
         >
           {sortedTabs.map((tab) => (
@@ -375,6 +346,7 @@ export function WorkspaceTabBar({
               isDragging={draggingId === tab.id}
               dropIndicator={dropTarget?.id === tab.id ? dropTarget.side : null}
               onClick={() => {
+                // If filter is active and clicking a tab that's already visible, clear filter
                 setActiveTab(tab.id)
                 if (tab.hasNotification) {
                   useWorkspaceStore.getState().setTabNotification(tab.id, false)
@@ -410,14 +382,44 @@ export function WorkspaceTabBar({
           ))}
 
           {sortedTabs.length === 0 && (
-            <span className="text-[11px] text-text-weaker font-sans px-2 py-1.5">
+            <span className="text-[11px] text-text-weaker font-sans px-3 self-center">
               {filter ? `No ${filter} tabs` : "No open tabs"}
             </span>
           )}
         </div>
 
+        {/* Filter chips — right side, only when mixed types */}
+        {hasMultipleTypes && (
+          <div className="shrink-0 flex items-center gap-0.5 px-1.5 border-l border-border-weak">
+            {FILTER_LABELS.map(({ type, label }) => {
+              const isActive = filter === type
+              const count =
+                type === null
+                  ? allProjectTabs.length
+                  : counts[type as TabType]
+              if (type !== null && count === 0) return null
+              return (
+                <button
+                  key={label}
+                  onClick={() => setFilter(isActive ? null : type)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-sans transition-colors ${
+                    isActive
+                      ? "bg-accent/20 text-accent"
+                      : "text-text-weaker hover:text-text-weak hover:bg-surface-2/50"
+                  }`}
+                >
+                  {label}
+                  {type !== null && (
+                    <span className="ml-0.5 opacity-60">{count}</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Add buttons */}
-        <div className="shrink-0 flex items-center gap-0.5 px-1.5 py-1.5 border-l border-border-weak">
+        <div className="shrink-0 flex items-center gap-0.5 px-1.5 border-l border-border-weak">
           <NewTerminalButton
             containerIds={containerIds}
             connected={connected}
@@ -583,7 +585,7 @@ function TabItem({
 
   return (
     <div
-      className="relative flex items-center shrink-0 -mb-px"
+      className="relative flex items-stretch shrink-0"
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
@@ -599,12 +601,16 @@ function TabItem({
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
-        className={`relative flex items-center gap-1.5 pl-2.5 pr-1 py-1.5 text-xs cursor-pointer transition-colors group shrink-0 ${
+        className={`relative flex items-center gap-1.5 pl-2.5 pr-1 text-xs cursor-pointer transition-colors group shrink-0 ${
           isActive
-            ? "bg-surface-0 text-text-strong border-b-2 border-b-accent z-10"
-            : "text-text-weak hover:bg-surface-2/50 border-b border-b-transparent"
+            ? "bg-surface-0 text-text-strong"
+            : "text-text-weak hover:bg-surface-2/50"
         } ${isDragging ? "opacity-50" : ""}`}
       >
+        {/* Active tab bottom accent line */}
+        {isActive && (
+          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
+        )}
         {/* Vertical separator — only on inactive tabs */}
         {!isActive && (
           <div className="absolute right-0 top-[6px] bottom-[6px] w-px bg-border-weak" />
