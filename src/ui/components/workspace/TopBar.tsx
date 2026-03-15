@@ -64,10 +64,7 @@ function ProjectSwitcher({
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1.5 px-2 py-0.5 rounded-md hover:bg-surface-2 transition-colors text-text-base"
       >
-        <span className="w-5 h-5 rounded bg-accent/20 flex items-center justify-center text-[10px] font-bold text-accent">
-          {project.name.charAt(0).toUpperCase()}
-        </span>
-        <span className="text-xs font-sans font-medium truncate max-w-[140px]">{project.name}</span>
+        <span className="text-xs font-sans font-medium truncate max-w-[160px]">{project.name}</span>
         <ChevronDown className="w-3 h-3 text-text-weaker" />
       </button>
 
@@ -83,11 +80,6 @@ function ProjectSwitcher({
                   isActive ? "bg-accent/10 text-accent" : "text-text-base hover:bg-surface-3"
                 }`}
               >
-                <span className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold ${
-                  isActive ? "bg-accent/20 text-accent" : "bg-surface-0 text-text-weaker"
-                }`}>
-                  {p.name.charAt(0).toUpperCase()}
-                </span>
                 <span className="truncate">{p.name}</span>
               </button>
             )

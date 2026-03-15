@@ -341,10 +341,11 @@ export function ChatPanel({ projectId }: Props) {
 
   // ── Streaming with SSE parsing ──────────────────────────────
 
-  async function handleSend() {
+  async function handleSend(overrideInput?: string) {
     if (streaming) return
     if (!hasTerminals) return
-    if (!input.trim() && quotes.length === 0 && images.length === 0) return
+    const effectiveInput = overrideInput ?? input
+    if (!effectiveInput.trim() && quotes.length === 0 && images.length === 0) return
 
     const provider = getActiveProvider()
     const isLocal = activeProvider === "local"
@@ -374,7 +375,7 @@ export function ChatPanel({ projectId }: Props) {
 
     // Build message content with context quotes
     // Push to message history (dedup with last)
-    const userText = input.trim()
+    const userText = effectiveInput.trim()
     if (userText && historyRef.current[historyRef.current.length - 1] !== userText) {
       historyRef.current.push(userText)
       if (historyRef.current.length > 50) historyRef.current.shift()
@@ -928,23 +929,27 @@ export function ChatPanel({ projectId }: Props) {
 
   const handleRetry = useCallback(() => {
     if (!activeSessionId || streaming) return
-    // Remove last assistant message, re-send the last user message
     const msgs = useSessionStore.getState().getActiveMessages(projectId)
     if (msgs.length < 2) return
     const lastAssistant = msgs[msgs.length - 1]
     if (lastAssistant.role !== "assistant") return
-    // Remove last assistant
     useSessionStore.getState().removeLastMessages(activeSessionId, 1)
-    // Re-trigger send with last user message content
     const lastUser = msgs[msgs.length - 2]
     if (lastUser?.role === "user") {
       setInput(lastUser.content)
-      // Small delay to let state update, then auto-send
-      setTimeout(() => {
-        handleSend()
-      }, 100)
+      setTimeout(() => { handleSend() }, 100)
     }
   }, [activeSessionId, streaming])
+
+  // Quote a previous message (Cline-style) — prepend as context to next message
+  const handleQuoteMessage = useCallback((_messageId: string, content: string) => {
+    setInput((prev) => {
+      const quote = `> ${content.split("\n").join("\n> ")}\n\n`
+      return prev ? `${quote}${prev}` : quote
+    })
+    // Focus the input
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }, [])
 
   // Find last assistant message id for retry button
   // NOTE: Must be called before the early return to maintain consistent hook ordering
@@ -1042,6 +1047,7 @@ export function ChatPanel({ projectId }: Props) {
                   isLastAssistant={msg.id === lastAssistantId}
                   onFork={handleFork}
                   onRetry={handleRetry}
+                  onEdit={!streaming ? handleQuoteMessage : undefined}
                 />
               )
             })
@@ -1227,7 +1233,7 @@ export function ChatPanel({ projectId }: Props) {
               </button>
             ) : (
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={!hasTerminals || (!input.trim() && quotes.length === 0 && images.length === 0)}
                 className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
               >

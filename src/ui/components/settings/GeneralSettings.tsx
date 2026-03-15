@@ -12,16 +12,12 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   en: "English", fr: "Fran\u00e7ais", de: "Deutsch", es: "Espa\u00f1ol", ja: "\u65e5\u672c\u8a9e", zh: "\u4e2d\u6587",
 }
 
-const MONO_FONTS = [
-  "IBM Plex Mono", "Cascadia Code", "Fira Code", "Hack", "JetBrains Mono",
-  "Source Code Pro", "Ubuntu Mono", "Inconsolata", "Roboto Mono", "Iosevka",
-]
 
 export function GeneralSettings() {
   const {
-    activeTheme, fontSize, fontFamily, language: lang,
+    activeTheme, language: lang,
     soundEnabled, soundId,
-    setTheme, setFontSize, setFontFamily, setLanguage,
+    setTheme, setLanguage,
     setSoundEnabled, setSoundId,
   } = useSettingsStore()
 
@@ -48,30 +44,6 @@ export function GeneralSettings() {
               <span className="text-[10px] text-text-base font-sans">{theme.name}</span>
             </button>
           ))}
-        </div>
-      </Section>
-
-      {/* Font & size */}
-      <Section title={t(lang, "settings.general.fontFamily")}>
-        <div className="flex gap-3">
-          <select
-            value={fontFamily}
-            onChange={(e) => setFontFamily(e.target.value)}
-            className="flex-1 text-xs bg-surface-0 border border-border-base rounded-lg px-2.5 py-1.5 text-text-base focus:outline-none focus:border-accent/50 font-sans"
-          >
-            {MONO_FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-weak font-sans">{t(lang, "settings.general.fontSize")}</span>
-            <input
-              type="number"
-              min={10}
-              max={24}
-              value={fontSize}
-              onChange={(e) => setFontSize(parseInt(e.target.value))}
-              className="w-14 text-xs bg-surface-0 border border-border-base rounded-lg px-2 py-1.5 text-text-base text-center focus:outline-none focus:border-accent/50 font-sans"
-            />
-          </div>
         </div>
       </Section>
 

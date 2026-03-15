@@ -153,9 +153,9 @@ export function OperationsTracker() {
   return (
     <div className="border-t border-border-weak bg-surface-0/80">
       {/* Header */}
-      <button
+      <div
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1 transition-colors cursor-pointer"
       >
         <Zap className="w-3 h-3 text-accent shrink-0" />
         <span className="text-[11px] font-sans text-text-base font-medium">
@@ -182,7 +182,7 @@ export function OperationsTracker() {
         <ChevronDown
           className={`w-3 h-3 text-text-weaker transition-transform ${expanded ? "rotate-180" : ""}`}
         />
-      </button>
+      </div>
 
       {/* Expanded list */}
       {expanded && (

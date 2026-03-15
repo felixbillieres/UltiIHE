@@ -96,6 +96,8 @@ interface SessionStore {
   redoLastExchange: (sessionId: string) => boolean
   forkSession: (sessionId: string, upToMessageId: string) => Session | null
   removeLastMessages: (sessionId: string, count: number) => Message[]
+  /** Remove all messages after the given messageId (inclusive of everything after) */
+  truncateAfterMessage: (sessionId: string, messageId: string) => void
 
   // Convenience
   getActiveSession: (projectId: string) => Session | undefined
@@ -311,6 +313,17 @@ export const useSessionStore = create<SessionStore>()(
           ),
         }))
         return removed
+      },
+
+      truncateAfterMessage: (sessionId, messageId) => {
+        set((s) => ({
+          sessions: s.sessions.map((sess) => {
+            if (sess.id !== sessionId) return sess
+            const idx = sess.messages.findIndex((m) => m.id === messageId)
+            if (idx === -1) return sess
+            return { ...sess, messages: sess.messages.slice(0, idx + 1), updatedAt: Date.now() }
+          }),
+        }))
       },
 
       getActiveMessages: (projectId) => {

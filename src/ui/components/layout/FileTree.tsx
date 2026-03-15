@@ -755,15 +755,24 @@ function HostTreeFile({ entry, depth }: { entry: FileEntry; depth: number }) {
 
 function ContainerSection({ container }: { container: string }) {
   const [collapsed, setCollapsed] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
   const [showRootsModal, setShowRootsModal] = useState(false)
   const invalidateDir = useFileStore((s) => s.invalidateDir)
+  const fetchDirectory = useFileStore((s) => s.fetchDirectory)
   const getVisibleRoots = useFileStore((s) => s.getVisibleRoots)
   const visibleRoots = getVisibleRoots(container)
 
-  const refresh = () => {
-    visibleRoots.forEach((r) => invalidateDir(container, r))
-    setRefreshKey((k) => k + 1)
+  const refresh = async () => {
+    // Invalidate + re-fetch all cached dirs for this container
+    // This updates dirCache in-place, so expanded TreeDirs re-render
+    // with new data WITHOUT losing their expansion state
+    const cache = useFileStore.getState().dirCache
+    for (const key of Object.keys(cache)) {
+      if (key.startsWith(container + ":")) {
+        const path = key.substring(container.length + 1)
+        invalidateDir(container, path)
+        fetchDirectory(container, path)
+      }
+    }
   }
 
   return (
@@ -799,7 +808,7 @@ function ContainerSection({ container }: { container: string }) {
       </div>
 
       {!collapsed && (
-        <div key={refreshKey}>
+        <div>
           {visibleRoots.map((root) => (
             <TreeDir
               key={root}

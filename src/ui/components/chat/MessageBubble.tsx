@@ -396,12 +396,14 @@ export function MessageBubble({
   isLastAssistant,
   onFork,
   onRetry,
+  onEdit,
 }: {
   message: Message
   isStreaming: boolean
   isLastAssistant?: boolean
   onFork?: (messageId: string) => void
   onRetry?: () => void
+  onEdit?: (messageId: string, newContent: string) => void
 }) {
   const isUser = message.role === "user"
   const isError = !isUser && message.content.startsWith("⚠️")
@@ -410,14 +412,15 @@ export function MessageBubble({
   const parsed = isUser ? parseContextBlocks(message.content) : null
   const hasBlocks = parsed && parsed.blocks.length > 0
 
-  // ── User message — sticky bubble (Cursor-style) ─────────────
+  // ── User message — click to quote (Cline-style) ─────────────
   if (isUser) {
+    const textContent = hasBlocks ? parsed!.text : message.content
     return (
       <div data-user-message>
         <div className="flex flex-col gap-1.5">
           {hasBlocks && (
             <>
-              {parsed.blocks.map((b, i) =>
+              {parsed!.blocks.map((b, i) =>
                 b.type === "terminal" ? (
                   <TerminalContextBlock key={`ctx-${i}-${b.type}`} block={b} />
                 ) : (
@@ -426,9 +429,13 @@ export function MessageBubble({
               )}
             </>
           )}
-          {(hasBlocks ? parsed.text : message.content) && (
-            <div className="bg-surface-1 border border-border-weak rounded-xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-text-strong text-left">
-              <MarkdownContent content={hasBlocks ? parsed.text : message.content} />
+          {textContent && (
+            <div
+              onClick={onEdit ? () => onEdit(message.id, textContent) : undefined}
+              className={`bg-surface-1 border border-border-weak rounded-xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-text-strong text-left ${onEdit ? "cursor-pointer hover:border-accent/30 transition-colors" : ""}`}
+              title={onEdit ? "Click to quote this message" : undefined}
+            >
+              <MarkdownContent content={textContent} />
             </div>
           )}
         </div>
