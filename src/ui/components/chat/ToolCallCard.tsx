@@ -120,10 +120,15 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
   const isError = part.status === "error"
   const isCompleted = part.status === "completed"
 
-  // Detect doom loop warnings — these are not real failures
+  // Detect doom loop warnings — hide from UI, only AI sees them
   const output = part.output || ""
-  const isDoomWarning = isError && output.includes("was just called with identical arguments")
-  const isRealError = isError && !isDoomWarning
+  const isDoomWarning = isError && (
+    output.includes("was just called with identical arguments") ||
+    output.includes("Consider using different arguments")
+  )
+  // Hide doom warnings entirely from user — AI already sees it as tool result
+  if (isDoomWarning) return null
+  const isRealError = isError
 
   // Auto-expand when output arrives for the first time
   useEffect(() => {
@@ -137,7 +142,7 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
   const { text: displayOutput, truncated } = truncateOutput(output)
 
   const label = autoRan ? "Auto-ran" : "Ran"
-  const statusLabel = isRunning ? "Running" : isDoomWarning ? "Warning" : isRealError ? "Failed" : label
+  const statusLabel = isRunning ? "Running" : isRealError ? "Failed" : label
 
   return (
     <div className={`my-1.5 rounded-lg border overflow-hidden ${
@@ -150,13 +155,11 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
       >
         <div className={`rounded-full w-2 h-2 shrink-0 ${
           isRunning ? "bg-status-success animate-pulse"
-            : isDoomWarning ? "bg-status-warning"
             : isRealError ? "bg-status-error"
             : "bg-status-success"
         }`} />
         <span className={`text-[11px] font-sans font-medium shrink-0 ${
           isRunning ? "text-status-success"
-            : isDoomWarning ? "text-status-warning"
             : isRealError ? "text-status-error"
             : "text-text-weaker"
         }`}>

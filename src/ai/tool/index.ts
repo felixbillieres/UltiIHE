@@ -121,6 +121,9 @@ const approved = {
     (a) => `Create terminal "${a.name || "unnamed"}" on ${a.container}`,
   ),
   terminal_write: terminalTools.terminal_write,
+  terminal_close: withApproval("terminal_close", terminalTools.terminal_close,
+    (a) => `Close terminal ${a.terminalId}`,
+  ),
 
   // File tools with diff-based approval (Cursor-style)
   file_write: withFileWriteApproval(fileTools.file_write),

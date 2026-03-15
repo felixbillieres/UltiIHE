@@ -144,10 +144,39 @@ export const terminalWriteTool: Tool<
   },
 }
 
+export const terminalCloseTool: Tool<
+  { terminalId: string },
+  { success: boolean; terminalId: string } | { error: string }
+> = {
+  description:
+    "Close a terminal that is no longer needed. Use this to clean up terminals after " +
+    "completing tasks to avoid accumulating unused terminals. Cannot close the last remaining terminal.",
+  inputSchema: z.object({
+    terminalId: z.string().describe("The terminal ID to close"),
+  }),
+  execute: async ({ terminalId }) => {
+    try {
+      const terminals = terminalManager.listTerminals()
+      if (terminals.length <= 1) {
+        return { error: "Cannot close the last terminal" }
+      }
+      const terminal = terminalManager.getTerminal(terminalId)
+      if (!terminal) {
+        return { error: `Terminal not found: ${terminalId}` }
+      }
+      terminalManager.close(terminalId)
+      return { success: true, terminalId }
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
+  },
+}
+
 /** All terminal tools bundled for use in streamText() */
 export const terminalTools = {
   terminal_create: terminalCreateTool,
   terminal_read: terminalReadTool,
   terminal_list: terminalListTool,
   terminal_write: terminalWriteTool,
+  terminal_close: terminalCloseTool,
 }

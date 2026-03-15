@@ -206,14 +206,14 @@ export function buildRepairCallback(tools: Record<string, any>) {
 // - Level 2 (directive): stronger message with specific alternatives
 // - Level 3 (abort): stop execution entirely
 
-const DOOM_LOOP_THRESHOLD = 3
+const DOOM_LOOP_THRESHOLD = 4
 
 // Tools that legitimately poll with identical args (output changes between calls)
-const EXEMPT_TOOLS = new Set(["terminal_read", "terminal_list"])
+const EXEMPT_TOOLS = new Set(["terminal_read", "terminal_list", "terminal_close"])
 
 // Tools that may retry the same args in complex workflows
 const HIGH_THRESHOLD_TOOLS = new Set(["terminal_write", "terminal_create"])
-const HIGH_THRESHOLD = 6
+const HIGH_THRESHOLD = 8
 
 // Cline-style: max consecutive mistakes before hard abort (configurable)
 const MAX_CONSECUTIVE_MISTAKES = 3

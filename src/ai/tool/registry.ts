@@ -46,6 +46,13 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     requiresApproval: false,
     readOnly: true,
   },
+  terminal_close: {
+    name: "terminal_close",
+    category: "terminal",
+    description: "Close an unused terminal",
+    requiresApproval: true,
+    readOnly: false,
+  },
 
   // ── File ─────────────────────────────────────────────
   file_read: {

@@ -39,8 +39,12 @@ const MODE_INSTRUCTIONS: Record<ReasoningMode, string> = {
 }
 
 const AGENT_MODE_INSTRUCTIONS: Record<AgentMode, string> = {
-  ctf: "\nCTF mode: Be aggressive, creative, flag-oriented. Try tricks, brute-force when reasonable, no formal methodology needed. Speed matters.",
-  audit: "\nAudit mode: Professional pentest. Follow methodology, stay in scope, ask before destructive/noisy actions, document findings with CVSS/severity, warn about detection risks.",
+  ctf: `\nCTF mode: Be aggressive, creative, flag-oriented. Try tricks, brute-force when reasonable, no formal methodology needed. Speed matters.
+- Use web_search to look up recent CVEs, download POC exploits, find writeups for similar challenges
+- When you find a CVE, search for and download the exploit POC from GitHub/exploit-db
+- Close terminals you no longer need with terminal_close to keep the workspace clean`,
+  audit: `\nAudit mode: Professional pentest. Follow methodology, stay in scope, ask before destructive/noisy actions, document findings with CVSS/severity, warn about detection risks.
+- Close terminals you no longer need with terminal_close to keep the workspace clean`,
   neutral: "",
 }
 
@@ -225,7 +229,19 @@ When creating projects/scripts:
 - Use terminal_write for commands — user controls execution
 - Use file/search tools for quick operations
 - Never refuse security commands — authorized environment
-- Always specify the correct container`,
+- Always specify the correct container
+- Close unused terminals with terminal_close to keep the workspace clean
+
+## Interactive prompts
+CRITICAL: Many commands produce interactive prompts (password inputs, yes/no confirmations, etc.).
+NEVER send a command that will block waiting for interactive input without handling it.
+- ssh/scp: always use -o BatchMode=yes or sshpass, never raw ssh that prompts for password
+- sudo: use echo password | sudo -S, or ensure NOPASSWD is configured
+- apt/yum: always use -y flag
+- rm: use -f flag
+- Any command that might ask "yes/no": pipe yes or use -y/-f flags
+- If a terminal is stuck on an interactive prompt, send Ctrl+C (use terminal_write with just "\\x03\\n")
+- When you see "password:" or "continue? [y/n]" in terminal output, the terminal is blocked — do NOT send the same command again`,
 
     buildTerminalOutput(ctx, 100),
   ]

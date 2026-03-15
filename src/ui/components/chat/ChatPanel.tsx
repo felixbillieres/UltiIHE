@@ -348,8 +348,19 @@ export function ChatPanel({ projectId }: Props) {
 
   // ── Streaming with SSE parsing ──────────────────────────────
 
+  const queuedInputRef = useRef<string | null>(null)
+
   async function handleSend(overrideInput?: string) {
-    if (streaming) return
+    if (streaming) {
+      // Queue the message — it will be sent after current stream finishes
+      const text = (overrideInput ?? input).trim()
+      if (text) {
+        queuedInputRef.current = text
+        setInput("")
+        toast("Message queued — will send when current response finishes", { duration: 2000 })
+      }
+      return
+    }
     if (!hasTerminals) return
     const effectiveInput = overrideInput ?? input
     if (!effectiveInput.trim() && quotes.length === 0 && images.length === 0) return
@@ -700,6 +711,14 @@ export function ChatPanel({ projectId }: Props) {
       setStreaming(false)
       abortRef.current = null
       streamingMsgIdRef.current = null
+
+      // Process queued message if any
+      if (queuedInputRef.current) {
+        const queued = queuedInputRef.current
+        queuedInputRef.current = null
+        // Small delay to let React update streaming state
+        setTimeout(() => handleSend(queued), 100)
+      }
     }
   }
 
@@ -1254,27 +1273,32 @@ export function ChatPanel({ projectId }: Props) {
               onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={hasTerminals ? "Message, /command, or @mention..." : "Open a terminal to start chatting..."}
+              placeholder={!hasTerminals ? "Open a terminal to start chatting..." : streaming ? "Type to queue next message..." : "Message, /command, or @mention..."}
               rows={1}
               disabled={!hasTerminals}
               className={`flex-1 bg-transparent text-sm placeholder-text-weaker resize-none focus:outline-none min-h-[24px] max-h-[120px] font-sans ${hasTerminals ? "text-text-strong" : "text-text-weaker cursor-not-allowed"}`}
             />
-            {streaming ? (
+            {streaming && (
               <button
                 onClick={handleStop}
                 className="p-1.5 rounded-lg bg-status-error/15 hover:bg-status-error/25 text-status-error transition-colors shrink-0"
+                title="Stop"
               >
                 <Square className="w-3.5 h-3.5" />
               </button>
-            ) : (
-              <button
-                onClick={() => handleSend()}
-                disabled={!hasTerminals || (!input.trim() && quotes.length === 0 && images.length === 0)}
-                className="p-1.5 rounded-lg bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
             )}
+            <button
+              onClick={() => handleSend()}
+              disabled={!hasTerminals || (!input.trim() && quotes.length === 0 && images.length === 0)}
+              className={`p-1.5 rounded-lg transition-colors shrink-0 ${
+                streaming && input.trim()
+                  ? "bg-accent/60 hover:bg-accent text-white"
+                  : "bg-accent hover:bg-accent-hover text-white disabled:opacity-30 disabled:cursor-not-allowed"
+              }`}
+              title={streaming ? "Queue message" : "Send"}
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
