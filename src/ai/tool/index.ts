@@ -27,129 +27,75 @@ import {
 import { toolApprovalQueue } from "./tool-approval"
 import { generateDiff } from "./file-tools"
 import { dockerExec, shellEscape } from "./exec"
+import { TOOL_REGISTRY } from "./registry"
 
-// ── Approval wrapper ────────────────────────────────────────────
+// ── Approval wrappers ───────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyTool = Record<string, any>
 
 /**
- * Wrap a tool so it asks for user approval before executing.
- * If rejected, returns { error: "Tool call rejected by user" }.
+ * Generic approval wrapper factory.
+ * Wraps a tool so it asks for user approval before executing.
+ * If rejected, returns { error: "... rejected by user" }.
  */
-function withApproval(toolName: string, tool: any, descriptionFn: (args: any) => string) {
+function withApproval(
+  toolName: string,
+  tool: AnyTool,
+  descFn: (args: any) => string,
+  metaFn?: (args: any) => Promise<Record<string, unknown>> | Record<string, unknown>,
+  rejectMsg = "Tool call rejected by user",
+): AnyTool {
+  const origExecute = tool.execute
   return {
     ...tool,
     execute: async (args: any, options: any) => {
-      const approved = await toolApprovalQueue.request(
-        toolName,
-        descriptionFn(args),
-        args,
-      )
-      if (!approved) {
-        return { error: "Tool call rejected by user" }
-      }
-      return tool.execute(args, options)
+      const meta = metaFn ? await metaFn(args) : undefined
+      const approved = await toolApprovalQueue.request(toolName, descFn(args), args, meta)
+      if (!approved) return { error: rejectMsg }
+      return origExecute?.(args, options)
     },
   }
 }
 
-/**
- * Wrap file_write with diff-based approval:
- * 1. Read existing file (if any)
- * 2. Compute diff
- * 3. Send diff for approval
- * 4. Only write if approved
- */
-function withFileWriteApproval(tool: any) {
-  return {
-    ...tool,
-    execute: async (args: any, options: any) => {
-      const { container, filePath, content } = args
-      const escaped = shellEscape(filePath)
-
-      // Read existing content for diff
+/** file_write approval with diff computation */
+function withFileWriteApproval(tool: AnyTool): AnyTool {
+  return withApproval(
+    "file_write",
+    tool,
+    (a) => `Write ${a.filePath} on ${a.container}`,
+    async (a) => {
+      const escaped = shellEscape(a.filePath)
       let original = ""
       let isNew = true
-      const readResult = await dockerExec(container, `cat ${escaped} 2>/dev/null`)
-      if (readResult.exitCode === 0) {
-        original = readResult.stdout
-        isNew = false
-      }
-
-      const diff = generateDiff(filePath, original, content)
-      const fileKey = `${container}:${filePath}`
-
-      const approved = await toolApprovalQueue.request(
-        "file_write",
-        `Write ${filePath} on ${container}`,
-        args,
-        { diff, fileKey, isNewFile: isNew },
-      )
-
-      if (!approved) {
-        return { error: "File write rejected by user" }
-      }
-
-      return tool.execute(args, options)
+      const readResult = await dockerExec(a.container, `cat ${escaped} 2>/dev/null`)
+      if (readResult.exitCode === 0) { original = readResult.stdout; isNew = false }
+      return { diff: generateDiff(a.filePath, original, a.content), fileKey: `${a.container}:${a.filePath}`, isNewFile: isNew }
     },
-  }
+    "File write rejected by user",
+  )
 }
 
-/**
- * Wrap file_edit with diff-based approval:
- * 1. Read file
- * 2. Compute what the edit would look like
- * 3. Send diff for approval
- * 4. Only apply if approved
- */
-function withFileEditApproval(tool: any) {
-  return {
-    ...tool,
-    execute: async (args: any, options: any) => {
-      const { container, filePath } = args
-      const fileKey = `${container}:${filePath}`
-
-      // Let the tool handle the actual diffing - it already generates diffs
-      // We just need to show the approval before writing
-      const approved = await toolApprovalQueue.request(
-        "file_edit",
-        `Edit ${filePath} on ${container}`,
-        args,
-        { fileKey },
-      )
-
-      if (!approved) {
-        return { error: "File edit rejected by user" }
-      }
-
-      return tool.execute(args, options)
-    },
-  }
+/** file_edit approval */
+function withFileEditApproval(tool: AnyTool): AnyTool {
+  return withApproval(
+    "file_edit",
+    tool,
+    (a) => `Edit ${a.filePath} on ${a.container}`,
+    (a) => ({ fileKey: `${a.container}:${a.filePath}` }),
+    "File edit rejected by user",
+  )
 }
 
-/**
- * Wrap file_delete with approval.
- */
-function withFileDeleteApproval(tool: any) {
-  return {
-    ...tool,
-    execute: async (args: any, options: any) => {
-      const { container, targetPath, recursive } = args
-      const desc = recursive
-        ? `Delete directory ${targetPath} (recursive) on ${container}`
-        : `Delete ${targetPath} on ${container}`
-
-      const approved = await toolApprovalQueue.request(
-        "file_delete",
-        desc,
-        args,
-      )
-
-      if (!approved) {
-        return { error: "File delete rejected by user" }
-      }
-
-      return tool.execute(args, options)
-    },
-  }
+/** file_delete approval */
+function withFileDeleteApproval(tool: AnyTool): AnyTool {
+  return withApproval(
+    "file_delete",
+    tool,
+    (a) => a.recursive ? `Delete directory ${a.targetPath} (recursive) on ${a.container}` : `Delete ${a.targetPath} on ${a.container}`,
+    undefined,
+    "File delete rejected by user",
+  )
 }
 
 // ── Read-only tools (no approval needed) ────────────────────────
@@ -217,19 +163,11 @@ export const allTools: Record<string, any> = {
 }
 
 // ── Read-only subset (report agent / plan mode) ─────────────────
-export const readOnlyTools: Record<string, any> = {
-  terminal_read: terminalTools.terminal_read,
-  terminal_list: terminalTools.terminal_list,
-  file_read: fileTools.file_read,
-  search_find: searchTools.search_find,
-  search_grep: searchTools.search_grep,
-  todo_read: todoTools.todo_read,
-  caido_read: caidoTools.caido_read,
-  caido_scope: caidoTools.caido_scope,
-  exh_read_creds: exhReadCredsTool,
-  exh_read_hosts: exhReadHostsTool,
-  exh_read_env: exhReadEnvTool,
-  // web tools still need approval even in read-only mode
-  web_fetch: approved.web_fetch,
-  web_search: approved.web_search,
-}
+// Generated from registry — stays in sync automatically when new tools are added
+export const readOnlyTools: Record<string, any> = Object.fromEntries(
+  Object.entries(allTools).filter(([name]) => {
+    const meta = TOOL_REGISTRY[name]
+    // Include if: registered as readOnly, OR is a web tool (needs approval but allowed in read mode)
+    return meta?.readOnly || name === "web_fetch" || name === "web_search"
+  }),
+)
