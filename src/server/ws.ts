@@ -128,6 +128,13 @@ const commandResumeSchema = z.object({
   data: z.object({}),
 })
 
+const terminalRequestSuggestionSchema = z.object({
+  type: z.literal("terminal:request-suggestion"),
+  data: z.object({
+    terminalId: z.string(),
+  }),
+})
+
 const opsStopOneSchema = z.object({
   type: z.literal("ops:stop-one"),
   data: z.object({
@@ -156,6 +163,7 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   toolSetModeSchema,
   toolPauseSchema,
   toolResumeSchema,
+  terminalRequestSuggestionSchema,
   commandPauseSchema,
   commandResumeSchema,
   opsStopOneSchema,
@@ -269,6 +277,9 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
     case "command:resume":
       commandQueue.resume()
       break
+    case "terminal:request-suggestion":
+      handleTerminalSuggestion(ws, msg.data)
+      break
     case "ops:stop-one": {
       const terminalId = opsTracker.cancelOne(msg.data.opId)
       if (terminalId) {
@@ -343,6 +354,48 @@ function handleTerminalClose(
     })
   } catch (err) {
     sendError(ws, (err as Error).message, data.terminalId)
+  }
+}
+
+// --- Ghost command suggestion handler ---
+
+async function handleTerminalSuggestion(
+  ws: ServerWebSocket<unknown>,
+  data: { terminalId: string },
+): Promise<void> {
+  try {
+    const output = terminalManager.getOutput(data.terminalId)
+    const lastLines = output.split("\n").slice(-10).join("\n")
+    if (!lastLines.trim()) return
+
+    // Use a lightweight LLM call via the probe endpoint pattern
+    const res = await fetch("http://localhost:3001/api/probe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: "system",
+            content: "You are a terminal command suggester for a pentester. Given terminal output, suggest the SINGLE most likely next command. Reply with ONLY the command, no explanation, no backticks, no newlines.",
+          },
+          {
+            role: "user",
+            content: `Terminal output (last 10 lines):\n${lastLines}\n\nSuggest the next command:`,
+          },
+        ],
+      }),
+    })
+    if (!res.ok) return
+    const result = await res.json()
+    const command = (result.text || result.content || "").trim().split("\n")[0]
+    if (command && command.length > 1 && command.length < 200) {
+      sendTo(ws, {
+        type: "terminal:suggest",
+        data: { terminalId: data.terminalId, command },
+      })
+    }
+  } catch {
+    // Suggestion failure is silent — not critical
   }
 }
 

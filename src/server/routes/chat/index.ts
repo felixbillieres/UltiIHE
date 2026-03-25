@@ -5,7 +5,7 @@ import { terminalManager } from "../../../terminal/manager"
 import { allTools, readOnlyTools } from "../../../ai/tool"
 import { createRegistry } from "./registry"
 import type { ReasoningMode } from "./systemPrompt"
-import { getReasoningOptions } from "./reasoning"
+import { getReasoningOptions, autoEscalateThinking } from "./reasoning"
 import type { ThinkingEffort } from "./reasoning"
 import { extractErrorMessage, extractStatusCode } from "./errors"
 import {
@@ -16,6 +16,8 @@ import {
   shouldPrune,
   shouldCompact,
   pruneMessages,
+  extractMissionState,
+  serializeMissionState,
 } from "../../../ai/context"
 import { resolveContextWindow, resolveMaxOutput, preWarmModel } from "./contextResolver"
 import { getPromptCacheOptions, supportsPromptCaching, getDefaultSampling, withProviderTransforms, applyCacheHints } from "./providerTransforms"
@@ -117,11 +119,16 @@ chatRoutes.post("/chat", async (c) => {
   const maxOutput = resolveMaxOutput(providerId, modelId)
   const budget = calculateBudget(contextWindow, maxOutput)
 
-  // ── Terminal context ──────────────────────────────────────
+  // ── Terminal context (auto-fallback to most recent terminal) ──
   let terminalContext = ""
-  if (activeTerminalId) {
+  let effectiveTerminalId = activeTerminalId
+  if (!effectiveTerminalId) {
+    const allTerminals = terminalManager.listTerminals()
+    if (allTerminals.length > 0) effectiveTerminalId = allTerminals[0].id
+  }
+  if (effectiveTerminalId) {
     try {
-      terminalContext = terminalManager.getOutput(activeTerminalId)
+      terminalContext = terminalManager.getOutput(effectiveTerminalId)
       const maxLines = budget.promptTier === "minimal" ? 30 : budget.promptTier === "medium" ? 60 : 100
       const lines = terminalContext.split("\n")
       if (lines.length > maxLines) {
@@ -132,6 +139,11 @@ chatRoutes.post("/chat", async (c) => {
 
   const activeTerminals = terminalManager.listTerminals()
 
+  // ── Mission state (auto-extract findings from conversation) ──
+  const missionState = serializeMissionState(
+    extractMissionState(messages.map((m: any) => ({ role: m.role, content: String(m.content ?? "") }))),
+  )
+
   // ── Adaptive system prompt ────────────────────────────────
   const systemPrompt = buildAdaptivePrompt({
     containerIds,
@@ -140,6 +152,7 @@ chatRoutes.post("/chat", async (c) => {
     mode,
     agentMode,
     tier: budget.promptTier,
+    missionState,
   })
 
   // ── Tool selection ────────────────────────────────────────
@@ -234,7 +247,14 @@ chatRoutes.post("/chat", async (c) => {
     // ── Prompt caching ────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const providerOptions: Record<string, any> = {
-      ...getReasoningOptions(providerId, mode, thinkingEffort),
+      ...(() => {
+        // Auto-escalate thinking based on context (only if user hasn't set it)
+        const lastUserMsg = [...processedMessages].reverse().find((m: any) => m.role === "user")
+        const recentErrors = processedMessages.slice(-6)
+          .filter((m: any) => m.role === "assistant" && typeof m.content === "string" && m.content.includes("error")).length
+        const effectiveThinking = autoEscalateThinking(thinkingEffort, String(lastUserMsg?.content ?? ""), recentErrors)
+        return getReasoningOptions(providerId, mode, effectiveThinking)
+      })(),
     }
 
     // Merge prompt cache hints into providerOptions (for system prompt)
@@ -340,6 +360,7 @@ chatRoutes.post("/chat", async (c) => {
     let doomLoopAborted = false
     let stepCount = 0
     let toolCallCount = 0
+    const MAX_TOOLS_PER_STREAM = 100
 
     try {
       const textPromise = result.text.then(
@@ -387,6 +408,10 @@ chatRoutes.post("/chat", async (c) => {
           case "tool-call": {
             hasContent = true
             toolCallCount++
+            if (toolCallCount > MAX_TOOLS_PER_STREAM) {
+              earlyError = `Rate limit: ${MAX_TOOLS_PER_STREAM} tool calls exceeded. Aborting stream.`
+              break
+            }
             const tcPart = part as unknown as StreamToolCallPart
             bufferedEvents.push(sse("tool-call", {
               id: tcPart.toolCallId,
@@ -519,6 +544,14 @@ chatRoutes.post("/chat", async (c) => {
               }
               case "tool-call": {
                 toolCallCount++
+                if (toolCallCount > MAX_TOOLS_PER_STREAM) {
+                  controller.enqueue(encoder.encode(sse("error", {
+                    message: `Rate limit: ${MAX_TOOLS_PER_STREAM} tool calls exceeded. Aborting stream.`,
+                  })))
+                  controller.enqueue(encoder.encode(sse("done", {})))
+                  controller.close()
+                  return
+                }
                 const tcPart = part as unknown as StreamToolCallPart
                 const toolCallId = tcPart.toolCallId
                 runningToolCalls.add(toolCallId)

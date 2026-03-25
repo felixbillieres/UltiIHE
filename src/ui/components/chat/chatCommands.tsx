@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useTerminalStore } from "../../stores/terminal"
 import { useFileStore } from "../../stores/files"
+import { useExhStore } from "../../stores/exh"
 import {
   Brain,
   Terminal,
@@ -12,6 +13,8 @@ import {
   Undo2,
   Cpu,
   Link,
+  KeyRound,
+  Server,
 } from "lucide-react"
 
 export interface SlashCommand {
@@ -136,6 +139,8 @@ export function useSlashCommands(): SlashCommand[] {
 export function useAtOptions(): AtOption[] {
   const terminals = useTerminalStore((s) => s.terminals)
   const openFiles = useFileStore((s) => s.openFiles)
+  const exhCreds = useExhStore((s) => s.creds)
+  const exhHosts = useExhStore((s) => s.hosts)
 
   return useMemo(() => {
     const terms: AtOption[] = terminals.map((t) => ({
@@ -163,6 +168,41 @@ export function useAtOptions(): AtOption[] {
       icon: <Link className="w-3.5 h-3.5 text-text-weaker" />,
     }
 
-    return [urlOption, ...terms, ...files]
-  }, [terminals, openFiles])
+    // Pentest context mentions
+    const pentestOptions: AtOption[] = []
+
+    // @creds — inject stored credentials
+    if (exhCreds.length > 0) {
+      pentestOptions.push({
+        type: "file" as const,
+        id: "__creds__",
+        display: "credentials",
+        description: `${exhCreds.length} stored credential${exhCreds.length > 1 ? "s" : ""}`,
+        icon: <KeyRound className="w-3.5 h-3.5 text-status-warning" />,
+      })
+    }
+
+    // @hosts — inject discovered hosts
+    if (exhHosts.length > 0) {
+      pentestOptions.push({
+        type: "file" as const,
+        id: "__hosts__",
+        display: "hosts",
+        description: `${exhHosts.length} discovered host${exhHosts.length > 1 ? "s" : ""}`,
+        icon: <Server className="w-3.5 h-3.5 text-accent" />,
+      })
+    }
+
+    // @container — inject specific container context
+    const containers = [...new Set(terminals.map((t) => t.container))]
+    const containerOptions: AtOption[] = containers.map((c) => ({
+      type: "terminal" as const,
+      id: `__container_${c}__`,
+      display: c,
+      description: "Container context",
+      icon: <Server className="w-3.5 h-3.5 text-text-weaker" />,
+    }))
+
+    return [urlOption, ...pentestOptions, ...containerOptions, ...terms, ...files]
+  }, [terminals, openFiles, exhCreds, exhHosts])
 }

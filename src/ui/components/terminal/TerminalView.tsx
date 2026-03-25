@@ -24,9 +24,29 @@ interface TerminalEntry {
   bufferFetched: boolean
   /** Callback to open inline prompt (Ctrl+K), set by TerminalView component */
   onInlinePrompt?: () => void
+  /** Ghost command suggestion (Tab to accept, any key to dismiss) */
+  ghostSuggestion?: string | null
+  /** Timer for debounced suggestion request */
+  ghostTimer?: ReturnType<typeof setTimeout>
 }
 
 const terminalPool = new Map<string, TerminalEntry>()
+
+// ── Ghost command helpers ──────────────────────────────────────
+
+/** Write gray ghost text at cursor, save position for later cleanup */
+function showGhost(term: Terminal, suggestion: string) {
+  // Save cursor position, write gray text, restore cursor position
+  term.write(`\x1b7\x1b[90m${suggestion}\x1b[0m\x1b8`)
+}
+
+/** Clear ghost text by restoring saved cursor position and clearing to end of line */
+function clearGhost(term: Terminal, suggestion: string) {
+  // Restore to saved position, clear from cursor to end of line
+  term.write(`\x1b8\x1b[K`)
+}
+
+const GHOST_DEBOUNCE_MS = 3000
 
 const TERM_THEME = {
   background: "#101010",
@@ -68,15 +88,32 @@ function getOrCreateTerminal(serverId: string): TerminalEntry {
   term.loadAddon(fitAddon)
   term.loadAddon(searchAddon)
 
-  // Custom key handler: prevent browser stealing + Ctrl+K inline prompt
+  // Custom key handler: prevent browser stealing + Ctrl+K inline prompt + ghost commands
   term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type !== "keydown") return true
+    const entry = terminalPool.get(serverId)
+
     // Ctrl+K: open inline prompt (return false to prevent xterm processing)
-    if (ev.ctrlKey && ev.key === "k" && ev.type === "keydown") {
-      const entry = terminalPool.get(serverId)
+    if (ev.ctrlKey && ev.key === "k") {
       entry?.onInlinePrompt?.()
       return false
     }
-    if (ev.key === "Tab") return true
+
+    // Tab: accept ghost suggestion if one exists
+    if (ev.key === "Tab" && entry?.ghostSuggestion) {
+      clearGhost(term, entry.ghostSuggestion)
+      // Write the suggestion as real input (user can then press Enter to execute)
+      term.input(entry.ghostSuggestion, false)
+      entry.ghostSuggestion = null
+      return false
+    }
+
+    // Any other keypress: dismiss ghost suggestion
+    if (entry?.ghostSuggestion && !ev.ctrlKey && !ev.altKey && !ev.metaKey && ev.key.length === 1) {
+      clearGhost(term, entry.ghostSuggestion)
+      entry.ghostSuggestion = null
+    }
+
     if (ev.ctrlKey && (ev.key === "r" || ev.key === "l")) return true
     return true
   })
@@ -224,15 +261,39 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
     const handleWindowResize = () => debouncedFit(80)
     ownerWindow.addEventListener("resize", handleWindowResize)
 
-    // WebSocket output subscription
+    // WebSocket output subscription + ghost command suggestions
     let alive = true
     const unsubscribe = subscribe((msg: WSMessage) => {
       if (!alive) return
       if (msg.type === "terminal:output" && msg.data?.terminalId === serverId) {
+        // Clear any pending ghost timer on new output
+        if (entry.ghostTimer) { clearTimeout(entry.ghostTimer); entry.ghostTimer = undefined }
+        // Clear existing ghost on new output
+        if (entry.ghostSuggestion) {
+          clearGhost(term, entry.ghostSuggestion)
+          entry.ghostSuggestion = null
+        }
         term.write(msg.data.output as string)
       }
       if (msg.type === "terminal:closed" && msg.data?.terminalId === serverId) {
         term.writeln("\r\n\x1b[90m[Process exited]\x1b[0m")
+      }
+      // Terminal became idle — request ghost suggestion after debounce
+      if (msg.type === "terminal:idle" && msg.data?.terminalId === serverId) {
+        if (entry.ghostTimer) clearTimeout(entry.ghostTimer)
+        entry.ghostTimer = setTimeout(() => {
+          entry.ghostTimer = undefined
+          // Request suggestion from server
+          send({ type: "terminal:request-suggestion", data: { terminalId: serverId } })
+        }, GHOST_DEBOUNCE_MS)
+      }
+      // Ghost suggestion received from server
+      if (msg.type === "terminal:suggest" && msg.data?.terminalId === serverId && msg.data?.command) {
+        const suggestion = String(msg.data.command).trim()
+        if (suggestion && !entry.ghostSuggestion) {
+          entry.ghostSuggestion = suggestion
+          showGhost(term, suggestion)
+        }
       }
     })
 

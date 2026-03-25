@@ -629,16 +629,16 @@ interface Mission {
 
 ### Phase 3 — Pentest-specific features (1 mois)
 
-| # | Feature | Effort | Impact | Fichiers |
-|---|---------|--------|--------|----------|
-| 3.1 | Mission state (auto-extraction + injection prompt) | 5j | Critical | Nouveau: missionState.ts, tools, prompt.ts |
-| 3.2 | `@container`, `@findings`, `@scope`, `@creds` mentions | 3j | Very High | chatCommands.tsx, chatContext.ts |
-| 3.3 | Auto-thinking triggers (post-error, complex queries) | 2j | High | reasoning.ts, chat/index.ts |
-| 3.4 | Ghost command in terminal (Tab to accept) | 5j | Critical | manager.ts, xterm addon, ws.ts |
-| 3.5 | Export rapport Markdown + JSON timeline | 3j | Very High | Nouveau: export.ts, ExportDialog.tsx |
-| 3.6 | Tool call rate limiting (100/stream, 30/step) | 1j | High | chat/index.ts |
-| 3.7 | Never-prune critical messages (creds, findings) | 2j | Very High | pruner.ts, session.ts |
-| 3.8 | Auto-context terminal (20 last lines in system prompt) | 1j | High | prompt.ts, chat/index.ts |
+| # | Feature | Status | Fichiers |
+|---|---------|--------|----------|
+| 3.1 | Mission state (auto-extraction + injection prompt) | **DONE** | mission.ts (new), prompt.ts, index.ts |
+| 3.2 | `@container`, `@creds`, `@hosts` mentions | **DONE** | chatCommands.tsx |
+| 3.3 | Auto-thinking triggers (post-error, complex queries) | **DONE** | reasoning.ts, index.ts |
+| 3.4 | Ghost command in terminal (Tab to accept) | **DONE** (v1: ANSI ghost, 3s debounce) | TerminalView.tsx, ws.ts |
+| 3.5 | Export rapport Markdown + JSON timeline | SKIPPED (reporte) | — |
+| 3.6 | Tool call rate limiting (100/stream) | **DONE** | chat/index.ts |
+| 3.7 | Never-prune critical messages (creds, findings) | **DONE** (isPinned + auto-pin) | pruner.ts, session.ts, useChatStreaming.ts |
+| 3.8 | Auto-context terminal (fallback to recent) | **DONE** | chat/index.ts |
 
 ### Phase 4 — Architecture long terme (roadmap 3-6 mois)
 

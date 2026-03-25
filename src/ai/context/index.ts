@@ -17,3 +17,6 @@ export { buildAdaptivePrompt } from "./prompt"
 export { pruneMessages, truncateContent } from "./pruner"
 
 export { buildCompactionRequest, applyCompaction, estimateCompactionSavings } from "./compaction"
+
+export { extractMissionState, serializeMissionState } from "./mission"
+export type { MissionState } from "./mission"

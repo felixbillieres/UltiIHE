@@ -37,9 +37,9 @@ const PRUNED_MARKER = "[Previous output cleared to save context]"
  * @returns Pruned messages array and how many tokens were freed
  */
 export function pruneMessages(
-  messages: Array<{ role: string; content: string }>,
+  messages: Array<{ role: string; content: string; isPinned?: boolean }>,
   targetFree: number = PRUNE_MIN_FREE,
-): { messages: Array<{ role: string; content: string }>; freedTokens: number } {
+): { messages: Array<{ role: string; content: string; isPinned?: boolean }>; freedTokens: number } {
   if (messages.length === 0) {
     return { messages: [], freedTokens: 0 }
   }
@@ -73,6 +73,9 @@ export function pruneMessages(
   const pruned = messages.map((msg, i) => {
     // Don't touch protected messages
     if (i >= protectFromIndex) return msg
+
+    // Never prune pinned messages (contain creds, findings, flags)
+    if (msg.isPinned) return msg
 
     // Only prune large assistant messages (likely tool outputs or long responses)
     if (msg.role !== "assistant") return msg

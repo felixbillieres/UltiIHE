@@ -61,6 +61,8 @@ export interface Message {
   usage?: MessageUsage
   /** System notices are rendered in the chat but never sent to the API */
   isSystemNotice?: boolean
+  /** Pinned messages survive context pruning (contain creds, findings, flags) */
+  isPinned?: boolean
 }
 
 export interface Session {
@@ -93,7 +95,7 @@ interface SessionStore {
   // Message management
   addMessage: (sessionId: string, message: Message) => void
   updateMessageContent: (sessionId: string, messageId: string, content: string) => void
-  updateMessage: (sessionId: string, messageId: string, updates: { content?: string; parts?: MessagePart[] }) => void
+  updateMessage: (sessionId: string, messageId: string, updates: { content?: string; parts?: MessagePart[]; isPinned?: boolean }) => void
   updateMessageUsage: (sessionId: string, messageId: string, usage: MessageUsage) => void
   getActiveMessages: (projectId: string) => Message[]
 

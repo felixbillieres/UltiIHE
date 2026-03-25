@@ -69,3 +69,30 @@ export function getReasoningOptions(
       return {}
   }
 }
+
+/**
+ * Auto-escalate thinking effort based on context signals.
+ * Only activates if user hasn't explicitly set a thinking effort (i.e., "off").
+ */
+export function autoEscalateThinking(
+  thinkingEffort: ThinkingEffort,
+  userMessage: string,
+  recentErrors: number,
+): ThinkingEffort {
+  // Don't override explicit user choice
+  if (thinkingEffort !== "off") return thinkingEffort
+
+  // Post-error recovery: AI needs to rethink its approach
+  if (recentErrors >= 2) return "medium"
+
+  // Pentest-specific: privilege escalation, lateral movement require multi-step reasoning
+  if (/\b(privesc|privilege|lateral|pivot|escalat|post.?exploit)/i.test(userMessage)) return "medium"
+
+  // Analytical queries
+  if (/\b(explain|why|how|analyze|compare|plan|strategy|methodology)\b/i.test(userMessage)) return "low"
+
+  // Long complex prompts
+  if (userMessage.length > 300) return "low"
+
+  return "off"
+}

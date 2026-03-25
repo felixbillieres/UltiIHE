@@ -237,6 +237,16 @@ export function useChatStreaming(projectId: string) {
     const parts: MessagePart[] = []
     let fullText = ""
     let rafPending = false
+    let shouldPinCurrentMessage = false
+
+    // Auto-pin heuristic: detect critical findings in tool outputs
+    const CRITICAL_PATTERNS = [
+      /password[:\s=]+\S+/i,
+      /flag\{[^}]+\}/,
+      /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+\b/,
+      /\b(credential|secret|token|api.?key)[:\s=]+\S+/i,
+      /CVE-\d{4}-\d+/i,
+    ]
 
     function flushToStore() {
       if (!sid) return
@@ -417,6 +427,12 @@ export function useChatStreaming(projectId: string) {
                   tp.wasTruncated = true
                   tp.originalLength = evt.data.originalLength
                 }
+                // Auto-pin: check if output contains critical findings
+                if (tp.output && !shouldPinCurrentMessage) {
+                  if (CRITICAL_PATTERNS.some((p) => p.test(tp.output!))) {
+                    shouldPinCurrentMessage = true
+                  }
+                }
               }
               flushToStore()
               break
@@ -451,6 +467,11 @@ export function useChatStreaming(projectId: string) {
 
       // Final flush
       flushToStore()
+
+      // Auto-pin message if critical findings detected
+      if (shouldPinCurrentMessage && sid && assistantId) {
+        useSessionStore.getState().updateMessage(sid, assistantId, { isPinned: true })
+      }
 
       if (!fullText.trim() && parts.filter((p) => p.type === "tool-call").length === 0) {
         updateMessage(sid!, assistantId, {

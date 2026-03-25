@@ -20,6 +20,8 @@ interface PromptContext {
   mode: ReasoningMode
   agentMode: AgentMode
   tier: PromptTier
+  /** Auto-extracted mission state (targets, creds, ports, flags) */
+  missionState?: string
 }
 
 // ── Agent prompt (single primary agent) ───────────────────────
@@ -100,6 +102,7 @@ function buildMinimal(ctx: PromptContext): string {
     AGENT_CORE,
     MODE_INSTRUCTIONS[ctx.mode],
     AGENT_MODE_INSTRUCTIONS[ctx.agentMode],
+    ctx.missionState || "",
     buildEnvironmentSection(ctx),
     buildTerminalOutput(ctx, 30),
   ]
@@ -138,6 +141,7 @@ function buildMedium(ctx: PromptContext): string {
     AGENT_EXTENDED,
     MODE_INSTRUCTIONS[ctx.mode],
     AGENT_MODE_INSTRUCTIONS[ctx.agentMode],
+    ctx.missionState || "",
     buildEnvironmentSection(ctx),
     toolRef,
     rules,
@@ -172,6 +176,7 @@ You have access to all Exegol tools: nmap, gobuster, ffuf, nuclei, sqlmap, hydra
     AGENT_EXTENDED,
     MODE_INSTRUCTIONS[ctx.mode],
     AGENT_MODE_INSTRUCTIONS[ctx.agentMode],
+    ctx.missionState || "",
 
     `## Tools
 
