@@ -143,14 +143,24 @@ function sanitizeToolCallArgs(messages: any[]): any[] {
     if (!Array.isArray(msg.content)) return msg
     const fixed = msg.content.map((part: any) => {
       // AI SDK internal format: type "tool-call" with args
-      if (part.type === "tool-call" && part.args !== undefined && typeof part.args !== "object") {
-        try { return { ...part, args: JSON.parse(part.args) } } catch {}
-        return { ...part, args: {} }
+      if (part.type === "tool-call") {
+        if (part.args === null || part.args === undefined) {
+          return { ...part, args: {} }
+        }
+        if (typeof part.args === "string") {
+          try { return { ...part, args: JSON.parse(part.args) } } catch {}
+          return { ...part, args: {} }
+        }
       }
       // Anthropic wire format: type "tool_use" with input
-      if (part.type === "tool_use" && part.input !== undefined && typeof part.input !== "object") {
-        try { return { ...part, input: JSON.parse(part.input) } } catch {}
-        return { ...part, input: {} }
+      if (part.type === "tool_use") {
+        if (part.input === null || part.input === undefined) {
+          return { ...part, input: {} }
+        }
+        if (typeof part.input === "string") {
+          try { return { ...part, input: JSON.parse(part.input) } } catch {}
+          return { ...part, input: {} }
+        }
       }
       return part
     })
