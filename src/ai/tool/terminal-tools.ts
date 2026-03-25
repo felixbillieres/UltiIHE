@@ -94,18 +94,22 @@ export const terminalListTool: Tool<
 }
 
 export const terminalWriteTool: Tool<
-  { terminalId: string; input: string },
+  { terminalId: string; command: string },
   { success: boolean; terminalId: string; status: string } | { error: string }
 > = {
   description:
-    "Propose a command for execution in a terminal. The command will be shown to the user " +
-    "for approval before being injected into the terminal's PTY. Always add a trailing " +
-    "newline (\\n) to actually execute the command.",
+    "Execute a command in a terminal. The command will be shown to the user for approval " +
+    "before execution. Do NOT include trailing newlines — the system adds them automatically. " +
+    "Do NOT call this tool just to press Enter or send empty input.",
   inputSchema: z.object({
     terminalId: z.string().describe("The terminal ID to write to"),
-    input: z.string().describe("The text to send to the terminal (include \\n to execute)"),
+    command: z.string().describe("The command to execute (e.g. 'nmap -sV 10.10.10.1')"),
   }),
-  execute: async ({ terminalId, input }) => {
+  execute: async (args) => {
+    const { terminalId } = args
+    // Accept both "command" (new) and "input" (legacy) arg names
+    const input = (args as any).command || (args as any).input || ""
+
     try {
       const terminal = terminalManager.getTerminal(terminalId)
       if (!terminal) {
@@ -116,8 +120,13 @@ export const terminalWriteTool: Tool<
       }
 
       // Normalize literal \n sequences to real newlines
-      // (some models send the two-char sequence instead of actual newline)
       const normalizedInput = input.replace(/\\n/g, "\n")
+
+      // Reject empty/whitespace-only commands
+      const trimmed = normalizedInput.replace(/\n/g, "").trim()
+      if (!trimmed) {
+        return { error: "Empty command — nothing to execute" }
+      }
 
       // Queue the command for user approval (or auto-run if enabled)
       // Pool logic: if terminal is busy, command-queue may redirect to another terminal
