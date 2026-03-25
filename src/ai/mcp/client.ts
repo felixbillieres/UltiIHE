@@ -72,7 +72,7 @@ export async function connectServer(config: MCPServerConfig): Promise<MCPServerS
   try {
     const transport = createTransport(config)
     const client = new Client(
-      { name: "ultiIHE", version: "0.1.0" },
+      { name: "exegol-ihe", version: "0.1.0" },
       { capabilities: {} },
     )
 

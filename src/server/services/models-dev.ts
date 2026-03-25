@@ -5,7 +5,7 @@
  * from https://models.dev/api.json — the same source OpenCode uses.
  *
  * Fallback chain:
- *   1. Local cache (~/.ultiIHE/cache/models.json)
+ *   1. Local cache (~/.exegol-ihe/cache/models.json)
  *   2. Bundled snapshot (compiled at build time)
  *   3. Network fetch from models.dev
  *
@@ -63,8 +63,8 @@ export type ModelsDevData = Record<string, ModelsDevProvider>
 
 // ── Config ───────────────────────────────────────────────────
 
-const MODELS_DEV_URL = process.env.ULTIHE_MODELS_URL || "https://models.dev"
-const CACHE_DIR = join(homedir(), ".ultiIHE", "cache")
+const MODELS_DEV_URL = process.env.EXEGOL_IHE_MODELS_URL || "https://models.dev"
+const CACHE_DIR = join(homedir(), ".exegol-ihe", "cache")
 const CACHE_FILE = join(CACHE_DIR, "models.json")
 const REFRESH_INTERVAL = 60 * 60 * 1000 // 60 minutes
 const FETCH_TIMEOUT = 10_000 // 10 seconds
@@ -168,7 +168,7 @@ export async function refresh(): Promise<void> {
 async function fetchFromNetwork(): Promise<ModelsDevData | null> {
   try {
     const res = await fetch(`${MODELS_DEV_URL}/api.json`, {
-      headers: { "User-Agent": "UltiIHE" },
+      headers: { "User-Agent": "ExegolIHE" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT),
     })
     if (!res.ok) {

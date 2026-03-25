@@ -3,6 +3,7 @@
  */
 
 import { Hono } from "hono"
+import { z } from "zod"
 import {
   launchTool,
   stopTool,
@@ -37,11 +38,9 @@ webtoolRoutes.get("/webtools/running", (c) => {
 
 webtoolRoutes.post("/webtools/:toolId/launch", async (c) => {
   const toolId = c.req.param("toolId")
-  const body = await c.req.json<{ container: string }>()
-
-  if (!body.container) {
-    return c.json({ ok: false, error: "container is required" }, 400)
-  }
+  const parsed = z.object({ container: z.string().min(1) }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ ok: false, error: "container is required" }, 400)
+  const body = parsed.data
 
   const def = getToolDef(toolId)
   if (!def) {
@@ -60,7 +59,7 @@ webtoolRoutes.post("/webtools/:toolId/launch", async (c) => {
 
 webtoolRoutes.post("/webtools/:toolId/stop", async (c) => {
   const toolId = c.req.param("toolId")
-  const body = await c.req.json<{ container?: string }>().catch(() => ({} as { container?: string }))
+  const body = z.object({ container: z.string().optional() }).catch({ container: undefined }).parse(await c.req.json().catch(() => ({})))
   await stopTool(toolId, body.container)
   return c.json({ ok: true })
 })

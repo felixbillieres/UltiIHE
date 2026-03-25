@@ -36,7 +36,7 @@ const PRESET_ICONS: Record<LayoutPreset, React.ReactNode> = {
   recon: <Radar className={ICON_SIZE_SM} />,
 }
 
-const EXPAND_KEY = "ultiIHE-iconrail-expanded"
+const EXPAND_KEY = "exegol-ihe-iconrail-expanded"
 
 interface IconRailProps {
   project: Project

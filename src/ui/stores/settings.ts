@@ -257,7 +257,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
     }),
     {
-      name: "ultiIHE-settings",
+      name: "exegol-ihe-settings",
       partialize: (state) => ({
         activeTheme: state.activeTheme,
         colorScheme: state.colorScheme,

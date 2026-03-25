@@ -20,10 +20,15 @@ interface UseWebSocketReturn {
   subscribe: (handler: WSMessageHandler) => () => void
 }
 
-const DEFAULT_URL =
+const WS_BASE =
   import.meta.env.PROD
     ? `ws://${window.location.host}/ws`
     : "ws://localhost:3001/ws"
+
+const API_BASE =
+  import.meta.env.PROD
+    ? `${window.location.origin}/api`
+    : "http://localhost:3001/api"
 
 /**
  * True singleton WebSocket state, survives HMR and React StrictMode.
@@ -40,9 +45,11 @@ interface WsSingleton {
   reconnectTimer: ReturnType<typeof setTimeout> | null
   url: string
   enabled: boolean
+  token: string | null
+  tokenFetching: boolean
 }
 
-const SINGLETON_KEY = "__ultiIHE_ws__" as const
+const SINGLETON_KEY = "__exegolIHE_ws__" as const
 
 function getSingleton(): WsSingleton {
   const win = window as unknown as Record<string, WsSingleton | undefined>
@@ -56,8 +63,10 @@ function getSingleton(): WsSingleton {
       retries: 0,
       maxRetries: 5,
       reconnectTimer: null,
-      url: DEFAULT_URL,
+      url: WS_BASE,
       enabled: false,
+      token: null,
+      tokenFetching: false,
     }
   }
   return win[SINGLETON_KEY]!
@@ -69,13 +78,48 @@ function notifyListeners(s: WsSingleton) {
   }
 }
 
+async function fetchToken(s: WsSingleton): Promise<string | null> {
+  if (s.token) return s.token
+  if (s.tokenFetching) return null
+  s.tokenFetching = true
+  try {
+    const res = await fetch(`${API_BASE}/ws-token`)
+    if (!res.ok) return null
+    const { token } = await res.json()
+    s.token = token
+    return token
+  } catch {
+    return null
+  } finally {
+    s.tokenFetching = false
+  }
+}
+
 function doConnect(s: WsSingleton) {
   if (!s.enabled) return
   // Don't create if one already exists and is open/connecting
   if (s.ws && (s.ws.readyState === WebSocket.OPEN || s.ws.readyState === WebSocket.CONNECTING)) return
 
+  // Fetch token first, then connect
+  fetchToken(s).then((token) => {
+    if (!s.enabled) return
+    if (!token) {
+      // Retry token fetch after delay
+      if (s.retries < s.maxRetries) {
+        const delay = Math.min(1000 * 2 ** s.retries, 30_000)
+        s.retries++
+        s.reconnectTimer = setTimeout(() => doConnect(s), delay)
+      }
+      return
+    }
+    if (s.ws && (s.ws.readyState === WebSocket.OPEN || s.ws.readyState === WebSocket.CONNECTING)) return
+    connectWithToken(s, token)
+  })
+}
+
+function connectWithToken(s: WsSingleton, token: string) {
   try {
-    const ws = new WebSocket(s.url)
+    const ws = new WebSocket(`${s.url}?token=${token}`)
 
     ws.onopen = () => {
       s.connected = true
@@ -117,7 +161,7 @@ function doConnect(s: WsSingleton) {
 }
 
 export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketReturn {
-  const { url = DEFAULT_URL, maxRetries = 5, enabled = true } = options
+  const { url = WS_BASE, maxRetries = 5, enabled = true } = options
   const s = getSingleton()
 
   s.url = url

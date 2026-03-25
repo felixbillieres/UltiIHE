@@ -8,6 +8,27 @@ AI-native pentest IDE built around [Exegol](https://exegol.readthedocs.io/) cont
 - [Docker](https://docs.docker.com/get-docker/) with at least one Exegol container running
 - An AI provider API key (Anthropic, OpenAI, Google, etc.)
 
+### Docker permissions
+
+The server needs access to Docker to manage Exegol containers.
+
+**Option A — Docker group (Debian/Ubuntu):**
+```bash
+sudo usermod -aG docker $USER
+# Then log out and log back in (full session logout, not just reboot)
+```
+
+**Option B — sudo (Fedora, recommended by Exegol docs):**
+
+On Fedora the docker group approach often fails. Use sudo instead:
+```bash
+# Add exegol alias
+echo "alias exegol='sudo -E \$HOME/.local/bin/exegol'" >> ~/.bashrc  # or ~/.zshrc
+
+# Run the app with sudo (use full bun path since sudo resets PATH)
+sudo -E $(which bun) run dev:all
+```
+
 ## Quick Start
 
 ```bash
@@ -20,6 +41,8 @@ bun install
 
 # Start both the backend server and frontend dev server
 bun run dev:all
+# On Fedora (if Docker needs sudo):
+# sudo -E $(which bun) run dev:all
 ```
 
 The app opens at **http://localhost:5173**. The backend API runs on port **3001**.

@@ -6,7 +6,7 @@ import {
 } from "../../stores/settings"
 import { useProviderCatalog } from "../../stores/providerCatalog"
 import { useLocalAIStore } from "../../stores/localAI"
-import { t, type TranslationKey } from "../../i18n/translations"
+
 import { Check, Brain, Eye, Wrench, Search, Zap, DollarSign, Cpu, CheckCircle2 } from "lucide-react"
 import { Section } from "./SettingsSection"
 import { fmtCtx } from "../../utils/format"
@@ -34,7 +34,7 @@ type ModelEntry = {
 
 export function ModelSettings() {
   const {
-    activeProvider, activeModel, activeMode, language: lang,
+    activeProvider, activeModel, activeMode,
     setActiveProvider, setActiveModel, setActiveMode, providers,
   } = useSettingsStore()
   const [search, setSearch] = useState("")
@@ -96,10 +96,10 @@ export function ModelSettings() {
             >
               <Brain className={`w-4 h-4 ${MODE_COLORS[mode]}`} />
               <span className={`font-medium ${activeMode === mode ? MODE_COLORS[mode] : "text-text-base"}`}>
-                {t(lang, `mode.${mode}` as TranslationKey)}
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
               </span>
               <span className="text-[10px] text-text-weaker">
-                {t(lang, `mode.${mode}.desc` as TranslationKey)}
+                {({ build: "Standard agent with tool access", plan: "Analysis mode, higher reasoning", deep: "Maximum reasoning for complex tasks" } as Record<string, string>)[mode] || ""}
               </span>
             </button>
           ))}
@@ -112,7 +112,7 @@ export function ModelSettings() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={t(lang, "settings.models.search")}
+          placeholder="Search models..."
           className="w-full text-xs bg-surface-0 border border-border-base rounded-lg pl-8 pr-3 py-2 text-text-base focus:outline-none focus:border-accent/50 font-sans"
         />
       </div>

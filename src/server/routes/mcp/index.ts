@@ -13,7 +13,7 @@ import { join } from "path"
 export const mcpRoutes = new Hono()
 
 // Config file path
-const CONFIG_DIR = join(process.cwd(), ".ultiIHE")
+const CONFIG_DIR = join(process.cwd(), ".exegol-ihe")
 const CONFIG_FILE = join(CONFIG_DIR, "mcp-servers.json")
 
 async function loadConfigs(): Promise<MCPServerConfig[]> {

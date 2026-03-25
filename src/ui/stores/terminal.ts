@@ -8,8 +8,8 @@ import {
 } from "../utils/layoutHelpers"
 
 // ─── Persistence keys ─────────────────────────────────────────
-const FOLLOW_KEY = "ultiIHE-follow-assistant"
-const AI_TERM_MODE_KEY = "ultiIHE-ai-terminal-mode"
+const FOLLOW_KEY = "exegol-ihe-follow-assistant"
+const AI_TERM_MODE_KEY = "exegol-ihe-ai-terminal-mode"
 
 export type AITerminalMode = "tabs" | "split"
 

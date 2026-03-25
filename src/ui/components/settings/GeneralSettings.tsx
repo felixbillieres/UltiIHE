@@ -3,7 +3,7 @@ import {
   THEMES,
   type Language,
 } from "../../stores/settings"
-import { t } from "../../i18n/translations"
+
 import { Globe, Volume2, VolumeX, Play } from "lucide-react"
 import { Section } from "./SettingsSection"
 import { SOUND_OPTIONS, previewSound } from "../../utils/sound"
@@ -24,7 +24,7 @@ export function GeneralSettings() {
   return (
     <div className="space-y-6">
       {/* Theme */}
-      <Section title={t(lang, "settings.general.theme")}>
+      <Section title="Theme">
         <div className="grid grid-cols-3 gap-2">
           {THEMES.map((theme) => (
             <button
@@ -48,7 +48,7 @@ export function GeneralSettings() {
       </Section>
 
       {/* Language */}
-      <Section title={t(lang, "settings.general.language")}>
+      <Section title="Language">
         <div className="flex gap-2 flex-wrap">
           {(Object.entries(LANGUAGE_LABELS) as [Language, string][]).map(([code, label]) => (
             <button

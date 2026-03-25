@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { useSettingsStore, DEFAULT_KEYBINDS } from "../../stores/settings"
-import { t } from "../../i18n/translations"
+
 import { RotateCcw } from "lucide-react"
 
 export function KeybindSettings() {
-  const { customKeybinds, getKeybind, setKeybind, resetKeybind, resetAllKeybinds, language: lang } = useSettingsStore()
+  const { customKeybinds, getKeybind, setKeybind, resetKeybind, resetAllKeybinds } = useSettingsStore()
   const [recording, setRecording] = useState<string | null>(null)
 
   const groups = [...new Set(DEFAULT_KEYBINDS.map((k) => k.group))]
@@ -32,14 +32,14 @@ export function KeybindSettings() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-xs text-text-strong font-medium font-sans">{t(lang, "settings.keybinds.title")}</h3>
+        <h3 className="text-xs text-text-strong font-medium font-sans">Keyboard Shortcuts</h3>
         {Object.keys(customKeybinds).length > 0 && (
           <button
             onClick={resetAllKeybinds}
             className="flex items-center gap-1 text-[10px] text-text-weaker hover:text-status-error transition-colors font-sans"
           >
             <RotateCcw className="w-3 h-3" />
-            {t(lang, "settings.keybinds.resetAll")}
+            Reset All
           </button>
         )}
       </div>
@@ -60,7 +60,7 @@ export function KeybindSettings() {
                       <button
                         onClick={() => resetKeybind(action.id)}
                         className="opacity-0 group-hover:opacity-100 transition-opacity"
-                        title={t(lang, "settings.keybinds.reset")}
+                        title="Reset"
                       >
                         <RotateCcw className="w-3 h-3 text-text-weaker hover:text-text-weak" />
                       </button>
@@ -75,7 +75,7 @@ export function KeybindSettings() {
                             : "bg-surface-0 border border-border-base text-text-weaker"
                       }`}
                     >
-                      {isRecording ? t(lang, "settings.keybinds.recording") : current}
+                      {isRecording ? "Press keys..." : current}
                     </button>
                   </div>
                 </div>

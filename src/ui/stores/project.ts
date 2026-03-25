@@ -93,7 +93,7 @@ export const useProjectStore = create<ProjectStore>()(
       },
     }),
     {
-      name: "ultiIHE-projects",
+      name: "exegol-ihe-projects",
       // Migrate old projects that have containerName instead of containerIds
       merge: (persisted, current) => {
         const p = persisted as any

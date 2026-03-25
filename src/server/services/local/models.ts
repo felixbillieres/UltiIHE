@@ -1,6 +1,6 @@
 /**
  * Local model download and management logic.
- * Models are stored in ~/.ultiIHE/models/ as GGUF files.
+ * Models are stored in ~/.exegol-ihe/models/ as GGUF files.
  */
 
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "fs"
@@ -14,7 +14,7 @@ export { LOCAL_MODEL_CATALOG, type LocalModelDef } from "./modelCatalog"
 
 // ─── Paths ───────────────────────────────────────────────────
 
-const BASE_DIR = join(homedir(), ".ultiIHE")
+const BASE_DIR = join(homedir(), ".exegol-ihe")
 const MODELS_DIR = join(BASE_DIR, "models")
 
 export function ensureModelsDir() {

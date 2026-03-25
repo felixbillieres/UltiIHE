@@ -284,9 +284,9 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
           value={file.content}
           onChange={(value) => updateContent(file.id, value ?? "")}
           onMount={handleEditorMount}
-          theme="ultiIHE-dark"
+          theme="exegol-ihe-dark"
           beforeMount={(monaco) => {
-            monaco.editor.defineTheme("ultiIHE-dark", {
+            monaco.editor.defineTheme("exegol-ihe-dark", {
               base: "vs-dark",
               inherit: true,
               rules: [

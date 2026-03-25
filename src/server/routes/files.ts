@@ -1,6 +1,7 @@
 import { Hono } from "hono"
-import { readdir, stat, readFile, writeFile, mkdir, rm, rename as fsRename, cp } from "node:fs/promises"
-import { join, resolve, basename, dirname } from "node:path"
+import { z } from "zod"
+import { readdir, stat, readFile, writeFile, mkdir, rm, rename as fsRename } from "node:fs/promises"
+import { join, resolve, dirname } from "node:path"
 import { isValidContainerName, validatePath, PROTECTED_ROOTS } from "../../shared/validation"
 import { DOCKER_EXEC_TIMEOUT } from "../../config"
 
@@ -91,9 +92,10 @@ filesRoutes.get("/files/host/read", async (c) => {
 })
 
 filesRoutes.post("/files/host/write", async (c) => {
-  const { path: filePath, content } = (await c.req.json()) as { path: string; content: string }
-  if (!filePath || !validateHostPath(filePath)) return c.json({ error: "Invalid path" }, 400)
-  if (typeof content !== "string") return c.json({ error: "Content must be a string" }, 400)
+  const parsed = z.object({ path: z.string(), content: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path: filePath, content } = parsed.data
+  if (!validateHostPath(filePath)) return c.json({ error: "Invalid path" }, 400)
 
   try {
     await mkdir(dirname(filePath), { recursive: true })
@@ -105,7 +107,9 @@ filesRoutes.post("/files/host/write", async (c) => {
 })
 
 filesRoutes.post("/files/host/create-file", async (c) => {
-  const { path: filePath } = (await c.req.json()) as { path: string }
+  const parsed = z.object({ path: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path: filePath } = parsed.data
   if (!validateHostPath(filePath)) return c.json({ error: "Invalid path" }, 400)
 
   try {
@@ -118,7 +122,9 @@ filesRoutes.post("/files/host/create-file", async (c) => {
 })
 
 filesRoutes.post("/files/host/create-dir", async (c) => {
-  const { path: dirPath } = (await c.req.json()) as { path: string }
+  const parsed = z.object({ path: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path: dirPath } = parsed.data
   if (!validateHostPath(dirPath)) return c.json({ error: "Invalid path" }, 400)
 
   try {
@@ -130,7 +136,9 @@ filesRoutes.post("/files/host/create-dir", async (c) => {
 })
 
 filesRoutes.post("/files/host/delete", async (c) => {
-  const { path: targetPath } = (await c.req.json()) as { path: string }
+  const parsed = z.object({ path: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path: targetPath } = parsed.data
   if (!validateHostPath(targetPath)) return c.json({ error: "Invalid path" }, 400)
   if (PROTECTED_ROOTS.has(targetPath)) return c.json({ error: "Cannot delete protected path" }, 403)
 
@@ -143,7 +151,9 @@ filesRoutes.post("/files/host/delete", async (c) => {
 })
 
 filesRoutes.post("/files/host/rename", async (c) => {
-  const { oldPath, newPath } = (await c.req.json()) as { oldPath: string; newPath: string }
+  const parsed = z.object({ oldPath: z.string(), newPath: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { oldPath, newPath } = parsed.data
   if (!validateHostPath(oldPath) || !validateHostPath(newPath)) return c.json({ error: "Invalid path" }, 400)
 
   try {
@@ -234,10 +244,16 @@ filesRoutes.get("/files/:container/read", async (c) => {
 
 filesRoutes.post("/files/:container/write", async (c) => {
   const container = c.req.param("container")
-  const body = (await c.req.json()) as { path: string; content?: string; contentBase64?: string; mkdir?: boolean }
-  const { path, content, contentBase64, mkdir } = body
+  const parsed = z.object({
+    path: z.string(),
+    content: z.string().optional(),
+    contentBase64: z.string().optional(),
+    mkdir: z.boolean().optional(),
+  }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path, content, contentBase64, mkdir } = parsed.data
 
-  if (!container || !path) return c.json({ error: "Missing params" }, 400)
+  if (!container) return c.json({ error: "Missing container" }, 400)
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
 
@@ -295,7 +311,9 @@ filesRoutes.post("/files/:container/write", async (c) => {
 
 filesRoutes.post("/files/:container/create-file", async (c) => {
   const container = c.req.param("container")
-  const { path } = (await c.req.json()) as { path: string }
+  const parsed = z.object({ path: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path } = parsed.data
 
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
@@ -314,7 +332,9 @@ filesRoutes.post("/files/:container/create-file", async (c) => {
 
 filesRoutes.post("/files/:container/create-dir", async (c) => {
   const container = c.req.param("container")
-  const { path } = (await c.req.json()) as { path: string }
+  const parsed = z.object({ path: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path } = parsed.data
 
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
@@ -331,7 +351,9 @@ filesRoutes.post("/files/:container/create-dir", async (c) => {
 
 filesRoutes.post("/files/:container/delete", async (c) => {
   const container = c.req.param("container")
-  const { path } = (await c.req.json()) as { path: string }
+  const parsed = z.object({ path: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { path } = parsed.data
 
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(path)) return c.json({ error: "Invalid path" }, 400)
@@ -349,7 +371,9 @@ filesRoutes.post("/files/:container/delete", async (c) => {
 
 filesRoutes.post("/files/:container/rename", async (c) => {
   const container = c.req.param("container")
-  const { oldPath, newPath } = (await c.req.json()) as { oldPath: string; newPath: string }
+  const parsed = z.object({ oldPath: z.string(), newPath: z.string() }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { oldPath, newPath } = parsed.data
 
   if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
   if (!validatePath(oldPath) || !validatePath(newPath)) return c.json({ error: "Invalid path" }, 400)
@@ -367,13 +391,15 @@ filesRoutes.post("/files/:container/rename", async (c) => {
 // ── Transfer (cross-container copy/move) ────────────────────────
 
 filesRoutes.post("/files/transfer", async (c) => {
-  const { srcContainer, srcPath, dstContainer, dstPath, operation } = (await c.req.json()) as {
-    srcContainer: string
-    srcPath: string
-    dstContainer: string
-    dstPath: string
-    operation: "copy" | "move"
-  }
+  const parsed = z.object({
+    srcContainer: z.string(),
+    srcPath: z.string(),
+    dstContainer: z.string(),
+    dstPath: z.string(),
+    operation: z.enum(["copy", "move"]),
+  }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const { srcContainer, srcPath, dstContainer, dstPath, operation } = parsed.data
 
   if (!validateContainer(srcContainer) || !validateContainer(dstContainer))
     return c.json({ error: "Invalid container" }, 400)

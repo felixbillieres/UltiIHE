@@ -6,18 +6,20 @@
  */
 
 import { Hono } from "hono"
+import { z } from "zod"
 import { terminalManager } from "../../terminal/manager"
 import { dockerExec, shellEscape } from "../../ai/tool/exec"
+import { isValidContainerName, validatePath } from "../../shared/validation"
 
 export const searchRoutes = new Hono()
 
-interface SearchRequest {
-  query: string
-  scopes: ("terminals" | "files")[]
-  containers: string[]
-  filePath?: string
-  fileInclude?: string
-}
+const SearchRequestSchema = z.object({
+  query: z.string(),
+  scopes: z.array(z.enum(["terminals", "files"])).optional().default(["terminals", "files"]),
+  containers: z.array(z.string()).optional().default([]),
+  filePath: z.string().optional(),
+  fileInclude: z.string().optional(),
+})
 
 interface TerminalMatch {
   line: string
@@ -141,18 +143,30 @@ async function searchFiles(
 // ── Route ──────────────────────────────────────────────────────
 
 searchRoutes.post("/search", async (c) => {
-  const body = (await c.req.json()) as SearchRequest
+  const parsed = SearchRequestSchema.safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const body = parsed.data
 
   if (!body.query || body.query.trim().length === 0) {
     return c.json({ terminals: [], files: [] })
   }
 
+  if (body.filePath && !validatePath(body.filePath)) {
+    return c.json({ error: "Invalid file path" }, 400)
+  }
+
+  for (const name of body.containers) {
+    if (!isValidContainerName(name)) {
+      return c.json({ error: `Invalid container name: ${name}` }, 400)
+    }
+  }
+
   const query = body.query.trim()
-  const scopes = body.scopes || ["terminals", "files"]
+  const scopes = body.scopes
 
   const terminalResults = scopes.includes("terminals") ? searchTerminals(query) : []
 
-  const fileResults = scopes.includes("files") && body.containers?.length > 0
+  const fileResults = scopes.includes("files") && body.containers.length > 0
     ? await searchFiles(query, body.containers, body.filePath, body.fileInclude)
     : []
 

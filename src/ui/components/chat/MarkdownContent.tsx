@@ -3,6 +3,7 @@ import Markdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { ComponentProps } from "react"
 import { Copy, Check } from "lucide-react"
+import { sanitizeHtml } from "../../utils/sanitize"
 
 // ── Shiki lazy loader ────────────────────────────────────────────
 // Load Shiki once, cache globally. Falls back to plain <code> if loading.
@@ -104,7 +105,7 @@ const HighlightedCode = memo(function HighlightedCode({
       {html ? (
         <div
           className="[&_pre]:!bg-surface-0 [&_pre]:p-3 [&_pre]:text-xs [&_pre]:leading-relaxed [&_code]:!text-xs [&_code]:!font-mono"
-          dangerouslySetInnerHTML={{ __html: html }}
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
         />
       ) : (
         <pre className="p-3 bg-surface-1 overflow-x-auto">

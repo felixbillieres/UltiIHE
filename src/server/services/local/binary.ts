@@ -8,7 +8,7 @@ import { join } from "path"
 import { homedir } from "os"
 import type { GpuBackend } from "./hardware"
 
-const BASE_DIR = join(homedir(), ".ultiIHE")
+const BASE_DIR = join(homedir(), ".exegol-ihe")
 const BIN_DIR = join(BASE_DIR, "bin")
 
 // Latest stable release — update this periodically

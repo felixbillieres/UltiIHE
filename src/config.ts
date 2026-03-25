@@ -30,5 +30,5 @@ export const MAX_PERSISTED_SESSIONS = 50
 export const MAX_MESSAGES_PER_SESSION = 100
 
 // ── Paths ────────────────────────────────────────────────────
-export const MCP_CONFIG_PATH = ".ultiIHE/mcp-servers.json"
-export const ENGAGEMENT_DIR = ".ultiIHE/engagement"
+export const MCP_CONFIG_PATH = ".exegol-ihe/mcp-servers.json"
+export const ENGAGEMENT_DIR = ".exegol-ihe/engagement"

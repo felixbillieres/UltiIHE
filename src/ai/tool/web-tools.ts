@@ -1,6 +1,7 @@
 import { z } from "zod"
 import type { Tool } from "ai"
 import TurndownService from "turndown"
+import { isPrivateUrl } from "../../shared/validation"
 
 const MAX_RESPONSE = 100 * 1024 // 100KB
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
@@ -85,22 +86,9 @@ export const webFetchTool: Tool<
   }),
   execute: async ({ url, format = "markdown", timeout = 30 }) => {
     try {
-      // SSRF protection: block private/internal IPs
-      try {
-        const parsed = new URL(url)
-        const h = parsed.hostname
-        if (h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "0.0.0.0") {
-          return { error: "Blocked: cannot fetch localhost URLs" }
-        }
-        const parts = h.split(".").map(Number)
-        if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
-          if (parts[0] === 10 || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
-              (parts[0] === 192 && parts[1] === 168) || (parts[0] === 169 && parts[1] === 254)) {
-            return { error: "Blocked: cannot fetch private network URLs" }
-          }
-        }
-      } catch {
-        return { error: "Invalid URL" }
+      // SSRF protection: block private/internal IPs and non-HTTP protocols
+      if (isPrivateUrl(url)) {
+        return { error: "Blocked: cannot fetch private/internal URLs" }
       }
 
       const controller = new AbortController()

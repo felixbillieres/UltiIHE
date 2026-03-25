@@ -111,7 +111,7 @@ export const useFileConfigStore = create<FileConfigState>()(
         set({ _currentProjectId: projectId }),
     }),
     {
-      name: "ultiIHE-files",
+      name: "exegol-ihe-files",
       partialize: (state) => ({
         pinnedPaths: state.pinnedPaths,
         showHidden: state.showHidden,

@@ -5,6 +5,7 @@
 
 import { getIcon } from "material-file-icons"
 import { Folder, FolderOpen } from "lucide-react"
+import { sanitizeHtml } from "../../utils/sanitize"
 
 // ── File icon ────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ export function FileIcon({
   return (
     <span
       className={`inline-flex items-center justify-center shrink-0 ${s} ${className}`}
-      dangerouslySetInnerHTML={{ __html: icon.svg }}
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(icon.svg) }}
     />
   )
 }

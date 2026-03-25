@@ -33,7 +33,10 @@ const ChatRequestSchema = z.object({
   apiKey: z.string().optional().default(""),
   containerIds: z.array(z.string()).optional().default([]),
   activeTerminalId: z.string().optional(),
-  baseUrl: z.string().optional(),
+  baseUrl: z.string().url().refine(
+    (url) => url.startsWith("http://") || url.startsWith("https://"),
+    { message: "baseUrl must be HTTP(S)" },
+  ).optional(),
   mode: z.enum(["build", "plan", "deep"]).optional().default("build"),
   agentMode: z.enum(["ctf", "audit", "neutral"]).optional().default("neutral"),
   thinkingEffort: z.enum(["off", "low", "medium", "high"]).optional().default("off"),

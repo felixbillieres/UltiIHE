@@ -1,4 +1,4 @@
-const LAYOUT_KEY = "ultiIHE-layout"
+const LAYOUT_KEY = "exegol-ihe-layout"
 
 export type LayoutPreset = "default" | "focus" | "editor" | "terminal" | "recon"
 

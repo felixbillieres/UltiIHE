@@ -5,7 +5,7 @@ import {
   type ModelInfo,
 } from "../../stores/settings"
 import { useProviderCatalog } from "../../stores/providerCatalog"
-import { t } from "../../i18n/translations"
+
 import {
   Check, ExternalLink, Sparkles, Key, X,
   ChevronDown, ChevronUp, Wrench, Brain, Eye, DollarSign,
@@ -140,7 +140,7 @@ function ModelList({ models }: { models: ModelInfo[] }) {
 // ── Main component ───────────────────────────────────────────
 
 export function ProviderSettings() {
-  const { providers, addProvider, updateProvider, language: lang } = useSettingsStore()
+  const { providers, addProvider, updateProvider } = useSettingsStore()
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [keyInput, setKeyInput] = useState("")
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
@@ -241,7 +241,7 @@ export function ProviderSettings() {
                   onClick={() => updateProvider(cat.id, { enabled: false })}
                   className="text-[10px] text-text-weaker hover:text-status-error transition-colors font-sans"
                 >
-                  {t(lang, "settings.providers.disconnect")}
+                  Disconnect
                 </button>
               </>
             ) : (
@@ -264,7 +264,7 @@ export function ProviderSettings() {
                     onClick={() => { setEditingKey(cat.id); setKeyInput("") }}
                     className="px-3 py-1.5 text-[10px] bg-accent/10 text-accent rounded-lg hover:bg-accent/20 transition-colors font-sans font-medium"
                   >
-                    {t(lang, "settings.providers.connect")}
+                    Connect
                   </button>
                 )}
               </>
@@ -295,7 +295,7 @@ export function ProviderSettings() {
                 type="password"
                 value={keyInput}
                 onChange={(e) => setKeyInput(e.target.value)}
-                placeholder={t(lang, "settings.providers.apiKeyPlaceholder")}
+                placeholder="Enter API key..."
                 className="flex-1 text-xs bg-surface-1 border border-border-base rounded-lg px-2.5 py-1.5 text-text-base focus:outline-none focus:border-accent/50 font-sans"
                 autoFocus
                 onKeyDown={(e) => {
@@ -310,7 +310,7 @@ export function ProviderSettings() {
                 disabled={!keyInput.trim()}
                 className="flex-1 px-3 py-1.5 text-[10px] bg-accent text-white rounded-lg disabled:opacity-40 hover:bg-accent-hover transition-colors font-sans font-medium"
               >
-                {t(lang, "settings.providers.save")}
+                Save
               </button>
               <button
                 onClick={() => setEditingKey(null)}
@@ -338,7 +338,7 @@ export function ProviderSettings() {
       {connected.length > 0 && (
         <div>
           <h3 className="text-[10px] text-text-weaker font-sans font-medium uppercase tracking-wider mb-3 px-1">
-            {t(lang, "settings.providers.connected")}
+            Connected
           </h3>
           <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
             {connected.map((cat) => (
@@ -351,7 +351,7 @@ export function ProviderSettings() {
       {/* Available providers */}
       <div>
         <h3 className="text-[10px] text-text-weaker font-sans font-medium uppercase tracking-wider mb-3 px-1">
-          {t(lang, "settings.providers.available")}
+          Available Providers
         </h3>
         <div className="grid grid-cols-2 xl:grid-cols-3 gap-3">
           {available.map((cat) => (

@@ -28,7 +28,7 @@ function useThemeApplier() {
       root.classList.toggle("light", !isDark)
       root.style.colorScheme = isDark ? "dark" : "light"
       // Persist for preload script
-      localStorage.setItem("ultiIHE-color-scheme", colorScheme)
+      localStorage.setItem("exegol-ihe-color-scheme", colorScheme)
     }
 
     if (colorScheme === "dark") {

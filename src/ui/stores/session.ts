@@ -356,7 +356,7 @@ export const useSessionStore = create<SessionStore>()(
       },
     }),
     {
-      name: "ultiIHE-sessions",
+      name: "exegol-ihe-sessions",
       partialize: (state) => ({
         sessions: state.sessions.slice(0, 50).map(s => ({
           ...s,

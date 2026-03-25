@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { type PendingToolCall } from "../../stores/toolApproval"
+import { sanitizeHtml } from "../../utils/sanitize"
 
 // ── Shiki-powered diff view ──────────────────────────────────────
 
@@ -95,7 +96,7 @@ const DiffView = memo(function DiffView({ diff }: { diff: string }) {
     return (
       <div
         className="max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin rounded-lg border border-border-weak [&_pre]:!bg-surface-0 [&_pre]:px-3 [&_pre]:py-2 [&_pre]:text-[11px] [&_pre]:leading-relaxed [&_code]:!text-[11px] [&_code]:!font-mono"
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
       />
     )
   }

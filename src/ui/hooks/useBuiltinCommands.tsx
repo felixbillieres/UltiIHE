@@ -36,7 +36,7 @@ import { useProjectStore } from "../stores/project"
 // ── WS singleton access (for terminal creation) ──────────────
 
 function wsSend(msg: { type: string; data?: Record<string, unknown> }) {
-  const singleton = (window as any).__ultiIHE_ws__
+  const singleton = (window as any).__exegolIHE_ws__
   const ws = singleton?.ws as WebSocket | null
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(msg))

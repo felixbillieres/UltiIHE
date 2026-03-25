@@ -15,6 +15,11 @@ import { websocketHandlers } from "./ws"
 import { terminalManager } from "../terminal/manager"
 import { stopServer as stopLocalServer } from "./services/local/server"
 import { reconnectAll } from "../ai/mcp/client"
+import { isPrivateUrl } from "../shared/validation"
+import crypto from "node:crypto"
+
+// ── WebSocket auth token (generated once at startup) ─────────
+const WS_TOKEN = crypto.randomBytes(32).toString("hex")
 
 const app = new Hono()
 
@@ -23,6 +28,57 @@ app.use("*", cors({
   allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
 }))
+
+// ── Security headers ─────────────────────────────────────────
+app.use("*", async (c, next) => {
+  await next()
+  c.header("X-Content-Type-Options", "nosniff")
+  c.header("X-Frame-Options", "DENY")
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin")
+  c.header(
+    "Content-Security-Policy",
+    "default-src 'self'; " +
+    "script-src 'self'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: blob:; " +
+    "font-src 'self' data:; " +
+    "connect-src 'self' ws://localhost:* http://localhost:* https://*; " +
+    "frame-src 'self' http://localhost:*",
+  )
+})
+
+// ── Rate limiting (in-memory sliding window) ─────────────────
+function rateLimit(maxRequests: number, windowMs: number) {
+  const hits = new Map<string, number[]>()
+  // Cleanup old entries periodically
+  setInterval(() => {
+    const now = Date.now()
+    for (const [key, timestamps] of hits) {
+      const valid = timestamps.filter((t) => now - t < windowMs)
+      if (valid.length === 0) hits.delete(key)
+      else hits.set(key, valid)
+    }
+  }, windowMs)
+
+  return async (c: any, next: any) => {
+    const key = c.req.header("x-forwarded-for") || "local"
+    const now = Date.now()
+    const timestamps = (hits.get(key) || []).filter((t) => now - t < windowMs)
+    if (timestamps.length >= maxRequests) {
+      return c.json({ error: "Rate limited, try again later" }, 429)
+    }
+    timestamps.push(now)
+    hits.set(key, timestamps)
+    return next()
+  }
+}
+
+// Apply rate limits to expensive endpoints
+app.use("/api/chat", rateLimit(5, 10_000))       // 5 req / 10s (AI calls)
+app.use("/api/search", rateLimit(10, 10_000))     // 10 req / 10s (grep ops)
+app.use("/api/fetch-url", rateLimit(10, 10_000))  // 10 req / 10s (outbound fetch)
+app.use("/api/probe", rateLimit(5, 10_000))       // 5 req / 10s (AI calls)
+
 app.route("/api", containerRoutes)
 app.route("/api", filesRoutes)
 app.route("/api", chatRoutes)
@@ -36,32 +92,11 @@ app.route("/api", searchRoutes)
 app.route("/api", exhRoutes)
 
 app.get("/api/health", (c) => c.json({ status: "ok", uptime: process.uptime() }))
-
-// ── SSRF protection ───────────────────────────────────────────
-function isPrivateUrl(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr)
-    const hostname = parsed.hostname
-    // Block localhost variants
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "0.0.0.0") return true
-    // Block private IP ranges
-    const parts = hostname.split(".").map(Number)
-    if (parts.length === 4 && parts.every((n) => !isNaN(n))) {
-      if (parts[0] === 10) return true // 10.0.0.0/8
-      if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true // 172.16.0.0/12
-      if (parts[0] === 192 && parts[1] === 168) return true // 192.168.0.0/16
-      if (parts[0] === 169 && parts[1] === 254) return true // 169.254.0.0/16 (link-local / cloud metadata)
-      if (parts[0] === 0) return true // 0.0.0.0/8
-    }
-    // Block IPv6 private
-    if (hostname.startsWith("[fc") || hostname.startsWith("[fd") || hostname.startsWith("[fe80")) return true
-    return false
-  } catch {
-    return true // Invalid URL → block
-  }
-}
+app.get("/api/ws-token", (c) => c.json({ token: WS_TOKEN }))
 
 // ── URL fetch proxy (for @url context) ────────────────────────
+const MAX_REDIRECTS = 5
+
 app.post("/api/fetch-url", async (c) => {
   const { url } = (await c.req.json()) as { url: string }
   if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) {
@@ -71,34 +106,31 @@ app.post("/api/fetch-url", async (c) => {
     return c.json({ error: "Blocked: cannot fetch private/internal URLs" }, 403)
   }
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "UltiIHE/1.0" },
-      signal: AbortSignal.timeout(10000),
-      redirect: "manual", // Don't follow redirects blindly
-    })
-    // Check redirects for SSRF bypass
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location")
-      if (location && isPrivateUrl(new URL(location, url).toString())) {
+    // Follow redirects manually, checking each hop for SSRF
+    let current = url
+    let res: Response | undefined
+    for (let i = 0; i <= MAX_REDIRECTS; i++) {
+      if (isPrivateUrl(current)) {
         return c.json({ error: "Blocked: redirect to private/internal URL" }, 403)
       }
-      // Re-fetch with redirect following (safe now)
-      const finalRes = await fetch(url, {
-        headers: { "User-Agent": "UltiIHE/1.0" },
+      res = await fetch(current, {
+        headers: { "User-Agent": "ExegolIHE/1.0" },
         signal: AbortSignal.timeout(10000),
-        redirect: "follow",
+        redirect: "manual",
       })
-      if (!finalRes.ok) return c.json({ error: `HTTP ${finalRes.status}` }, 502)
-      const contentType = finalRes.headers.get("content-type") || ""
-      const text = await finalRes.text()
-      const truncated = text.length > 100_000 ? text.slice(0, 100_000) + "\n\n[Truncated at 100KB]" : text
-      return c.json({ content: truncated, contentType, url })
+      if (res.status < 300 || res.status >= 400) break
+      const location = res.headers.get("location")
+      if (!location) break
+      current = new URL(location, current).toString()
+      if (i === MAX_REDIRECTS) {
+        return c.json({ error: "Too many redirects" }, 502)
+      }
     }
-    if (!res.ok) return c.json({ error: `HTTP ${res.status}` }, 502)
+    if (!res || !res.ok) return c.json({ error: `HTTP ${res?.status ?? 0}` }, 502)
     const contentType = res.headers.get("content-type") || ""
     const text = await res.text()
     const truncated = text.length > 100_000 ? text.slice(0, 100_000) + "\n\n[Truncated at 100KB]" : text
-    return c.json({ content: truncated, contentType, url })
+    return c.json({ content: truncated, contentType, url: current })
   } catch (e) {
     return c.json({ error: (e as Error).message }, 502)
   }
@@ -138,8 +170,12 @@ const server = Bun.serve({
     // Bun can pass relative paths — need a base URL to parse
     const url = new URL(req.url, `http://localhost:${port}`)
 
-    // Handle WebSocket upgrade at /ws
+    // Handle WebSocket upgrade at /ws (requires auth token)
     if (url.pathname === "/ws") {
+      const token = url.searchParams.get("token")
+      if (token !== WS_TOKEN) {
+        return new Response("Unauthorized", { status: 401 })
+      }
       const upgraded = server.upgrade(req, { data: {} })
       if (upgraded) return undefined
       return new Response("WebSocket upgrade failed", { status: 400 })
@@ -175,7 +211,7 @@ import { readFile } from "fs/promises"
 import { join } from "path"
 ;(async () => {
   try {
-    const raw = await readFile(join(process.cwd(), ".ultiIHE", "mcp-servers.json"), "utf-8")
+    const raw = await readFile(join(process.cwd(), ".exegol-ihe", "mcp-servers.json"), "utf-8")
     const configs = JSON.parse(raw)
     if (configs.length > 0) {
       console.log(`[MCP] Auto-connecting ${configs.length} saved server(s)...`)

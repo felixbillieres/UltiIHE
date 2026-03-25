@@ -17,6 +17,16 @@ caidoRoutes.post("/caido/connect", async (c) => {
     return c.json({ error: "url and token are required" }, 400)
   }
 
+  // Validate Caido URL: must be HTTP(S), typically localhost
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return c.json({ error: "Caido URL must use HTTP or HTTPS" }, 400)
+    }
+  } catch {
+    return c.json({ error: "Invalid Caido URL" }, 400)
+  }
+
   const client = setCaidoClient(url, token)
   const ok = await client.testConnection()
 

@@ -4,7 +4,9 @@
  */
 
 import { Hono } from "hono"
+import { z } from "zod"
 import { dockerExec, shellEscape } from "../../ai/tool/exec"
+import { isValidContainerName } from "../../shared/validation"
 
 export const exhRoutes = new Hono()
 
@@ -50,7 +52,15 @@ exhRoutes.get("/exh/:container/creds", async (c) => {
 
 exhRoutes.post("/exh/:container/creds", async (c) => {
   const container = c.req.param("container")
-  const body = await c.req.json() as { username?: string; password?: string; hash?: string; domain?: string }
+  if (!isValidContainerName(container)) return c.json({ error: "Invalid container" }, 400)
+  const parsed = z.object({
+    username: z.string().optional(),
+    password: z.string().optional(),
+    hash: z.string().optional(),
+    domain: z.string().optional(),
+  }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const body = parsed.data
 
   const args: string[] = ["add", "creds"]
   if (body.username) args.push("-u", shellEscape(body.username))
@@ -65,8 +75,10 @@ exhRoutes.post("/exh/:container/creds", async (c) => {
 
 exhRoutes.delete("/exh/:container/creds", async (c) => {
   const container = c.req.param("container")
-  const { username } = await c.req.json() as { username: string }
-  if (!username) return c.json({ error: "username required" }, 400)
+  if (!isValidContainerName(container)) return c.json({ error: "Invalid container" }, 400)
+  const parsed = z.object({ username: z.string().min(1) }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: "username required" }, 400)
+  const { username } = parsed.data
   const result = await exhExec(container, `rm creds -u ${shellEscape(username)}`)
   if (result.error) return c.json({ error: result.error }, 500)
   return c.json({ ok: true })
@@ -84,7 +96,14 @@ exhRoutes.get("/exh/:container/hosts", async (c) => {
 
 exhRoutes.post("/exh/:container/hosts", async (c) => {
   const container = c.req.param("container")
-  const body = await c.req.json() as { ip?: string; hostname?: string; role?: string }
+  if (!isValidContainerName(container)) return c.json({ error: "Invalid container" }, 400)
+  const parsed = z.object({
+    ip: z.string().optional(),
+    hostname: z.string().optional(),
+    role: z.string().optional(),
+  }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: parsed.error.message }, 400)
+  const body = parsed.data
 
   const args: string[] = ["add", "hosts"]
   if (body.ip) args.push("--ip", shellEscape(body.ip))
@@ -98,8 +117,10 @@ exhRoutes.post("/exh/:container/hosts", async (c) => {
 
 exhRoutes.delete("/exh/:container/hosts", async (c) => {
   const container = c.req.param("container")
-  const { ip } = await c.req.json() as { ip: string }
-  if (!ip) return c.json({ error: "ip required" }, 400)
+  if (!isValidContainerName(container)) return c.json({ error: "Invalid container" }, 400)
+  const parsed = z.object({ ip: z.string().min(1) }).safeParse(await c.req.json())
+  if (!parsed.success) return c.json({ error: "ip required" }, 400)
+  const { ip } = parsed.data
   const result = await exhExec(container, `rm hosts --ip ${shellEscape(ip)}`)
   if (result.error) return c.json({ error: result.error }, 500)
   return c.json({ ok: true })

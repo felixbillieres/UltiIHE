@@ -39,14 +39,15 @@ export const searchFindTool: Tool<
     if (pattern) {
       // Glob mode — find files matching pattern
       const nameFlag = pattern.includes("/") ? "-path" : "-name"
-      cmd = `find ${escaped} ${nameFlag} '${pattern}' -type f 2>/dev/null | head -101`
+      cmd = `find ${escaped} ${nameFlag} ${shellEscape(pattern)} -type f 2>/dev/null | head -101`
       limit = 100
     } else {
       // Tree mode — list directory structure
+      const safeDepth = Math.max(1, Math.min(10, Math.floor(maxDepth)))
       cmd =
         `command -v tree >/dev/null 2>&1 ` +
-        `&& tree -L ${maxDepth} --noreport ${escaped} 2>/dev/null | head -201 ` +
-        `|| find ${escaped} -maxdepth ${maxDepth} \\( -type f -o -type d \\) 2>/dev/null | sort | head -201`
+        `&& tree -L ${safeDepth} --noreport ${escaped} 2>/dev/null | head -201 ` +
+        `|| find ${escaped} -maxdepth ${safeDepth} \\( -type f -o -type d \\) 2>/dev/null | sort | head -201`
       limit = 200
     }
 
@@ -81,9 +82,8 @@ export const searchGrepTool: Tool<
   }),
   execute: async ({ container, pattern, path = "/root", include }) => {
     const escaped = shellEscape(path)
-    const escapedPattern = pattern.replace(/'/g, "'\\''")
-    const includeFlag = include ? `--include='${include}'` : ""
-    const cmd = `grep -rn ${includeFlag} -E '${escapedPattern}' ${escaped} 2>/dev/null | head -101`
+    const includeFlag = include ? `--include=${shellEscape(include)}` : ""
+    const cmd = `grep -rn ${includeFlag} -E ${shellEscape(pattern)} ${escaped} 2>/dev/null | head -101`
 
     const result = await dockerExec(container, cmd, { timeout: 15_000 })
     // grep exit 1 = no matches (not an error)
