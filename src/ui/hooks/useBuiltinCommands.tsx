@@ -31,6 +31,7 @@ import { useSessionStore } from "../stores/session"
 import { useSearchStore } from "../stores/search"
 import { useSettingsStore } from "../stores/settings"
 import { useTerminalStore } from "../stores/terminal"
+import { useWorkspaceStore } from "../stores/workspace"
 import { useProjectStore } from "../stores/project"
 
 // ── WS singleton access (for terminal creation) ──────────────
@@ -65,6 +66,7 @@ export interface LayoutActions {
   toggleSessionSidebar: () => void
   swapPanels: () => void
   openSettings: () => void
+  openQuickOpen: () => void
 }
 
 // ── Hook ─────────────────────────────────────────────────────
@@ -101,6 +103,15 @@ export function useBuiltinCommands(
         keybind: "mod+k",
         icon: <Search className="w-3.5 h-3.5" />,
         onSelect: () => useSearchStore.getState().open(),
+      },
+      {
+        id: "quickopen",
+        title: "Quick Open File",
+        description: "Search and open files in containers",
+        category: "General",
+        keybind: "mod+p",
+        icon: <FolderOpen className="w-3.5 h-3.5" />,
+        onSelect: layout.openQuickOpen,
       },
     ]
 
@@ -166,6 +177,21 @@ export function useBuiltinCommands(
           if (window.confirm(`Delete "${title}"?\n\nThis will permanently delete the session and all its messages. This cannot be undone.`)) {
             deleteSession(sid)
           }
+        },
+      },
+    ]
+
+    // ── Tabs ───────────────────────────────────────────
+    const tabs: CommandOption[] = [
+      {
+        id: "tab.close",
+        title: "Close Tab",
+        category: "Navigation",
+        keybind: "mod+w",
+        onSelect: () => {
+          const ws = useWorkspaceStore.getState()
+          const activeId = ws.activeTabIdByProject[ws._currentProjectId || ""]
+          if (activeId) ws.removeTab(activeId)
         },
       },
     ]
@@ -309,7 +335,7 @@ export function useBuiltinCommands(
       },
     ]
 
-    return [...general, ...session, ...navigation, ...terminal, ...modelAgent]
+    return [...general, ...session, ...tabs, ...navigation, ...terminal, ...modelAgent]
   }, [projectId, layout, paletteToggle])
 
   useRegisterCommands("builtin", commands)

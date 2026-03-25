@@ -169,6 +169,36 @@ filesRoutes.post("/files/host/rename", async (c) => {
 // Container filesystem routes (docker exec)
 // ═══════════════════════════════════════════════════════════════════
 
+// ── Quick Open: find files by name ──────────────────────────────
+
+filesRoutes.get("/files/:container/find", async (c) => {
+  const container = c.req.param("container")
+  const query = c.req.query("query") || ""
+  const root = c.req.query("root") || "/root"
+  if (!validateContainer(container)) return c.json({ error: "Invalid container" }, 400)
+  if (!validatePath(root)) return c.json({ error: "Invalid path" }, 400)
+  if (!query || query.length < 2) return c.json({ files: [] })
+
+  // Escape the query for use in find -iname pattern
+  const safeQuery = query.replace(/['"\\]/g, "")
+  const cmd = ["find", root, "-maxdepth", "6", "-type", "f", "-iname", `*${safeQuery}*`]
+  try {
+    const result = await dockerExec(container, cmd, 8_000)
+    const files = result.stdout
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .slice(0, 50)
+      .map((path) => ({
+        path,
+        name: path.split("/").pop() || path,
+      }))
+    return c.json({ files })
+  } catch {
+    return c.json({ files: [] })
+  }
+})
+
 // ── List directory ──────────────────────────────────────────────
 
 filesRoutes.get("/files/:container/list", async (c) => {

@@ -26,6 +26,7 @@ import { UnifiedSearchDialog } from "../search/UnifiedSearchDialog"
 import { SearchMiniPanel } from "../search/SearchMiniPanel"
 import { useSearchStore } from "../../stores/search"
 import { useBuiltinCommands, type LayoutActions } from "../../hooks/useBuiltinCommands"
+import { QuickOpenDialog } from "../QuickOpenDialog"
 
 // ─── Main component ──────────────────────────────────────────
 
@@ -42,6 +43,7 @@ export function WorkspaceLayout({ project }: Props) {
   const [showSettings, setShowSettings] = useState(false)
   const [showContainerManager, setShowContainerManager] = useState(false)
   const [chatPoppedOut, setChatPoppedOut] = useState(false)
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false)
 
   const handlePopOutChat = () => {
     setChatPoppedOut(true)
@@ -198,6 +200,7 @@ export function WorkspaceLayout({ project }: Props) {
     toggleSessionSidebar,
     swapPanels,
     openSettings: () => setShowSettings(true),
+    openQuickOpen: () => setQuickOpenOpen(true),
   }), [toggleFilesPanel, toggleChatPanel, toggleBottomPanel, toggleSessionSidebar, swapPanels])
 
   return (
@@ -206,6 +209,7 @@ export function WorkspaceLayout({ project }: Props) {
       <CommandPaletteDialog />
       <UnifiedSearchDialog />
       <SearchMiniPanel />
+      <QuickOpenDialog isOpen={quickOpenOpen} onClose={() => setQuickOpenOpen(false)} />
 
       <div className="h-full flex flex-col">
         {/* Chat pop-out portal — lives at root so it persists when panel is closed */}
