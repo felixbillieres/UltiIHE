@@ -14,6 +14,11 @@ export interface ToolMeta {
   description: string
   requiresApproval: boolean
   readOnly: boolean
+  /** Per-mode overrides for approval requirement */
+  modeOverrides?: {
+    ctf?: { requiresApproval: boolean }
+    audit?: { requiresApproval: boolean }
+  }
 }
 
 export const TOOL_REGISTRY: Record<string, ToolMeta> = {
@@ -24,6 +29,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: "Create a new terminal on a container",
     requiresApproval: true,
     readOnly: false,
+    modeOverrides: { ctf: { requiresApproval: false } },
   },
   terminal_write: {
     name: "terminal_write",
@@ -31,6 +37,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: "Send a command to a terminal",
     requiresApproval: true, // via command queue
     readOnly: false,
+    modeOverrides: { ctf: { requiresApproval: false } },
   },
   terminal_read: {
     name: "terminal_read",
@@ -53,6 +60,13 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     requiresApproval: true,
     readOnly: false,
   },
+  terminal_search: {
+    name: "terminal_search",
+    category: "terminal",
+    description: "Search terminal output for regex pattern matches",
+    requiresApproval: false,
+    readOnly: true,
+  },
 
   // ── File ─────────────────────────────────────────────
   file_read: {
@@ -68,6 +82,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: "Write/create a file (diff-based approval)",
     requiresApproval: true,
     readOnly: false,
+    modeOverrides: { ctf: { requiresApproval: false } },
   },
   file_edit: {
     name: "file_edit",
@@ -75,6 +90,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: "Find & replace in a file (diff-based approval)",
     requiresApproval: true,
     readOnly: false,
+    modeOverrides: { ctf: { requiresApproval: false } },
   },
   file_create_dir: {
     name: "file_create_dir",
@@ -195,6 +211,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: "Add a credential",
     requiresApproval: true,
     readOnly: false,
+    modeOverrides: { ctf: { requiresApproval: false } },
   },
   exh_add_host: {
     name: "exh_add_host",
@@ -202,6 +219,7 @@ export const TOOL_REGISTRY: Record<string, ToolMeta> = {
     description: "Add a host",
     requiresApproval: true,
     readOnly: false,
+    modeOverrides: { ctf: { requiresApproval: false } },
   },
 }
 
@@ -224,4 +242,13 @@ export function getApprovalRequiredTools(): string[] {
   return Object.values(TOOL_REGISTRY)
     .filter((t) => t.requiresApproval)
     .map((t) => t.name)
+}
+
+/** Check if a tool requires approval given the current agent mode */
+export function shouldRequireApproval(toolName: string, agentMode: string): boolean {
+  const meta = TOOL_REGISTRY[toolName]
+  if (!meta) return true
+  const override = meta.modeOverrides?.[agentMode as "ctf" | "audit"]
+  if (override !== undefined) return override.requiresApproval
+  return meta.requiresApproval
 }

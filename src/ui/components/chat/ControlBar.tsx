@@ -4,6 +4,8 @@ import { useSettingsStore } from "../../stores/settings"
 import { useLocalAIStore } from "../../stores/localAI"
 import { useContextStore } from "../../stores/context"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
+import { useStreamingStore } from "../../stores/streaming"
+import { useSessionStore } from "../../stores/session"
 import { useWebSocket } from "../../hooks/useWebSocket"
 import {
   Brain,
@@ -20,6 +22,7 @@ import {
   Flag,
   ShieldCheck,
   Terminal,
+  Square,
 } from "lucide-react"
 import { ModelPicker } from "./ModelPicker"
 import { ProviderIcon } from "../provider-icons/ProviderIcon"
@@ -33,6 +36,46 @@ const MODE_CYCLE: AgentMode[] = ["neutral", "ctf", "audit"]
 
 function Separator() {
   return <div className="w-px h-4 bg-border-weak shrink-0" />
+}
+
+// ── Streaming step counter + cancel ──────────────────────────
+
+function StreamingStatus() {
+  const isStreaming = useStreamingStore((s) => s.isStreaming)
+  const stepCount = useStreamingStore((s) => s.stepCount)
+  const startTime = useStreamingStore((s) => s.startTime)
+  const abortFn = useStreamingStore((s) => s.abortFn)
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    if (!isStreaming || !startTime) { setElapsed(0); return }
+    setElapsed(Math.floor((Date.now() - startTime) / 1000))
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000))
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [isStreaming, startTime])
+
+  if (!isStreaming) return null
+
+  return (
+    <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-accent/10 shrink-0">
+      <Loader2 className="w-3 h-3 text-accent animate-spin" />
+      <span className="text-[10px] font-mono text-accent tabular-nums">
+        {stepCount > 0 ? `Step ${stepCount}` : "Thinking"}
+        {elapsed > 0 && ` \u00b7 ${elapsed}s`}
+      </span>
+      {abortFn && (
+        <button
+          onClick={abortFn}
+          className="text-text-weaker hover:text-status-error transition-colors p-0.5"
+          title="Cancel"
+        >
+          <Square className="w-2.5 h-2.5" />
+        </button>
+      )}
+    </div>
+  )
 }
 
 // ── Context Indicator ─────────────────────────────────────────
@@ -321,6 +364,20 @@ export function ControlBar() {
                 const idx = MODE_CYCLE.indexOf(agentMode)
                 const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length]
                 setAgentMode(next, activeProjectId ?? undefined)
+                // Inject system notice into active session
+                const pid = activeProjectId ?? ""
+                const sessionId = useSessionStore.getState().activeSessionIdByProject[pid]
+                if (sessionId) {
+                  const modeLabel = AGENT_MODES.find((m) => m.id === next)?.label ?? next
+                  useSessionStore.getState().addMessage(sessionId, {
+                    id: crypto.randomUUID(),
+                    role: "assistant",
+                    content: `Switched to ${modeLabel} mode`,
+                    parts: [],
+                    createdAt: Date.now(),
+                    isSystemNotice: true,
+                  })
+                }
               }}
               title={`Agent mode: ${modeInfo.label} — ${modeInfo.description}. Click to cycle.`}
             />
@@ -427,6 +484,9 @@ export function ControlBar() {
       </div>
 
       <Separator />
+
+      {/* Streaming progress */}
+      <StreamingStatus />
 
       {/* Context indicator */}
       <ContextIndicator />

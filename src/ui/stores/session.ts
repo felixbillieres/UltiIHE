@@ -18,6 +18,8 @@ export interface ToolCallPart {
   isError?: boolean
   startTime: number
   endTime?: number
+  wasTruncated?: boolean
+  originalLength?: number
 }
 
 export interface ReasoningPart {
@@ -57,6 +59,8 @@ export interface Message {
   createdAt: number
   /** Real token usage from the provider (assistant messages only) */
   usage?: MessageUsage
+  /** System notices are rendered in the chat but never sent to the API */
+  isSystemNotice?: boolean
 }
 
 export interface Session {
@@ -66,6 +70,8 @@ export interface Session {
   createdAt: number
   updatedAt: number
   messages: Message[]
+  /** If this session was forked, references the parent */
+  forkedFrom?: { sessionId: string; messageId: string }
 }
 
 // ─── Store ────────────────────────────────────────────────────
@@ -290,6 +296,7 @@ export const useSessionStore = create<SessionStore>()(
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: forkedMessages,
+          forkedFrom: { sessionId, messageId: upToMessageId },
         }
         set((s) => ({
           sessions: [forked, ...s.sessions],

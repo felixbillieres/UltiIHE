@@ -23,12 +23,17 @@ interface PendingApproval {
   isNewFile?: boolean
   resolve: (approved: boolean) => void
   timeoutId: ReturnType<typeof setTimeout>
+  /** Timestamp when this approval was created */
+  createdAt: number
+  /** Remaining timeout ms when paused */
+  timeoutRemaining?: number
 }
 
 class ToolApprovalQueue {
   private pending = new Map<string, PendingApproval>()
   private alwaysAllowed = new Set<string>() // tools approved with "allow always"
   private mode: "ask" | "auto-run" = "ask"
+  private paused = false
   private broadcast: BroadcastFn | null = null
 
   setBroadcast(fn: BroadcastFn) {
@@ -74,16 +79,21 @@ class ToolApprovalQueue {
     if (this.alwaysAllowed.has(toolName)) return true
 
     const id = randomUUID()
+    const now = Date.now()
 
     return new Promise<boolean>((resolve) => {
-      const timeoutId = setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          resolve(false)
-          // Broadcast timeout so frontend can remove the pending banner
-          this.broadcast?.({ type: "tool:timeout", data: { id } })
-        }
-      }, 120_000)
+      // If paused, don't start a timeout — it will be started on resume
+      const timeoutId = this.paused
+        ? setTimeout(() => {}, 0) // placeholder, cleared immediately
+        : setTimeout(() => {
+            if (this.pending.has(id)) {
+              this.pending.delete(id)
+              resolve(false)
+              this.broadcast?.({ type: "tool:timeout", data: { id } })
+            }
+          }, 120_000)
+
+      if (this.paused) clearTimeout(timeoutId)
 
       this.pending.set(id, {
         id,
@@ -95,6 +105,8 @@ class ToolApprovalQueue {
         isNewFile: extra?.isNewFile,
         resolve,
         timeoutId,
+        createdAt: now,
+        timeoutRemaining: this.paused ? 120_000 : undefined,
       })
 
       this.broadcast?.({
@@ -154,6 +166,39 @@ class ToolApprovalQueue {
       entry.resolve(false)
     }
     this.pending.clear()
+  }
+
+  /** Pause all timeouts — approvals stay pending without auto-rejecting */
+  pause() {
+    if (this.paused) return
+    this.paused = true
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timeoutId)
+      entry.timeoutRemaining = Math.max(0, 120_000 - (Date.now() - entry.createdAt))
+    }
+    this.broadcast?.({ type: "tool:paused" })
+  }
+
+  /** Resume timeouts with remaining time */
+  resume() {
+    if (!this.paused) return
+    this.paused = false
+    for (const entry of this.pending.values()) {
+      const remaining = entry.timeoutRemaining ?? 120_000
+      entry.timeoutRemaining = undefined
+      entry.timeoutId = setTimeout(() => {
+        if (this.pending.has(entry.id)) {
+          this.pending.delete(entry.id)
+          entry.resolve(false)
+          this.broadcast?.({ type: "tool:timeout", data: { id: entry.id } })
+        }
+      }, remaining)
+    }
+    this.broadcast?.({ type: "tool:resumed" })
+  }
+
+  isPaused() {
+    return this.paused
   }
 
   getPending() {

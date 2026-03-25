@@ -2,7 +2,7 @@ import { stripAnsi } from "./strip-ansi"
 import { opsTracker } from "./ops-tracker"
 import type { IPty } from "bun-pty"
 import { CONTAINER_NAME_RE } from "../shared/validation"
-const RING_BUFFER_MAX_LINES = 1000
+const RING_BUFFER_MAX_LINES = 5000
 const MAX_AI_POOL = 4
 
 // Prompt patterns — matches Exegol format: [date] container /path #
@@ -415,6 +415,26 @@ class TerminalManager {
     return terminal.ringBuffer
       .filter((line) => !/^[#$%>]\s*$/.test(line))
       .join("\n")
+  }
+
+  /** Search terminal ring buffer for lines matching a regex pattern */
+  searchOutput(terminalId: string, pattern: string, maxResults = 50): string[] {
+    const terminal = this.terminals.get(terminalId)
+    if (!terminal) throw new Error(`Terminal not found: ${terminalId}`)
+    let re: RegExp
+    try {
+      re = new RegExp(pattern, "i")
+    } catch {
+      throw new Error(`Invalid regex pattern: ${pattern}`)
+    }
+    const matches: string[] = []
+    for (let i = 0; i < terminal.ringBuffer.length && matches.length < maxResults; i++) {
+      const line = terminal.ringBuffer[i]
+      if (re.test(line)) {
+        matches.push(`${i + 1}: ${line}`)
+      }
+    }
+    return matches
   }
 
   subscribe(terminalId: string, ws: WebSocket): void {

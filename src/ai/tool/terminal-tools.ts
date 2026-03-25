@@ -172,6 +172,30 @@ export const terminalCloseTool: Tool<
   },
 }
 
+export const terminalSearchTool: Tool<
+  { terminalId: string; pattern: string; maxResults?: number },
+  string | { error: string }
+> = {
+  description:
+    "Search terminal output for lines matching a regex pattern. Useful for finding specific " +
+    "results in long command outputs (IPs, ports, errors, credentials) without reading the " +
+    "entire buffer. Returns matching lines with line numbers.",
+  inputSchema: z.object({
+    terminalId: z.string().describe("The terminal ID to search in"),
+    pattern: z.string().describe("Regex pattern to search for (case-insensitive)"),
+    maxResults: z.number().optional().describe("Maximum results to return (default 50)"),
+  }),
+  execute: async ({ terminalId, pattern, maxResults }) => {
+    try {
+      const matches = terminalManager.searchOutput(terminalId, pattern, maxResults)
+      if (matches.length === 0) return `No matches found for pattern: ${pattern}`
+      return matches.join("\n")
+    } catch (err) {
+      return { error: (err as Error).message }
+    }
+  },
+}
+
 /** All terminal tools bundled for use in streamText() */
 export const terminalTools = {
   terminal_create: terminalCreateTool,
@@ -179,4 +203,5 @@ export const terminalTools = {
   terminal_list: terminalListTool,
   terminal_write: terminalWriteTool,
   terminal_close: terminalCloseTool,
+  terminal_search: terminalSearchTool,
 }

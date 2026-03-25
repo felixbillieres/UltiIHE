@@ -14,6 +14,7 @@ import {
   GitFork,
   RefreshCw,
   Archive,
+  Pencil,
 } from "lucide-react"
 import { MarkdownContent } from "./MarkdownContent"
 import { ToolCallCard, ToolCallGroup } from "./ToolCallCard"
@@ -497,6 +498,103 @@ function MessageTokenFooter({ usage, parts }: { usage: MessageUsage; parts?: Mes
   return <span>{"\u21B3 " + segments.join(" \u00B7 ")}</span>
 }
 
+// ── User message with inline edit ───────────────────────────────
+
+function UserMessageBlock({
+  message,
+  textContent,
+  hasBlocks,
+  blocks,
+  onEdit,
+}: {
+  message: Message
+  textContent: string
+  hasBlocks: boolean | null
+  blocks?: ContextBlock[]
+  onEdit?: (messageId: string, newContent: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState(textContent)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      textareaRef.current?.focus()
+      // Place cursor at end
+      const el = textareaRef.current
+      if (el) el.selectionStart = el.selectionEnd = el.value.length
+    }
+  }, [editing])
+
+  const handleSubmitEdit = () => {
+    if (!editText.trim()) return
+    onEdit?.(message.id, editText.trim())
+    setEditing(false)
+  }
+
+  return (
+    <div data-user-message>
+      <div className="flex flex-col gap-1.5">
+        {hasBlocks && blocks && (
+          <>
+            {blocks.map((b, i) =>
+              b.type === "terminal" ? (
+                <TerminalContextBlock key={`ctx-${i}-${b.type}`} block={b} />
+              ) : (
+                <FileContextBlock key={`ctx-${i}-${b.type}`} block={b} />
+              ),
+            )}
+          </>
+        )}
+        {editing ? (
+          <div className="bg-surface-1 border border-accent/40 rounded-xl px-3.5 py-2 space-y-2">
+            <textarea
+              ref={textareaRef}
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              className="w-full bg-transparent text-sm font-sans text-text-strong leading-relaxed resize-none outline-none min-h-[40px] scrollbar-thin"
+              rows={Math.min(editText.split("\n").length + 1, 10)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { e.preventDefault(); setEditing(false); setEditText(textContent) }
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSubmitEdit() }
+              }}
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => { setEditing(false); setEditText(textContent) }}
+                className="text-xs font-sans text-text-weak hover:text-text-base transition-colors px-2 py-1"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitEdit}
+                className="text-xs font-sans font-medium px-3 py-1 rounded-lg bg-text-strong text-surface-0 hover:opacity-90 transition-opacity"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        ) : textContent ? (
+          <div className="group/msg relative">
+            <div className="bg-surface-1 border border-border-weak rounded-xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-text-strong text-left">
+              <MarkdownContent content={textContent} />
+            </div>
+            {onEdit && (
+              <button
+                onClick={() => { setEditing(true); setEditText(textContent) }}
+                className="absolute -top-2 -right-2 p-1 rounded-md bg-surface-2 border border-border-weak text-text-weaker hover:text-accent hover:border-accent/30 transition-colors opacity-0 group-hover/msg:opacity-100"
+                title="Edit message"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 // ── Message bubble ───────────────────────────────────────────────
 
 export function MessageBubble({
@@ -514,6 +612,24 @@ export function MessageBubble({
   onRetry?: () => void
   onEdit?: (messageId: string, newContent: string) => void
 }) {
+  // ── System notice — rendered as a colored divider ──────────
+  if (message.isSystemNotice) {
+    // Extract mode color from AGENT_MODES
+    const modeMatch = message.content.match(/Switched to (\w+) mode/)
+    const modeName = modeMatch?.[1]?.toLowerCase() ?? ""
+    const MODE_COLORS: Record<string, string> = { ctf: "#22d3ee", audit: "#f59e0b", neutral: "#9ca3af" }
+    const color = MODE_COLORS[modeName] ?? "#9ca3af"
+    return (
+      <div className="flex items-center gap-3 py-2 px-4">
+        <div className="flex-1 h-px" style={{ backgroundColor: color + "30" }} />
+        <span className="text-[10px] font-sans font-medium whitespace-nowrap" style={{ color }}>
+          {message.content}
+        </span>
+        <div className="flex-1 h-px" style={{ backgroundColor: color + "30" }} />
+      </div>
+    )
+  }
+
   const isUser = message.role === "user"
   const isError = !isUser && message.content.startsWith("⚠️")
   const hasParts = !isUser && message.parts && message.parts.length > 0
@@ -521,34 +637,17 @@ export function MessageBubble({
   const parsed = isUser ? parseContextBlocks(message.content) : null
   const hasBlocks = parsed && parsed.blocks.length > 0
 
-  // ── User message — click to quote (Cline-style) ─────────────
+  // ── User message — with inline edit support ─────────────
   if (isUser) {
     const textContent = hasBlocks ? parsed!.text : message.content
     return (
-      <div data-user-message>
-        <div className="flex flex-col gap-1.5">
-          {hasBlocks && (
-            <>
-              {parsed!.blocks.map((b, i) =>
-                b.type === "terminal" ? (
-                  <TerminalContextBlock key={`ctx-${i}-${b.type}`} block={b} />
-                ) : (
-                  <FileContextBlock key={`ctx-${i}-${b.type}`} block={b} />
-                ),
-              )}
-            </>
-          )}
-          {textContent && (
-            <div
-              onClick={onEdit ? () => onEdit(message.id, textContent) : undefined}
-              className={`bg-surface-1 border border-border-weak rounded-xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words font-sans text-text-strong text-left ${onEdit ? "cursor-pointer hover:border-accent/30 transition-colors" : ""}`}
-              title={onEdit ? "Click to quote this message" : undefined}
-            >
-              <MarkdownContent content={textContent} />
-            </div>
-          )}
-        </div>
-      </div>
+      <UserMessageBlock
+        message={message}
+        textContent={textContent}
+        hasBlocks={hasBlocks}
+        blocks={parsed?.blocks}
+        onEdit={onEdit}
+      />
     )
   }
 

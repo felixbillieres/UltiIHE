@@ -7,6 +7,7 @@ import { useChatContextStore } from "../stores/chatContext"
 import { useContextStore } from "../stores/context"
 import { useLocalAIStore } from "../stores/localAI"
 import { useToolApprovalStore } from "../stores/toolApproval"
+import { useStreamingStore } from "../stores/streaming"
 import { SSEParser } from "../components/chat/SSEParser"
 import { playSound } from "../utils/sound"
 import { toast } from "sonner"
@@ -212,10 +213,9 @@ export function useChatStreaming(projectId: string) {
     const currentSession = useSessionStore
       .getState()
       .sessions.find((s) => s.id === sid)
-    const apiMessages = (currentSession?.messages || []).map((m) => ({
-      role: m.role,
-      content: m.content,
-    }))
+    const apiMessages = (currentSession?.messages || [])
+      .filter((m) => !m.isSystemNotice)
+      .map((m) => ({ role: m.role, content: m.content }))
 
     const assistantId = crypto.randomUUID()
     addMessage(sid, {
@@ -231,6 +231,7 @@ export function useChatStreaming(projectId: string) {
     useToolApprovalStore.getState().clearResolved()
     const abort = new AbortController()
     abortRef.current = abort
+    useStreamingStore.getState().start(() => abort.abort())
 
     // Local accumulator for parts during streaming
     const parts: MessagePart[] = []
@@ -397,6 +398,7 @@ export function useChatStreaming(projectId: string) {
                 startTime: Date.now(),
               }
               parts.push(toolPart)
+              useStreamingStore.getState().incrementStep()
               flushToStore()
               break
             }
@@ -411,6 +413,10 @@ export function useChatStreaming(projectId: string) {
                 tp.output = evt.data.output
                 tp.isError = evt.data.isError
                 tp.endTime = Date.now()
+                if (evt.data.wasTruncated) {
+                  tp.wasTruncated = true
+                  tp.originalLength = evt.data.originalLength
+                }
               }
               flushToStore()
               break
@@ -482,6 +488,7 @@ export function useChatStreaming(projectId: string) {
         playSound("message-done")
       }
       setStreaming(false)
+      useStreamingStore.getState().stop()
       abortRef.current = null
       streamingMsgIdRef.current = null
     }
@@ -491,6 +498,7 @@ export function useChatStreaming(projectId: string) {
     abortRef.current?.abort()
     // Immediately mark streaming as done so UI updates
     setStreaming(false)
+    useStreamingStore.getState().stop()
     abortRef.current = null
     // Mark any in-flight tool calls as interrupted in the current message
     if (streamingMsgIdRef.current && activeSessionId) {

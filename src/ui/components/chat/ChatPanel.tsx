@@ -958,25 +958,29 @@ export function ChatPanel({ projectId }: Props) {
     if (!activeSessionId || streaming) return
     const msgs = useSessionStore.getState().getActiveMessages(projectId)
     if (msgs.length < 2) return
-    const lastAssistant = msgs[msgs.length - 1]
-    if (lastAssistant.role !== "assistant") return
-    useSessionStore.getState().removeLastMessages(activeSessionId, 1)
-    const lastUser = msgs[msgs.length - 2]
-    if (lastUser?.role === "user") {
-      setInput(lastUser.content)
-      setTimeout(() => { handleSend() }, 100)
+    // Find the last user message to use as the fork point
+    const lastUser = [...msgs].reverse().find((m) => m.role === "user")
+    if (!lastUser) return
+    // Fork the session at the last user message (creates a branch)
+    const forked = useSessionStore.getState().forkSession(activeSessionId, lastUser.id)
+    if (forked) {
+      toast.success(`Retrying in fork: ${forked.title}`)
+      // Resend in the forked session
+      setTimeout(() => handleSend(), 100)
     }
-  }, [activeSessionId, streaming])
+  }, [activeSessionId, streaming, projectId, handleSend])
 
-  // Quote a previous message (Cline-style) — prepend as context to next message
-  const handleQuoteMessage = useCallback((_messageId: string, content: string) => {
-    setInput((prev) => {
-      const quote = `> ${content.split("\n").join("\n> ")}\n\n`
-      return prev ? `${quote}${prev}` : quote
-    })
-    // Focus the input
-    setTimeout(() => textareaRef.current?.focus(), 0)
-  }, [])
+  // Edit a user message inline: truncate everything after it, update content, resend
+  const handleEditMessage = useCallback((messageId: string, newContent: string) => {
+    if (!activeSessionId || streaming) return
+    const store = useSessionStore.getState()
+    // Truncate all messages after this one (keeps the edited message)
+    store.truncateAfterMessage(activeSessionId, messageId)
+    // Update the message content
+    store.updateMessageContent(activeSessionId, messageId, newContent)
+    // Resend: trigger a new AI response
+    setTimeout(() => handleSend(), 100)
+  }, [activeSessionId, streaming, handleSend])
 
   // Find last assistant message id for retry button
   // NOTE: Must be called before the early return to maintain consistent hook ordering
@@ -1098,7 +1102,7 @@ export function ChatPanel({ projectId }: Props) {
                   isLastAssistant={msg.id === lastAssistantId}
                   onFork={handleFork}
                   onRetry={handleRetry}
-                  onEdit={!streaming ? handleQuoteMessage : undefined}
+                  onEdit={!streaming ? handleEditMessage : undefined}
                 />
               </div>
             )
@@ -1153,6 +1157,14 @@ export function ChatPanel({ projectId }: Props) {
             })
             removePendingCommand(pendingCommands[0].id)
           }}
+          onEdit={(editedCommand) => {
+            wsSend({
+              type: "command:approve",
+              data: { commandId: pendingCommands[0].id, editedCommand },
+            })
+            removePendingCommand(pendingCommands[0].id)
+          }}
+          agentMode={agentMode}
         />
       )}
       {/* File change approvals + resolved summary */}

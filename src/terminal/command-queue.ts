@@ -21,6 +21,7 @@ type BroadcastFn = (msg: object) => void
 class CommandQueue {
   private pending = new Map<string, QueueEntry>()
   private mode: CommandApprovalMode = "ask"
+  private paused = false
   private broadcast: BroadcastFn | null = null
 
   /** Set the broadcast function (called once from ws.ts) */
@@ -99,22 +100,27 @@ class CommandQueue {
 
     // Ask mode: send to frontend, wait for approval
     return new Promise<{ approved: boolean }>((resolve) => {
-      // Timeout after 2 minutes — auto-reject
-      const timeoutId = setTimeout(() => {
-        if (this.pending.has(id)) {
-          this.pending.delete(id)
-          resolve({ approved: false })
-          // Broadcast timeout so frontend removes the pending banner
-          this.broadcast?.({ type: "command:timeout", data: { commandId: id } })
-        }
-      }, 120_000)
+      const now = Date.now()
+
+      // If paused, don't start a timeout
+      const timeoutId = this.paused
+        ? setTimeout(() => {}, 0)
+        : setTimeout(() => {
+            if (this.pending.has(id)) {
+              this.pending.delete(id)
+              resolve({ approved: false })
+              this.broadcast?.({ type: "command:timeout", data: { commandId: id } })
+            }
+          }, 120_000)
+
+      if (this.paused) clearTimeout(timeoutId)
 
       const entry: QueueEntry = {
         id,
         terminalId: opts.terminalId,
         terminalName: opts.terminalName,
         command: opts.command,
-        createdAt: Date.now(),
+        createdAt: now,
         resolve,
         timeoutId,
       }
@@ -186,6 +192,38 @@ class CommandQueue {
     })
     await terminalManager.writeTyping(entry.terminalId, newCommand)
     entry.resolve({ approved: true })
+  }
+
+  /** Pause all timeouts — commands stay pending without auto-rejecting */
+  pause() {
+    if (this.paused) return
+    this.paused = true
+    for (const entry of this.pending.values()) {
+      clearTimeout(entry.timeoutId)
+    }
+    this.broadcast?.({ type: "command:paused" })
+  }
+
+  /** Resume timeouts with remaining time */
+  resume() {
+    if (!this.paused) return
+    this.paused = false
+    for (const entry of this.pending.values()) {
+      const elapsed = Date.now() - entry.createdAt
+      const remaining = Math.max(0, 120_000 - elapsed)
+      entry.timeoutId = setTimeout(() => {
+        if (this.pending.has(entry.id)) {
+          this.pending.delete(entry.id)
+          entry.resolve({ approved: false })
+          this.broadcast?.({ type: "command:timeout", data: { commandId: entry.id } })
+        }
+      }, remaining)
+    }
+    this.broadcast?.({ type: "command:resumed" })
+  }
+
+  isPaused() {
+    return this.paused
   }
 
   /** Get all pending commands (for UI reconnect) */

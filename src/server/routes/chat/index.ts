@@ -309,9 +309,13 @@ chatRoutes.post("/chat", async (c) => {
 
     const MAX_TOOL_OUTPUT = 3000
 
-    function truncateOutput(output: string): string {
-      if (output.length <= MAX_TOOL_OUTPUT) return output
-      return output.slice(0, MAX_TOOL_OUTPUT) + `\n\n[... truncated ${output.length - MAX_TOOL_OUTPUT} chars]`
+    function truncateOutput(output: string): { text: string; wasTruncated: boolean; originalLength: number } {
+      if (output.length <= MAX_TOOL_OUTPUT) return { text: output, wasTruncated: false, originalLength: output.length }
+      return {
+        text: output.slice(0, MAX_TOOL_OUTPUT) + `\n\n[... truncated ${output.length - MAX_TOOL_OUTPUT} chars]`,
+        wasTruncated: true,
+        originalLength: output.length,
+      }
     }
 
     // ── Stream processing ─────────────────────────────────
@@ -408,10 +412,13 @@ chatRoutes.post("/chat", async (c) => {
           }
           case "tool-result": {
             const trPart = part as unknown as StreamToolResultPart
+            const truncated = truncateOutput(String(trPart.result ?? ""))
             bufferedEvents.push(sse("tool-result", {
               id: trPart.toolCallId,
-              output: truncateOutput(String(trPart.result ?? "")),
+              output: truncated.text,
               isError: false,
+              wasTruncated: truncated.wasTruncated,
+              originalLength: truncated.originalLength,
             }))
             // Cline pattern: reset consecutive mistake counter on successful tool result
             doomTracker.resetOnSuccess()
@@ -544,10 +551,13 @@ chatRoutes.post("/chat", async (c) => {
                 const trPart = part as unknown as StreamToolResultPart
                 const resultId = trPart.toolCallId
                 runningToolCalls.delete(resultId)
+                const truncated = truncateOutput(String(trPart.result ?? ""))
                 controller.enqueue(encoder.encode(sse("tool-result", {
                   id: resultId,
-                  output: truncateOutput(String(trPart.result ?? "")),
+                  output: truncated.text,
                   isError: false,
+                  wasTruncated: truncated.wasTruncated,
+                  originalLength: truncated.originalLength,
                 })))
                 // Cline pattern: reset consecutive mistake counter on successful tool result
                 doomTracker.resetOnSuccess()

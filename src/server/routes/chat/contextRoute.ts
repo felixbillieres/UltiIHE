@@ -6,6 +6,8 @@ import {
   calculateBudget,
   buildAdaptivePrompt,
   buildContextBreakdown,
+  shouldPrune,
+  shouldCompact,
 } from "../../../ai/context"
 import { resolveContextWindow } from "./contextResolver"
 
@@ -66,6 +68,7 @@ contextRoute.post("/context", async (c) => {
     outputReserve: budget.outputReserve,
     promptTier: budget.promptTier,
     maxTools: budget.maxTools,
-    pruneNeeded: false,
+    pruneNeeded: shouldPrune(breakdown.total, budget),
+    needsCompaction: shouldCompact(breakdown.total, budget),
   })
 })

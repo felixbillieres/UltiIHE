@@ -108,6 +108,26 @@ const toolSetModeSchema = z.object({
   }),
 })
 
+const toolPauseSchema = z.object({
+  type: z.literal("tool:pause"),
+  data: z.object({}),
+})
+
+const toolResumeSchema = z.object({
+  type: z.literal("tool:resume"),
+  data: z.object({}),
+})
+
+const commandPauseSchema = z.object({
+  type: z.literal("command:pause"),
+  data: z.object({}),
+})
+
+const commandResumeSchema = z.object({
+  type: z.literal("command:resume"),
+  data: z.object({}),
+})
+
 const opsStopOneSchema = z.object({
   type: z.literal("ops:stop-one"),
   data: z.object({
@@ -134,6 +154,10 @@ const clientMessageSchema = z.discriminatedUnion("type", [
   toolApproveAllSchema,
   toolRejectAllSchema,
   toolSetModeSchema,
+  toolPauseSchema,
+  toolResumeSchema,
+  commandPauseSchema,
+  commandResumeSchema,
   opsStopOneSchema,
   opsStopAllSchema,
 ])
@@ -232,6 +256,18 @@ async function handleMessage(ws: ServerWebSocket<unknown>, raw: string): Promise
     case "tool:set-mode":
       toolApprovalQueue.setMode(msg.data.mode)
       console.log(`[Tool] Approval mode set to: ${msg.data.mode}`)
+      break
+    case "tool:pause":
+      toolApprovalQueue.pause()
+      break
+    case "tool:resume":
+      toolApprovalQueue.resume()
+      break
+    case "command:pause":
+      commandQueue.pause()
+      break
+    case "command:resume":
+      commandQueue.resume()
       break
     case "ops:stop-one": {
       const terminalId = opsTracker.cancelOne(msg.data.opId)

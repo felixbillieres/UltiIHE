@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react"
 import type { ToolCallPart } from "../../stores/session"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
+import { useTerminalStore } from "../../stores/terminal"
+import { useWorkspaceStore } from "../../stores/workspace"
 import {
   Terminal,
   FileText,
@@ -26,6 +28,7 @@ import {
   X,
   KeyRound,
   Server,
+  ExternalLink,
   type LucideIcon,
 } from "lucide-react"
 
@@ -115,6 +118,15 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
   const [expanded, setExpanded] = useState(false)
   const hadOutputRef = useRef(false)
   const command = part.args?.command || part.args?.input || ""
+
+  const handleViewInTerminal = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const termId = part.args?.terminalId
+    if (!termId) return
+    useTerminalStore.getState().focusTerminalById(termId)
+    const tab = useWorkspaceStore.getState().tabs.find((t) => t.terminalId === termId)
+    if (tab) useWorkspaceStore.getState().setActiveTab(tab.id)
+  }
   const duration = formatDuration(part.startTime, part.endTime)
   const isRunning = part.status === "running"
   const isError = part.status === "error"
@@ -167,6 +179,16 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
         </span>
         <code className="text-[11px] text-text-base font-mono truncate flex-1">{command}</code>
         {duration && <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{duration}</span>}
+        {part.args?.terminalId && (
+          <span
+            role="button"
+            onClick={handleViewInTerminal}
+            className="text-text-weaker hover:text-accent transition-colors shrink-0 p-0.5"
+            title="View in terminal"
+          >
+            <ExternalLink className="w-2.5 h-2.5" />
+          </span>
+        )}
         {output && (
           <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         )}
@@ -182,6 +204,11 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
             {displayOutput}
             {truncated && (
               <span className="text-text-weaker italic">{"\n"}... output truncated</span>
+            )}
+            {part.wasTruncated && (
+              <span className="text-status-warning/80 italic text-[10px]">
+                {"\n"}(server truncated: {Math.round(3000 / 1000)}K/{Math.round((part.originalLength || 0) / 1000)}K chars — full output in terminal)
+              </span>
             )}
           </pre>
         </div>
