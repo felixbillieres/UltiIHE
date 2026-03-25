@@ -1,6 +1,31 @@
+import { useEffect } from "react"
 import { AlertTriangle } from "lucide-react"
 import { type PendingCommand } from "../../stores/commandApproval"
 import { type PendingToolCall } from "../../stores/toolApproval"
+
+/** Keyboard shortcut hint label */
+function KeyHint({ char }: { char: string }) {
+  return (
+    <kbd className="ml-1 text-[9px] px-1 py-px rounded bg-surface-3 text-text-weaker font-mono">
+      {char}
+    </kbd>
+  )
+}
+
+/** Hook: Y=allow, N=deny, A=always when banner is visible (not in input) */
+function useApprovalKeybinds(onAllow: () => void, onAlways: () => void, onDeny: () => void) {
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable) return
+      if (e.key === "y" || e.key === "Y") { e.preventDefault(); onAllow() }
+      if (e.key === "n" || e.key === "N") { e.preventDefault(); onDeny() }
+      if (e.key === "a" || e.key === "A") { e.preventDefault(); onAlways() }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [onAllow, onAlways, onDeny])
+}
 
 /** Build a single-line human-readable summary for a tool call. */
 function toolSummary(name: string, args: Record<string, unknown>): string {
@@ -41,6 +66,7 @@ export function PermissionBanner({
   onAllowAlways: () => void
   onDeny: () => void
 }) {
+  useApprovalKeybinds(onAllowOnce, onAllowAlways, onDeny)
   const displayCmd = command.command.replace(/\\n/g, "\n").replace(/\n+$/, "")
 
   return (
@@ -78,19 +104,19 @@ export function PermissionBanner({
           onClick={onDeny}
           className="text-xs font-sans text-text-weak hover:text-text-base transition-colors px-3 py-1.5"
         >
-          Deny
+          Deny<KeyHint char="N" />
         </button>
         <button
           onClick={onAllowAlways}
           className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg border border-border-base text-text-base hover:bg-surface-2 transition-colors"
         >
-          Allow always
+          Allow always<KeyHint char="A" />
         </button>
         <button
           onClick={onAllowOnce}
           className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg bg-text-strong text-surface-0 hover:opacity-90 transition-opacity"
         >
-          Allow once
+          Allow once<KeyHint char="Y" />
         </button>
       </div>
     </div>
@@ -110,6 +136,8 @@ export function ToolPermissionBanner({
   onAllowAlways: () => void
   onDeny: () => void
 }) {
+  useApprovalKeybinds(onAllowOnce, onAllowAlways, onDeny)
+
   return (
     <div className="shrink-0 border-t border-status-warning/30 bg-surface-1">
       <div className="px-4 pt-3 pb-2">
@@ -144,19 +172,19 @@ export function ToolPermissionBanner({
           onClick={onDeny}
           className="text-xs font-sans text-text-weak hover:text-text-base transition-colors px-3 py-1.5"
         >
-          Deny
+          Deny<KeyHint char="N" />
         </button>
         <button
           onClick={onAllowAlways}
           className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg border border-border-base text-text-base hover:bg-surface-2 transition-colors"
         >
-          Allow always
+          Allow always<KeyHint char="A" />
         </button>
         <button
           onClick={onAllowOnce}
           className="text-xs font-sans font-medium px-4 py-1.5 rounded-lg bg-text-strong text-surface-0 hover:opacity-90 transition-opacity"
         >
-          Allow once
+          Allow once<KeyHint char="Y" />
         </button>
       </div>
     </div>

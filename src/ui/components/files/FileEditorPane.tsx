@@ -323,7 +323,7 @@ export function FileEditorPane({ fileId }: FileEditorPaneProps) {
             fontSize: 13,
             fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
             fontLigatures: true,
-            minimap: { enabled: false },
+            minimap: { enabled: true, scale: 1, showSlider: "mouseover" },
             scrollBeyondLastLine: false,
             lineNumbers: "on",
             renderLineHighlight: "line",

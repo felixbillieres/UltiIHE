@@ -275,6 +275,7 @@ export function WorkspaceLayout({ project }: Props) {
         <StatusBar
           project={project}
           containerCount={project.containerIds.length}
+          onToggleBottomPanel={toggleBottomPanel}
         />
 
         {showSettings && (

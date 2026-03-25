@@ -1,5 +1,6 @@
 /**
  * StatusBar — 22px horizontal bar at the very bottom.
+ * Click actions: terminals → focus terminal, findings → open bottom panel, ctx → toast info.
  */
 
 import { useState } from "react"
@@ -9,13 +10,15 @@ import { useExhStore } from "../../stores/exh"
 import { useContextStore } from "../../stores/context"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { AboutDialog } from "../settings/AboutDialog"
+import { toast } from "sonner"
 
 interface StatusBarProps {
   project: Project
   containerCount: number
+  onToggleBottomPanel?: () => void
 }
 
-export function StatusBar({ project, containerCount }: StatusBarProps) {
+export function StatusBar({ project, containerCount, onToggleBottomPanel }: StatusBarProps) {
   const [showAbout, setShowAbout] = useState(false)
   const terminals = useTerminalStore((s) => s.terminals)
   const followAssistant = useTerminalStore((s) => s.followAssistant)
@@ -48,8 +51,14 @@ export function StatusBar({ project, containerCount }: StatusBarProps) {
           <span>container{containerCount !== 1 ? "s" : ""}</span>
         </span>
 
-        {/* Terminal count */}
-        <span className="tabular-nums">
+        {/* Terminal count — click to focus terminal */}
+        <span
+          className="tabular-nums cursor-pointer hover:text-text-weak"
+          onClick={() => {
+            const term = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement
+            term?.focus()
+          }}
+        >
           {projectTerminals.length} terminal{projectTerminals.length !== 1 ? "s" : ""}
         </span>
       </div>
@@ -58,9 +67,12 @@ export function StatusBar({ project, containerCount }: StatusBarProps) {
 
       {/* Right items */}
       <div className="flex items-center gap-3">
-        {/* exh findings */}
+        {/* exh findings — click to open bottom panel */}
         {(creds.length > 0 || hosts.length > 0) && (
-          <span className="tabular-nums">
+          <span
+            className="tabular-nums cursor-pointer hover:text-text-weak"
+            onClick={onToggleBottomPanel}
+          >
             {creds.length} cred{creds.length !== 1 ? "s" : ""} / {hosts.length} host{hosts.length !== 1 ? "s" : ""}
           </span>
         )}
@@ -79,8 +91,16 @@ export function StatusBar({ project, containerCount }: StatusBarProps) {
           <span className="text-status-warning text-[10px] font-medium uppercase">yolo-session</span>
         )}
 
-        {/* Context usage */}
-        <span className={`tabular-nums ${contextPercent > 80 ? "text-status-warning" : ""}`}>
+        {/* Context usage — click for details */}
+        <span
+          className={`tabular-nums cursor-pointer hover:text-text-weak ${contextPercent > 80 ? "text-status-warning" : ""}`}
+          onClick={() => {
+            const info = useContextStore.getState().info
+            if (info) {
+              toast(`Context: ${info.total?.toLocaleString() || 0} / ${info.limit?.toLocaleString() || 0} tokens (${info.percentUsed}%)`, { duration: 3000 })
+            }
+          }}
+        >
           ctx {contextPercent}%
         </span>
       </div>

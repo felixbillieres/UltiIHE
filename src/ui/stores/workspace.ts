@@ -16,6 +16,7 @@ export interface WorkspaceTab {
   toolId?: string
   // State
   pinned: boolean
+  preview: boolean // italic tab, replaced on next preview open
   hasNotification: boolean
 }
 
@@ -30,7 +31,7 @@ interface WorkspaceStore {
   filter: TabType | null
 
   // Tab CRUD
-  addTab: (tab: Omit<WorkspaceTab, "pinned" | "hasNotification">) => void
+  addTab: (tab: Omit<WorkspaceTab, "pinned" | "preview" | "hasNotification">, opts?: { preview?: boolean }) => void
   removeTab: (id: string) => void
   setActiveTab: (id: string | null) => void
   renameTab: (id: string, title: string) => void
@@ -79,13 +80,17 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
   _currentProjectId: null,
   filter: null,
 
-  addTab: (tab) =>
+  addTab: (tab, opts) =>
     set((s) => {
-      // Don't add duplicates — just activate
+      const isPreview = opts?.preview ?? false
+      // Don't add duplicates — just activate (and promote from preview if double-clicked)
       const existing = s.tabs.find((t) => t.id === tab.id)
       if (existing) {
         return {
-          // Auto-clear filter if it would hide this tab
+          // If opening a non-preview version of a preview tab, promote it
+          tabs: !isPreview && existing.preview
+            ? s.tabs.map((t) => (t.id === tab.id ? { ...t, preview: false } : t))
+            : s.tabs,
           filter: s.filter && s.filter !== existing.type ? null : s.filter,
           activeTabIdByProject: {
             ...s.activeTabIdByProject,
@@ -94,9 +99,13 @@ export const useWorkspaceStore = create<WorkspaceStore>()((set, get) => ({
         }
       }
       const pid = tab.projectId || s._currentProjectId
+      // If opening a preview tab, replace any existing preview tab in this project
+      let tabs = s.tabs
+      if (isPreview && pid) {
+        tabs = tabs.filter((t) => !(t.projectId === pid && t.preview))
+      }
       return {
-        tabs: [...s.tabs, { ...tab, pinned: false, hasNotification: false }],
-        // Auto-clear filter if it would hide the new tab
+        tabs: [...tabs, { ...tab, pinned: false, preview: isPreview, hasNotification: false }],
         filter: s.filter && s.filter !== tab.type ? null : s.filter,
         activeTabIdByProject: {
           ...s.activeTabIdByProject,

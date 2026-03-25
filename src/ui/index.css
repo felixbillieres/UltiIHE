@@ -13,6 +13,26 @@
 }
 
 @layer base {
+  :root {
+    /* Animation tokens */
+    --transition-fast: 100ms ease;
+    --transition-base: 150ms ease;
+    --transition-slow: 250ms ease;
+
+    /* Z-index scale */
+    --z-dropdown: 50;
+    --z-sticky: 60;
+    --z-overlay: 80;
+    --z-modal: 100;
+    --z-toast: 200;
+    --z-popout: 300;
+
+    /* Radius */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+  }
+
   * {
     border-color: var(--border-weak);
   }

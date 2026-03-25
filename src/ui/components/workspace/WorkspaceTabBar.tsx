@@ -241,6 +241,14 @@ export function WorkspaceTabBar({
   ]
 
   const handleDoubleClick = (id: string, currentTitle: string) => {
+    // If it's a preview tab, promote it first (remove preview state)
+    const tab = tabs.find((t) => t.id === id)
+    if (tab?.preview) {
+      useWorkspaceStore.setState((s) => ({
+        tabs: s.tabs.map((t) => (t.id === id ? { ...t, preview: false } : t)),
+      }))
+      return
+    }
     setEditingTabId(id)
     setEditingName(currentTitle)
     setTimeout(() => editInputRef.current?.select(), 0)
@@ -653,7 +661,7 @@ function TabItem({
               autoFocus
             />
           ) : (
-            <span className="truncate max-w-[120px] text-[11px]">{tab.title}</span>
+            <span className={`truncate max-w-[120px] text-[11px] ${tab.preview ? "italic text-text-weak" : ""}`}>{tab.title}</span>
           )}
           {showMultiContainer && tab.container && (
             <span className="truncate max-w-[100px] text-[9px] font-mono text-accent/60">

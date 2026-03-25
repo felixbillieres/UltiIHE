@@ -13,7 +13,7 @@ import { WorkspaceTabBar } from "./WorkspaceTabBar"
 import { FileEditorPane } from "../files/FileEditorPane"
 import { PopOutPortal } from "./PopOutPortal"
 import { PopOutGhost } from "./PopOutGhost"
-import { Terminal, FileText, Globe, Loader2, X, ExternalLink } from "lucide-react"
+import { Terminal, FileText, Globe, Loader2, X, ExternalLink, ChevronRight } from "lucide-react"
 import { ContainerPickerModal } from "../terminal/WebToolModals"
 import { useResizeHandle } from "../../hooks/useResizeHandle"
 
@@ -511,6 +511,25 @@ export function CenterArea({
           onAddTerminal={handleAddTerminal}
           onLaunchTool={handleLaunchTool}
         />
+
+        {/* Breadcrumbs — shown when a file tab is active */}
+        {activeTab?.type === "file" && activeTab.fileId && (() => {
+          const parts = activeTab.fileId.split(":")
+          const container = parts[0]
+          const filePath = parts.slice(1).join(":")
+          const segments = filePath.split("/").filter(Boolean)
+          const fileName = segments.pop() || filePath
+          const dirPath = segments.length > 0 ? "/" + segments.join("/") : "/"
+          return (
+            <div className="flex items-center gap-0.5 px-3 py-0.5 bg-surface-0 border-b border-border-weak text-[10px] font-mono text-text-weaker overflow-x-auto scrollbar-none shrink-0">
+              <span className="text-accent/60">{container}</span>
+              <ChevronRight className="w-2.5 h-2.5 shrink-0" />
+              <span>{dirPath}</span>
+              <ChevronRight className="w-2.5 h-2.5 shrink-0" />
+              <span className="text-text-weak">{fileName}</span>
+            </div>
+          )
+        })()}
 
         {/* Content area */}
         <div
