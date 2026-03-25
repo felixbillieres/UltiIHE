@@ -2,6 +2,18 @@ import { Terminal, X } from "lucide-react"
 import type { TerminalInstance } from "../../stores/terminal"
 import { ContainerBadge } from "./terminalConstants"
 
+// 8-color palette for terminal tab color tags
+const TAB_COLORS = [
+  "#4fa6ed", // blue
+  "#8ebd6b", // green
+  "#d18f52", // orange
+  "#bf68d9", // purple
+  "#48b0bd", // cyan
+  "#e55561", // red
+  "#facc15", // yellow
+  "#f472b6", // pink
+]
+
 interface TerminalTabProps {
   terminal: TerminalInstance
   isActive: boolean
@@ -23,6 +35,7 @@ interface TerminalTabProps {
   onDragEnd: () => void
   isDragging?: boolean
   dropIndicator?: "before" | "after" | null
+  colorIndex?: number
 }
 
 export function TerminalTab({
@@ -45,7 +58,9 @@ export function TerminalTab({
   onDragEnd,
   isDragging,
   dropIndicator,
+  colorIndex = 0,
 }: TerminalTabProps) {
+  const tagColor = TAB_COLORS[colorIndex % TAB_COLORS.length]
   return (
     <div
       className="relative flex items-center shrink-0 -mb-px"
@@ -70,6 +85,11 @@ export function TerminalTab({
             : "text-text-weak hover:bg-surface-2/50 border-b border-b-transparent"
         } ${isDragging ? "opacity-50" : ""}`}
       >
+        {/* Color tag — 2px bar at top */}
+        <div
+          className="absolute top-0 left-2 right-2 h-[2px] rounded-b-full"
+          style={{ backgroundColor: tagColor, opacity: isActive ? 1 : 0.5 }}
+        />
         {/* Vertical separator — only on inactive tabs */}
         {!isActive && (
           <div className="absolute right-0 top-[6px] bottom-[6px] w-px bg-border-weak" />

@@ -1,14 +1,15 @@
 import { useState } from "react"
 import { type Project } from "../../stores/project"
+import { useExhStore } from "../../stores/exh"
 import { FileManager } from "../files/FileManager"
 import { ExhPanel } from "../exh/ExhPanel"
 import {
   FolderOpen,
   X,
-  KeyRound,
+  ShieldAlert,
 } from "lucide-react"
 
-type BottomTab = "files" | "history"
+type BottomTab = "files" | "findings"
 
 interface BottomPanelProps {
   project: Project
@@ -17,6 +18,9 @@ interface BottomPanelProps {
 
 export function BottomPanel({ project, onClose }: BottomPanelProps) {
   const [activeTab, setActiveTab] = useState<BottomTab>("files")
+  const credCount = useExhStore((s) => s.creds.length)
+  const hostCount = useExhStore((s) => s.hosts.length)
+  const findingsCount = credCount + hostCount
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-surface-0">
@@ -29,10 +33,11 @@ export function BottomPanel({ project, onClose }: BottomPanelProps) {
           label="Files"
         />
         <TabButton
-          active={activeTab === "history"}
-          onClick={() => setActiveTab("history")}
-          icon={<KeyRound className="w-3.5 h-3.5" />}
-          label="Exegol History"
+          active={activeTab === "findings"}
+          onClick={() => setActiveTab("findings")}
+          icon={<ShieldAlert className="w-3.5 h-3.5" />}
+          label="Findings"
+          badge={findingsCount > 0 ? findingsCount : undefined}
         />
         <div className="ml-auto flex items-center pr-1.5 gap-0.5">
           <button
@@ -50,7 +55,7 @@ export function BottomPanel({ project, onClose }: BottomPanelProps) {
         {activeTab === "files" && (
           <FileManager containerIds={project.containerIds} />
         )}
-        {activeTab === "history" && (
+        {activeTab === "findings" && (
           <ExhPanel containerIds={project.containerIds} />
         )}
       </div>
@@ -63,11 +68,13 @@ function TabButton({
   onClick,
   icon,
   label,
+  badge,
 }: {
   active: boolean
   onClick: () => void
   icon: React.ReactNode
   label: string
+  badge?: number
 }) {
   return (
     <button
@@ -80,6 +87,11 @@ function TabButton({
     >
       {icon}
       {label}
+      {badge !== undefined && badge > 0 && (
+        <span className="text-[9px] bg-accent/20 text-accent rounded-full px-1.5 py-px font-bold">
+          {badge}
+        </span>
+      )}
     </button>
   )
 }

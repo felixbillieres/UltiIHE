@@ -23,6 +23,7 @@ import { MemoizedMessageBubble, CompactionMessage } from "./MessageBubble"
 import { PermissionBanner, ToolPermissionBanner } from "./PermissionBanners"
 import { FileApprovalBanner, ResolvedFilesSummary } from "./FileApprovalBanner"
 import { ImageAttachments } from "./ImageAttachments"
+import { ContextPills } from "./ContextPills"
 import { OperationsTracker } from "./OperationsTracker"
 import { SSEParser } from "./SSEParser"
 import { TokenBar } from "./TokenBar"
@@ -1232,6 +1233,8 @@ export function ChatPanel({ projectId }: Props) {
             <span className="text-xs text-accent font-sans font-medium">Drop image here</span>
           </div>
         )}
+        {/* Context pills — what the AI sees */}
+        <ContextPills />
         {/* Image attachments */}
         <ImageAttachments images={images} onRemove={removeImage} />
         {/* Terminal context quotes */}

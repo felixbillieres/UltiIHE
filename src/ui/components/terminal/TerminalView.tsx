@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { Terminal } from "@xterm/xterm"
 import { FitAddon } from "@xterm/addon-fit"
 import { SearchAddon } from "@xterm/addon-search"
 import "@xterm/xterm/css/xterm.css"
 import type { WSMessage, WSMessageHandler } from "../../hooks/useWebSocket"
 import { useTerminalStore } from "../../stores/terminal"
-import { Plus } from "lucide-react"
+import { Plus, Loader2, Sparkles, CornerDownLeft } from "lucide-react"
 import { ProbeModal, type ProbeContext } from "../probe/ProbeModal"
 import { ProbeHistory } from "../probe/ProbeHistory"
 import { useSearchStore } from "../../stores/search"
+import { useSettingsStore } from "../../stores/settings"
 
 // ── Global terminal instance pool (Havoc/VSCode pattern) ────
 // xterm instances are created once. The DOM element is MOVED between
@@ -21,6 +22,8 @@ interface TerminalEntry {
   /** The wrapper div that xterm renders into. Created once via term.open(). */
   element: HTMLDivElement
   bufferFetched: boolean
+  /** Callback to open inline prompt (Ctrl+K), set by TerminalView component */
+  onInlinePrompt?: () => void
 }
 
 const terminalPool = new Map<string, TerminalEntry>()
@@ -65,8 +68,14 @@ function getOrCreateTerminal(serverId: string): TerminalEntry {
   term.loadAddon(fitAddon)
   term.loadAddon(searchAddon)
 
-  // Prevent browser from stealing Tab, Ctrl+R, Ctrl+L
+  // Custom key handler: prevent browser stealing + Ctrl+K inline prompt
   term.attachCustomKeyEventHandler((ev) => {
+    // Ctrl+K: open inline prompt (return false to prevent xterm processing)
+    if (ev.ctrlKey && ev.key === "k" && ev.type === "keydown") {
+      const entry = terminalPool.get(serverId)
+      entry?.onInlinePrompt?.()
+      return false
+    }
     if (ev.key === "Tab") return true
     if (ev.ctrlKey && (ev.key === "r" || ev.key === "l")) return true
     return true
@@ -118,6 +127,10 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
   const [probeOpen, setProbeOpen] = useState(false)
   const probeOpenRef = useRef(false)
 
+  // Inline prompt state (Ctrl+K)
+  const [inlinePromptOpen, setInlinePromptOpen] = useState(false)
+  const openInlinePrompt = useCallback(() => setInlinePromptOpen(true), [])
+
   useEffect(() => {
     probeOpenRef.current = probeOpen
   }, [probeOpen])
@@ -133,6 +146,9 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
 
     const entry = getOrCreateTerminal(serverId)
     const { term, fitAddon, element } = entry
+
+    // Wire inline prompt callback
+    entry.onInlinePrompt = openInlinePrompt
 
     // Move the persistent xterm element into this container (VSCode detach/attach pattern)
     container.appendChild(element)
@@ -232,12 +248,13 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
       resizeDisposable.dispose()
       selectionDisposable.dispose()
       unsubscribe()
+      entry.onInlinePrompt = undefined
       // Detach the element from this container (it stays in memory for reattach)
       if (element.parentNode === container) {
         container.removeChild(element)
       }
     }
-  }, [serverId, send, subscribe])
+  }, [serverId, send, subscribe, openInlinePrompt])
 
   // ── Search mini panel integration ──────────────────────
   useEffect(() => {
@@ -338,6 +355,20 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
         style={{ backgroundColor: "#101010" }}
       />
 
+      {/* Inline prompt overlay (Ctrl+K) */}
+      {inlinePromptOpen && (
+        <InlinePromptOverlay
+          serverId={serverId}
+          terminalName={terminalName}
+          send={send}
+          onClose={() => {
+            setInlinePromptOpen(false)
+            // Re-focus terminal
+            terminalPool.get(serverId)?.term.focus()
+          }}
+        />
+      )}
+
       {anchor && !probeOpen && (() => {
         const btnTop = Math.max(4, Math.min(anchor.y, ch - 32))
         return (
@@ -368,6 +399,165 @@ export function TerminalView({ serverId, send, subscribe }: Props) {
         containerWidth={cw}
         containerHeight={ch}
       />
+    </div>
+  )
+}
+
+// ── Inline prompt overlay (Ctrl+K in terminal) ───────────
+
+const API = import.meta.env.PROD ? "" : "http://localhost:3001"
+
+function InlinePromptOverlay({
+  serverId,
+  terminalName,
+  send,
+  onClose,
+}: {
+  serverId: string
+  terminalName: string
+  send: (msg: WSMessage) => void
+  onClose: () => void
+}) {
+  const [instruction, setInstruction] = useState("")
+  const [generatedCmd, setGeneratedCmd] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 10)
+  }, [])
+
+  const generate = useCallback(async () => {
+    if (!instruction.trim()) return
+    setLoading(true)
+    setError(null)
+
+    const settings = useSettingsStore.getState()
+    const provider = settings.providers.find((p) => p.id === settings.activeProvider)
+    const container = useTerminalStore.getState().terminals.find((t) => t.id === serverId)?.container || ""
+
+    // Get last 30 lines of terminal output for context
+    let terminalContext = ""
+    try {
+      const res = await fetch(`${API}/api/terminals/${serverId}/output`)
+      if (res.ok) {
+        const data = await res.json()
+        const lines = (data.output || "").split("\n")
+        terminalContext = lines.slice(-30).join("\n")
+      }
+    } catch {}
+
+    try {
+      const res = await fetch(`${API}/api/generate-command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerId: settings.activeProvider,
+          modelId: settings.activeModel,
+          apiKey: provider?.apiKey || "",
+          instruction: instruction.trim(),
+          terminalContext,
+          terminalName,
+          container,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setError(data.error || `Error ${res.status}`)
+      } else {
+        setGeneratedCmd(data.command)
+      }
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }, [instruction, serverId, terminalName])
+
+  const inject = useCallback(() => {
+    if (!generatedCmd) return
+    send({ type: "terminal:input", data: { terminalId: serverId, input: generatedCmd + "\n" } })
+    onClose()
+  }, [generatedCmd, serverId, send, onClose])
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose()
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault()
+        if (generatedCmd) {
+          inject()
+        } else {
+          generate()
+        }
+      }
+    },
+    [onClose, generatedCmd, inject, generate],
+  )
+
+  return (
+    <div className="absolute bottom-0 left-0 right-0 z-30 bg-surface-1/95 backdrop-blur-sm border-t border-accent/30 shadow-lg">
+      <div className="flex items-center gap-2 px-3 py-2">
+        <Sparkles className="w-4 h-4 text-accent shrink-0" />
+        {generatedCmd ? (
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <code className="flex-1 text-xs font-mono text-text-strong bg-surface-0 rounded px-2 py-1 truncate">
+              {generatedCmd}
+            </code>
+            <button
+              onClick={inject}
+              className="shrink-0 flex items-center gap-1 px-2 py-1 text-xs font-sans font-medium bg-accent/20 text-accent rounded hover:bg-accent/30 transition-colors"
+            >
+              <CornerDownLeft className="w-3 h-3" />
+              Run
+            </button>
+            <button
+              onClick={() => { setGeneratedCmd(null); setInstruction(""); inputRef.current?.focus() }}
+              className="shrink-0 text-xs text-text-weaker hover:text-text-weak px-1.5 py-1"
+            >
+              Retry
+            </button>
+            <button
+              onClick={onClose}
+              className="shrink-0 text-xs text-text-weaker hover:text-text-weak px-1.5 py-1"
+            >
+              Esc
+            </button>
+          </div>
+        ) : (
+          <>
+            <input
+              ref={inputRef}
+              type="text"
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe what you want to do..."
+              className="flex-1 bg-transparent text-xs text-text-strong font-sans outline-none placeholder:text-text-weaker"
+              disabled={loading}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            {loading ? (
+              <Loader2 className="w-3.5 h-3.5 text-accent animate-spin shrink-0" />
+            ) : (
+              <span className="text-[10px] text-text-weaker shrink-0">Enter to generate</span>
+            )}
+            <button
+              onClick={onClose}
+              className="shrink-0 text-[10px] text-text-weaker hover:text-text-weak px-1"
+            >
+              Esc
+            </button>
+          </>
+        )}
+      </div>
+      {error && (
+        <div className="px-3 pb-1.5 text-[10px] text-status-error font-sans">{error}</div>
+      )}
     </div>
   )
 }

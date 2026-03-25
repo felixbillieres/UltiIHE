@@ -395,9 +395,12 @@ export function ExhPanel({ containerIds }: { containerIds: string[] }) {
   // Not available
   if (available === false) {
     return (
-      <div className="flex items-center justify-center h-full text-text-weaker text-xs font-sans gap-2">
-        <ShieldOff className="w-4 h-4" />
-        exegol-history not available in this container
+      <div className="flex flex-col items-center justify-center h-full gap-2 text-text-weaker text-xs font-sans">
+        <ShieldOff className="w-5 h-5" />
+        <span>exegol-history not available in this container</span>
+        <span className="text-[10px] text-text-weaker/60">
+          The AI will still track findings in the chat. Install exh in your Exegol image for structured storage.
+        </span>
       </div>
     )
   }

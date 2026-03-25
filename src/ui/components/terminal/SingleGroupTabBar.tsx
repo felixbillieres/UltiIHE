@@ -168,11 +168,12 @@ export function SingleGroupTabBar({
         className="flex-1 min-w-0 overflow-x-auto flex items-end gap-0 scrollbar-none"
         onDragLeave={() => setDropTarget(null)}
       >
-        {groupTerminals.map((t) => (
+        {groupTerminals.map((t, index) => (
           <TerminalTab
             key={t.id}
             terminal={t}
             isActive={t.id === group.activeTerminalId && !activeToolTab}
+            colorIndex={index}
             isEditing={editingTabId === t.id}
             editName={editingName}
             containerIds={containerIds}

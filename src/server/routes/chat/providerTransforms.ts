@@ -35,6 +35,7 @@ export function normalizeMessages(
   ) {
     result = filterEmptyMessages(result)
     result = filterEmptyParts(result)
+    result = sanitizeToolCallArgs(result)
     result = sanitizeToolCallIds(result, /[^a-zA-Z0-9_-]/g, "_")
     return result
   }
@@ -54,12 +55,14 @@ export function normalizeMessages(
   // OpenRouter: same as Anthropic for safety
   if (providerId === "openrouter") {
     result = filterEmptyMessages(result)
+    result = sanitizeToolCallArgs(result)
     result = sanitizeToolCallIds(result, /[^a-zA-Z0-9_-]/g, "_")
     return result
   }
 
   // Default: basic cleanup
   result = filterEmptyMessages(result)
+  result = sanitizeToolCallArgs(result)
   return result
 }
 
@@ -132,6 +135,27 @@ function filterEmptyParts(messages: any[]): any[] {
       return { ...msg, content: filtered }
     })
     .filter((msg: any): msg is any => msg !== undefined)
+}
+
+/** Ensure all tool-call parts have object args (fixes "Input should be a valid dictionary") */
+function sanitizeToolCallArgs(messages: any[]): any[] {
+  return messages.map((msg) => {
+    if (!Array.isArray(msg.content)) return msg
+    const fixed = msg.content.map((part: any) => {
+      // AI SDK internal format: type "tool-call" with args
+      if (part.type === "tool-call" && part.args !== undefined && typeof part.args !== "object") {
+        try { return { ...part, args: JSON.parse(part.args) } } catch {}
+        return { ...part, args: {} }
+      }
+      // Anthropic wire format: type "tool_use" with input
+      if (part.type === "tool_use" && part.input !== undefined && typeof part.input !== "object") {
+        try { return { ...part, input: JSON.parse(part.input) } } catch {}
+        return { ...part, input: {} }
+      }
+      return part
+    })
+    return { ...msg, content: fixed }
+  })
 }
 
 function sanitizeToolCallIds(messages: any[], pattern: RegExp, replacement: string): any[] {

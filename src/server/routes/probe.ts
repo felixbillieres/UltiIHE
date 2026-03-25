@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { streamText, createProviderRegistry } from "ai"
+import { streamText, generateText, createProviderRegistry } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createOpenAI } from "@ai-sdk/openai"
 import { createGoogleGenerativeAI } from "@ai-sdk/google"
@@ -172,5 +172,53 @@ probeRoutes.post("/probe", async (c) => {
     const msg = (err as Error).message || "Unknown error"
     const status = (err as any)?.statusCode || 500
     return c.json({ error: msg }, status)
+  }
+})
+
+// ── Generate command (for terminal inline prompt Ctrl+K) ──────
+
+probeRoutes.post("/generate-command", async (c) => {
+  const body = await c.req.json() as {
+    providerId: string
+    modelId: string
+    apiKey: string
+    baseUrl?: string
+    instruction: string
+    terminalContext?: string
+    terminalName?: string
+    container?: string
+  }
+
+  const { providerId, modelId, apiKey, baseUrl, instruction, terminalContext, terminalName, container } = body
+  if (!providerId || !modelId || !apiKey || !instruction) {
+    return c.json({ error: "Missing required fields" }, 400)
+  }
+
+  try {
+    const registry = createRegistry(providerId, apiKey, baseUrl)
+    const model = registry.languageModel(`${providerId}:${modelId}`)
+
+    const result = await generateText({
+      model,
+      system:
+        `You are a command generator for a pentesting terminal.\n` +
+        `Terminal: "${terminalName || "unknown"}" on container "${container || "unknown"}".\n` +
+        `Generate a single shell command for the user's instruction.\n` +
+        `Reply with ONLY the raw command. No explanation, no markdown, no backticks, no newlines.\n` +
+        `If multiple commands are needed, chain them with && or ;`,
+      messages: [
+        ...(terminalContext
+          ? [{ role: "user" as const, content: `Recent terminal output:\n\`\`\`\n${terminalContext}\n\`\`\`` }]
+          : []),
+        { role: "user" as const, content: instruction },
+      ],
+      maxOutputTokens: 256,
+    })
+
+    const command = result.text.trim().replace(/^```[\s\S]*?\n/, "").replace(/\n```$/, "").trim()
+    return c.json({ command })
+  } catch (err) {
+    const msg = (err as Error).message || "Unknown error"
+    return c.json({ error: msg }, 500)
   }
 })
