@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import type { ToolCallPart } from "../../stores/session"
 import { useCommandApprovalStore } from "../../stores/commandApproval"
 import { useTerminalStore } from "../../stores/terminal"
@@ -39,6 +39,7 @@ const TOOL_META: Record<string, { name: string; Icon: LucideIcon; color: string 
   terminal_write:   { name: "Run Command",      Icon: Play,        color: "text-text-weaker" },
   terminal_create:  { name: "Create Terminal",   Icon: Plus,        color: "text-text-weaker" },
   terminal_list:    { name: "List Terminals",    Icon: List,        color: "text-text-weaker" },
+  terminal_close:   { name: "Close Terminal",    Icon: X,           color: "text-text-weaker" },
   file_read:        { name: "Read File",         Icon: FileText,    color: "text-text-weaker" },
   file_write:       { name: "Write File",        Icon: FileEdit,    color: "text-text-weaker" },
   file_edit:        { name: "Edit File",         Icon: FileEdit,    color: "text-text-weaker" },
@@ -59,6 +60,7 @@ const TOOL_META: Record<string, { name: string; Icon: LucideIcon; color: string 
   exh_read_env:     { name: "Read Env",          Icon: Terminal,    color: "text-text-weaker" },
   exh_add_cred:     { name: "Add Credential",    Icon: KeyRound,    color: "text-text-weaker" },
   exh_add_host:     { name: "Add Host",          Icon: Server,      color: "text-text-weaker" },
+  terminal_search:  { name: "Search Terminal",   Icon: Search,      color: "text-text-weaker" },
 }
 
 const DEFAULT_META = { name: "Tool", Icon: Layers, color: "text-text-weak" }
@@ -104,19 +106,52 @@ function formatDuration(startTime: number, endTime?: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+// ── Live elapsed time counter ──────────────────────────────
+
+function ElapsedTime({ startTime }: { startTime: number }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const secs = Math.floor((Date.now() - startTime) / 1000)
+  return <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{secs}s</span>
+}
+
 // ── Truncate output for inline display ─────────────────────
 
-function truncateOutput(output: string, maxLines = 15): { text: string; truncated: boolean } {
+function truncateOutput(output: string, maxLines = 30): { text: string; truncated: boolean; totalLines: number } {
   const lines = output.split("\n")
-  if (lines.length <= maxLines) return { text: output, truncated: false }
-  return { text: lines.slice(0, maxLines).join("\n"), truncated: true }
+  if (lines.length <= maxLines) return { text: output, truncated: false, totalLines: lines.length }
+  return { text: lines.slice(0, maxLines).join("\n"), truncated: true, totalLines: lines.length }
 }
+
+/** Short preview: first N lines for collapsed content tools */
+function previewOutput(output: string, maxLines = 4): string {
+  const lines = output.split("\n").filter(Boolean)
+  return lines.slice(0, maxLines).join("\n")
+}
+
+// ── Content tools that benefit from inline preview ─────────
+const CONTENT_TOOLS = new Set([
+  "file_read", "search_grep", "search_find", "terminal_read", "terminal_search",
+  "web_search", "web_fetch", "exh_read_creds", "exh_read_hosts",
+])
+
+// ── Info-only tools that stay as tiny pills ────────────────
+const INFO_TOOLS = new Set([
+  "terminal_list", "terminal_create", "terminal_close",
+  "file_create_dir", "todo_read", "todo_write",
+  "caido_scope", "exh_read_env",
+])
 
 // ── Terminal command card (inline output like Cursor) ───────
 
 function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: boolean }) {
   const [expanded, setExpanded] = useState(false)
-  const hadOutputRef = useRef(false)
+  // ALL hooks MUST be called before any early returns (Rules of Hooks)
+  const terminals = useTerminalStore((s) => s.terminals)
+
   const command = part.args?.command || part.args?.input || ""
 
   const handleViewInTerminal = (e: React.MouseEvent) => {
@@ -127,10 +162,10 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
     const tab = useWorkspaceStore.getState().tabs.find((t) => t.terminalId === termId)
     if (tab) useWorkspaceStore.getState().setActiveTab(tab.id)
   }
+
   const duration = formatDuration(part.startTime, part.endTime)
   const isRunning = part.status === "running"
   const isError = part.status === "error"
-  const isCompleted = part.status === "completed"
 
   // Detect doom loop warnings — hide from UI, only AI sees them
   const output = part.output || ""
@@ -138,31 +173,26 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
     output.includes("was just called with identical arguments") ||
     output.includes("Consider using different arguments")
   )
-  // Hide doom warnings entirely from user — AI already sees it as tool result
   if (isDoomWarning) return null
   const isRealError = isError
 
-  // Auto-expand when output arrives for the first time
-  useEffect(() => {
-    if (output && !hadOutputRef.current) {
-      hadOutputRef.current = true
-      setExpanded(true)
-    }
-  }, [output])
-
   // Parse terminal output for display
-  const { text: displayOutput, truncated } = truncateOutput(output)
+  const { text: displayOutput, truncated, totalLines } = truncateOutput(output)
 
   const label = autoRan ? "Auto-ran" : "Ran"
   const statusLabel = isRunning ? "Running" : isRealError ? "Failed" : label
 
+  // Get terminal name for context
+  const terminal = terminals.find((t) => t.id === part.args?.terminalId)
+  const terminalLabel = terminal ? `${terminal.name} on ${terminal.container}` : null
+
   return (
-    <div className={`my-1.5 rounded-lg border overflow-hidden ${
+    <div className={`my-2.5 rounded-lg border overflow-hidden ${
       isRealError ? "border-status-error/30" : "border-border-weak"
     } bg-surface-0/50`}>
       {/* Header */}
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => output && setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
         <div className={`rounded-full w-2 h-2 shrink-0 ${
@@ -178,7 +208,8 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
           {statusLabel}
         </span>
         <code className="text-[11px] text-text-base font-mono truncate flex-1">{command}</code>
-        {duration && <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{duration}</span>}
+        {isRunning && part.startTime && <ElapsedTime startTime={part.startTime} />}
+        {!isRunning && duration && <span className="text-[10px] text-text-weaker tabular-nums shrink-0">{duration}</span>}
         {part.args?.terminalId && (
           <span
             role="button"
@@ -194,16 +225,25 @@ function TerminalCommandCard({ part, autoRan }: { part: ToolCallPart; autoRan?: 
         )}
       </button>
 
+      {/* Terminal name subtitle when running */}
+      {isRunning && terminalLabel && (
+        <div className="px-3 pb-1.5 -mt-0.5">
+          <span className="text-[10px] text-text-weaker font-sans">{terminalLabel}</span>
+        </div>
+      )}
+
       {/* Inline terminal output */}
       {expanded && output && (
-        <div className="border-t border-border-weak bg-[#0a0a0a] px-3 py-2 max-h-[300px] overflow-y-auto overflow-x-auto scrollbar-thin">
+        <div className="border-t border-border-weak bg-[#0a0a0a] px-3 py-2 max-h-[400px] overflow-y-auto overflow-x-auto scrollbar-thin">
           <pre className="text-[11px] font-mono text-text-weak leading-relaxed whitespace-pre-wrap">
             <span className="text-text-weaker">$ </span>
             <span className="text-text-base">{command}</span>
             {"\n"}
             {displayOutput}
             {truncated && (
-              <span className="text-text-weaker italic">{"\n"}... output truncated</span>
+              <span className="text-text-weaker italic">
+                {"\n"}... {totalLines - 30} more lines — <span className="text-accent cursor-pointer hover:underline" onClick={handleViewInTerminal}>view in terminal</span>
+              </span>
             )}
             {part.wasTruncated && (
               <span className="text-status-warning/80 italic text-[10px]">
@@ -226,9 +266,70 @@ function GenericToolCard({ part }: { part: ToolCallPart }) {
   const duration = formatDuration(part.startTime, part.endTime)
   const { Icon } = meta
   const isCompleted = part.status === "completed" || part.status === "error"
+  const isRunning = part.status === "running"
   const hasOutput = !!part.output
 
-  // Collapsed pill (completed, not expanded)
+  const isInfoTool = INFO_TOOLS.has(part.tool)
+  const isContentTool = CONTENT_TOOLS.has(part.tool)
+
+  // Info tools: always tiny pill when completed
+  if (isCompleted && !expanded && isInfoTool) {
+    return (
+      <button
+        onClick={() => { if (hasOutput) setExpanded(true) }}
+        className={`my-0.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface-0/50 border border-border-weak transition-colors text-left ${hasOutput ? "hover:bg-surface-1/50 cursor-pointer" : "cursor-default"}`}
+      >
+        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 ${
+          part.status === "error" ? "bg-status-error/15" : "bg-status-success/15"
+        }`}>
+          {part.status === "error"
+            ? <X className="w-2.5 h-2.5 text-status-error" />
+            : <Check className="w-2.5 h-2.5 text-status-success" />
+          }
+        </div>
+        <Icon className={`w-3 h-3 ${meta.color}`} />
+        <span className="text-[11px] text-text-weaker">{meta.name}</span>
+        {summary && <span className="text-[10px] text-text-weaker/60 truncate max-w-[200px] font-mono">{summary}</span>}
+        {duration && <span className="text-[10px] text-text-weaker/60 tabular-nums">{duration}</span>}
+        {hasOutput && <ChevronDown className="w-2.5 h-2.5 text-text-weaker/60 shrink-0" />}
+      </button>
+    )
+  }
+
+  // Content tools: show inline preview when collapsed (completed, not expanded)
+  if (isCompleted && !expanded && isContentTool && hasOutput) {
+    const preview = previewOutput(part.output!, 4)
+    return (
+      <div className="my-2 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
+        >
+          <div className={`w-3.5 h-3.5 rounded flex items-center justify-center shrink-0 ${
+            part.status === "error" ? "bg-status-error/15" : "bg-status-success/15"
+          }`}>
+            {part.status === "error"
+              ? <X className="w-2.5 h-2.5 text-status-error" />
+              : <Check className="w-2.5 h-2.5 text-status-success" />
+            }
+          </div>
+          <Icon className={`w-3 h-3 ${meta.color}`} />
+          <span className="text-[11px] text-text-weaker">{meta.name}</span>
+          {summary && <span className="text-[10px] text-text-weaker/60 truncate max-w-[200px] font-mono">{summary}</span>}
+          {duration && <span className="text-[10px] text-text-weaker/60 tabular-nums">{duration}</span>}
+          <ChevronDown className="w-2.5 h-2.5 text-text-weaker/60 shrink-0" />
+        </button>
+        {/* Inline preview */}
+        <div className="border-t border-border-weak/50 px-3 py-1.5 bg-surface-0/30">
+          <pre className="text-[10px] text-text-weaker leading-relaxed whitespace-pre-wrap font-mono line-clamp-4">
+            {preview}
+          </pre>
+        </div>
+      </div>
+    )
+  }
+
+  // Non-content completed tool: compact pill
   if (isCompleted && !expanded) {
     return (
       <button
@@ -252,18 +353,19 @@ function GenericToolCard({ part }: { part: ToolCallPart }) {
     )
   }
 
+  // Running state or expanded: full card
   return (
-    <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
+    <div className="my-2.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
       >
         <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${
-          part.status === "running" ? "bg-accent/15"
+          isRunning ? "bg-accent/15"
             : part.status === "error" ? "bg-status-error/15"
             : "bg-status-success/15"
         }`}>
-          {part.status === "running" ? (
+          {isRunning ? (
             <Loader2 className="w-3 h-3 text-accent animate-spin" />
           ) : part.status === "error" ? (
             <X className="w-3 h-3 text-status-error" />
@@ -274,13 +376,14 @@ function GenericToolCard({ part }: { part: ToolCallPart }) {
         <Icon className={`w-3.5 h-3.5 shrink-0 ${meta.color}`} />
         <span className={`text-[12px] font-medium shrink-0 ${meta.color}`}>{meta.name}</span>
         {summary && <span className="text-[11px] text-text-weaker truncate flex-1 font-mono">{summary}</span>}
-        {duration && <span className="text-[10px] text-text-weaker shrink-0 tabular-nums">{duration}</span>}
+        {isRunning && part.startTime && <ElapsedTime startTime={part.startTime} />}
+        {!isRunning && duration && <span className="text-[10px] text-text-weaker shrink-0 tabular-nums">{duration}</span>}
         {hasOutput && (
           <ChevronDown className={`w-3 h-3 text-text-weaker shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
         )}
       </button>
       {expanded && part.output && (
-        <div className="border-t border-border-weak px-3 py-2 max-h-[300px] overflow-y-auto scrollbar-thin bg-surface-0">
+        <div className="border-t border-border-weak px-3 py-2 max-h-[400px] overflow-y-auto scrollbar-thin bg-surface-0">
           <pre className="text-[11px] text-text-weak leading-relaxed whitespace-pre-wrap font-mono">
             {part.output}
           </pre>
@@ -357,7 +460,6 @@ export function ToolCallGroup({ parts }: { parts: ToolCallPart[] }) {
     return sum
   }, 0)
 
-  const allDone = runningCount === 0
   const hasErrors = errorCount > 0
 
   // Cline-style summary label
@@ -384,7 +486,7 @@ export function ToolCallGroup({ parts }: { parts: ToolCallPart[] }) {
   const { Icon } = meta
 
   return (
-    <div className="my-1.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
+    <div className="my-2.5 rounded-lg border border-border-weak bg-surface-0/50 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-surface-1/50 transition-colors text-left"
