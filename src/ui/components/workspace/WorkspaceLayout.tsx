@@ -109,11 +109,15 @@ export function WorkspaceLayout({ project }: Props) {
   useEffect(() => {
     return subscribe((msg) => {
       if (msg.type === "command:pending" && msg.data) {
+        // Look up container name from terminal store for better approval context
+        const termId = msg.data.terminalId as string
+        const term = useTerminalStore.getState().terminals.find((t) => t.id === termId)
         addPendingCommand({
           id: msg.data.commandId as string || msg.data.id as string,
-          terminalId: msg.data.terminalId as string,
+          terminalId: termId,
           terminalName: msg.data.terminalName as string,
           command: msg.data.command as string,
+          containerName: term?.container,
         })
       }
       if (msg.type === "command:executed" && msg.data) {

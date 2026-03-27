@@ -137,8 +137,11 @@ export function PermissionBanner({
 
         <div className="ml-6 mb-2">
           <span className="text-xs text-text-weak font-sans">
-            Execute command in{" "}
+            Execute in{" "}
             <span className="text-text-base font-medium">{command.terminalName}</span>
+            {command.containerName && (
+              <span className="text-text-weaker"> on {command.containerName}</span>
+            )}
           </span>
         </div>
 

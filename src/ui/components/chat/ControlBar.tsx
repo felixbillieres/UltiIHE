@@ -443,7 +443,7 @@ export function ControlBar() {
                 </div>
               </button>
 
-              {/* Follow */}
+              {/* Follow — auto-switch to terminal tab AI is using */}
               <button
                 onClick={toggleFollow}
                 className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-surface-3 transition-colors"
@@ -452,8 +452,8 @@ export function ControlBar() {
                   ? <Eye className="w-3.5 h-3.5 shrink-0 text-accent" />
                   : <EyeOff className="w-3.5 h-3.5 shrink-0 text-text-weaker" />}
                 <div className="flex-1 text-left">
-                  <div className="text-[11px] font-sans text-text-base">Follow AI</div>
-                  <div className="text-[9px] font-sans text-text-weaker">Auto-focus active terminal</div>
+                  <div className="text-[11px] font-sans text-text-base">Auto-switch terminal</div>
+                  <div className="text-[9px] font-sans text-text-weaker">Focus terminal when AI writes to it</div>
                 </div>
                 <div className={`w-7 h-4 rounded-full transition-colors flex items-center ${
                   followAssistant ? "bg-accent justify-end" : "bg-surface-0 justify-start"

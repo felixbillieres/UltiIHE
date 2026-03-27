@@ -163,10 +163,11 @@ export function ChatPanel({ projectId }: Props) {
   useEffect(() => { const t = setTimeout(() => { mountedRef.current = true }, 1000); return () => clearTimeout(t) }, [])
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     if (!mountedRef.current) return
-    // Don't show during streaming — followOutput handles it
-    if (streaming) { setShowScrollButton(false); return }
+    // Show scroll button when user has scrolled up, even during streaming.
+    // Virtuoso's followOutput handles auto-scroll for users at the bottom —
+    // the button is for users who scrolled up to review earlier output.
     setShowScrollButton(!atBottom && messages.length > 5)
-  }, [messages.length, streaming])
+  }, [messages.length])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -201,7 +202,24 @@ export function ChatPanel({ projectId }: Props) {
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return null
     const q = searchQuery.toLowerCase()
-    return messages.filter((m) => m.content.toLowerCase().includes(q)).map((m) => m.id)
+    return messages.filter((m) => {
+      // Search message text content
+      if (m.content.toLowerCase().includes(q)) return true
+      // Also search tool call outputs and args
+      if (m.parts?.some((p) => {
+        if (p.type !== "tool-call") return false
+        const tc = p as any
+        if (tc.output?.toLowerCase().includes(q)) return true
+        // Search command text for terminal_write
+        const cmd = tc.args?.command || tc.args?.input || ""
+        if (cmd.toLowerCase().includes(q)) return true
+        // Search file paths
+        const path = tc.args?.filePath || tc.args?.path || ""
+        if (path.toLowerCase().includes(q)) return true
+        return false
+      })) return true
+      return false
+    }).map((m) => m.id)
   }, [searchQuery, messages])
 
   // ── Image paste/drop handlers ─────────────────────────────────

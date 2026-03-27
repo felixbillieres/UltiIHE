@@ -77,13 +77,18 @@ class CommandQueue {
       }
     }
 
+    // Ensure command has a trailing newline — writeTyping only sends Enter
+    // when the input ends with \n. Without this, the command is typed into the
+    // terminal but never executed (the user would have to press Enter manually).
+    const commandWithNewline = opts.command.endsWith("\n") ? opts.command : opts.command + "\n"
+
     // Auto-run: execute immediately with typing effect
     if (this.mode === "auto-run" || this.mode === "allow-all-session") {
       // NOTE: do NOT call markBusy here — writeTyping sets busy=true AFTER writing
       // the command. Calling markBusy before writeTyping deadlocks: writeTyping
       // starts with waitForIdle() which blocks because busy was just set to true.
       opsTracker.start({ id, command: opts.command, terminalId: targetId, terminalName: targetName })
-      await terminalManager.writeTyping(targetId, opts.command)
+      await terminalManager.writeTyping(targetId, commandWithNewline)
       // Notify frontend that a command was auto-executed
       this.broadcast?.({
         type: "command:executed",
@@ -162,8 +167,9 @@ class CommandQueue {
       terminalName: entry.terminalName,
     })
 
-    // Inject with typing effect
-    await terminalManager.writeTyping(entry.terminalId, entry.command)
+    // Inject with typing effect — ensure trailing newline for Enter
+    const cmd = entry.command.endsWith("\n") ? entry.command : entry.command + "\n"
+    await terminalManager.writeTyping(entry.terminalId, cmd)
     entry.resolve({ approved: true })
   }
 
@@ -190,7 +196,9 @@ class CommandQueue {
       terminalId: entry.terminalId,
       terminalName: entry.terminalName,
     })
-    await terminalManager.writeTyping(entry.terminalId, newCommand)
+    // Ensure trailing newline for Enter
+    const cmd = newCommand.endsWith("\n") ? newCommand : newCommand + "\n"
+    await terminalManager.writeTyping(entry.terminalId, cmd)
     entry.resolve({ approved: true })
   }
 

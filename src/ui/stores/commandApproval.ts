@@ -5,6 +5,8 @@ export interface PendingCommand {
   terminalId: string
   terminalName: string
   command: string
+  /** Container name for context in approval banner */
+  containerName?: string
 }
 
 export type ApprovalMode = "ask" | "auto-run" | "allow-all-session"

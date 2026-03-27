@@ -271,6 +271,7 @@ function isLowStakesTool(part: MessagePart): boolean {
  * - Only needs 2+ consecutive low-stakes tools to group (was 3+ same-type)
  * - Non-low-stakes tool calls (terminal_write, file_write, etc.) stay individual
  * - Same-type non-low-stakes tools still group at 3+ consecutive
+ * - NEVER groups tools that are still running — show each individually for visibility
  */
 function groupParts(parts: MessagePart[]): Array<MessagePart | { type: "tool-group"; parts: MessagePart[] }> {
   const result: Array<MessagePart | { type: "tool-group"; parts: MessagePart[] }> = []
@@ -280,23 +281,29 @@ function groupParts(parts: MessagePart[]): Array<MessagePart | { type: "tool-gro
     const part = parts[i]
 
     // Try to group consecutive low-stakes tools (Cline pattern: mix different read/search tools)
+    // Only group if ALL tools in the run are completed — don't collapse running tools
     if (isLowStakesTool(part)) {
       let j = i + 1
       while (j < parts.length && isLowStakesTool(parts[j])) j++
-      if (j - i >= 2) {
-        result.push({ type: "tool-group", parts: parts.slice(i, j) })
+      const slice = parts.slice(i, j)
+      const allDone = slice.every((p) => p.type !== "tool-call" || (p as any).status !== "running")
+      if (j - i >= 2 && allDone) {
+        result.push({ type: "tool-group", parts: slice })
         i = j
         continue
       }
     }
 
     // Fallback: group 3+ consecutive same-type non-low-stakes tool calls
+    // Same rule: only group when all are done
     if (part.type === "tool-call" && !isLowStakesTool(part)) {
       const tool = part.tool
       let j = i + 1
       while (j < parts.length && parts[j].type === "tool-call" && (parts[j] as any).tool === tool) j++
-      if (j - i >= 3) {
-        result.push({ type: "tool-group", parts: parts.slice(i, j) })
+      const slice = parts.slice(i, j)
+      const allDone = slice.every((p) => (p as any).status !== "running")
+      if (j - i >= 3 && allDone) {
+        result.push({ type: "tool-group", parts: slice })
         i = j
         continue
       }
